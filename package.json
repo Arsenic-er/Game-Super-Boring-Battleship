@@ -1,0 +1,48 @@
+{
+  "name": "battleship",
+  "private": true,
+  "version": "0.6.4",
+  "type": "module",
+  "main": "desktop/main.cjs",
+  "scripts": {
+    "dev": "vite --host 127.0.0.1",
+    "build": "tsc && vite build",
+    "preview": "vite preview --host 127.0.0.1",
+    "test": "vitest run",
+    "desktop:run": "npm run build && electron .",
+    "desktop:dist": "npm run build && electron-builder --win portable --x64"
+  },
+  "dependencies": {
+    "@fortawesome/fontawesome-free": "^7.1.0",
+    "@babylonjs/core": "9.16.1"
+  },
+  "devDependencies": {
+    "electron": "latest",
+    "electron-builder": "latest",
+    "typescript": "7.0.2",
+    "vite": "8.1.4",
+    "vitest": "4.1.10"
+  },
+  "build": {
+    "appId": "io.greysea.battleship",
+    "productName": "Grey Sea Action",
+    "artifactName": "battleship-${version}-windows-${arch}.${ext}",
+    "directories": {
+      "output": "release"
+    },
+    "files": [
+      "dist/**/*",
+      "desktop/**/*",
+      "package.json"
+    ],
+    "asar": true,
+    "win": {
+      "target": [
+        {
+          "target": "portable",
+          "arch": ["x64"]
+        }
+      ]
+    }
+  }
+}

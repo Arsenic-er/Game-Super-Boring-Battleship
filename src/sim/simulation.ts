@@ -1,0 +1,823 @@
+import {
+  BASE_REPAIR_PER_SECOND,
+  BATTLE_DURATION_SECONDS,
+  COLLISION,
+  COLLISION_DAMAGE_MULTIPLIER,
+  COMPARTMENT_MAX_HEALTH,
+  DAMAGE_CONTROL,
+  FIXED_STEP,
+  GUN,
+  HULL_REPAIR,
+  KNOT_TO_MPS,
+  MODULE_MAX_HEALTH,
+  SHIP,
+  TURRET,
+} from "./config";
+import {
+  DEFAULT_MAIN_GUN_ID,
+  FRONT_TURRET_TRAVERSE_LIMIT_RADIANS,
+  getMainGun,
+} from "../ships/components";
+import type { MainGunId } from "../ships/components";
+import type {
+  BattleState,
+  CompartmentId,
+  ControlCommand,
+  GameMode,
+  ModuleId,
+  ProjectileState,
+  ShipState,
+  Team,
+  Vec3,
+  ShipPerformanceModifiers,
+} from "./types";
+
+const zeroCommand: ControlCommand = {
+  throttle: 0,
+  rudder: 0,
+  aimPoint: { x: 0, y: 0, z: 1_000 },
+  fire: false,
+  repairHull: false,
+  weaponSlot: "mainGun",
+};
+
+const TORPEDO = {
+  speedMetersPerSecond: 26,
+  reloadSeconds: 42,
+  damage: 145,
+  lifetimeSeconds: 125,
+  launchOffset: 4.2,
+} as const;
+
+const clamp = (value: number, min: number, max: number): number =>
+  Math.min(max, Math.max(min, value));
+
+const copyVec = (value: Vec3): Vec3 => ({ ...value });
+
+const wrapAngle = (angle: number): number => {
+  let wrapped = angle;
+  while (wrapped > Math.PI) wrapped -= Math.PI * 2;
+  while (wrapped < -Math.PI) wrapped += Math.PI * 2;
+  return wrapped;
+};
+
+function createModules(): ShipState["modules"] {
+  return {
+    gun: { health: MODULE_MAX_HEALTH.gun, maxHealth: MODULE_MAX_HEALTH.gun },
+    engine: { health: MODULE_MAX_HEALTH.engine, maxHealth: MODULE_MAX_HEALTH.engine },
+    steering: { health: MODULE_MAX_HEALTH.steering, maxHealth: MODULE_MAX_HEALTH.steering },
+    magazine: { health: MODULE_MAX_HEALTH.magazine, maxHealth: MODULE_MAX_HEALTH.magazine },
+    crew: { health: MODULE_MAX_HEALTH.crew, maxHealth: MODULE_MAX_HEALTH.crew },
+  };
+}
+
+function createShip(
+  id: string,
+  team: Team,
+  x: number,
+  z: number,
+  heading: number,
+  mainGunId: MainGunId = DEFAULT_MAIN_GUN_ID,
+  performance: ShipPerformanceModifiers = {
+    maxSpeedMultiplier: 1,
+    accelerationMultiplier: 1,
+    turnMultiplier: 1,
+    reloadMultiplier: 1,
+    magazineRiskMultiplier: 1,
+  },
+): ShipState {
+  return {
+    id,
+    team,
+    position: { x, y: 0, z },
+    previousPosition: { x, y: 0, z },
+    heading,
+    turretHeading: heading,
+    speedKnots: 12,
+    throttle: 0.55,
+    rudder: 0,
+    hull: SHIP.maxHull,
+    maxHull: SHIP.maxHull,
+    recoverableHull: SHIP.maxHull,
+    compartments: { ...COMPARTMENT_MAX_HEALTH },
+    modules: createModules(),
+    mainGunId,
+    performance,
+    gunTraverseBlocked: false,
+    reloadRemaining: 0,
+    torpedoReloadRemaining: 0,
+    aimPoint: { x, y: 0, z: z + Math.cos(heading) * 1_800 },
+    fireIntensity: 0,
+    flooding: 0,
+    distanceTravelled: 0,
+    turnRateRadians: 0,
+  };
+}
+
+export function createInitialState(
+  seed = 0x5ea1,
+  mode: GameMode = "battle",
+  playerMainGunId: MainGunId = DEFAULT_MAIN_GUN_ID,
+  playerPerformance?: Partial<ShipPerformanceModifiers>,
+): BattleState {
+  const player = createShip("player", "player", 0, -900, 0, playerMainGunId, {
+    maxSpeedMultiplier: playerPerformance?.maxSpeedMultiplier ?? 1,
+    accelerationMultiplier: playerPerformance?.accelerationMultiplier ?? 1,
+    turnMultiplier: playerPerformance?.turnMultiplier ?? 1,
+    reloadMultiplier: playerPerformance?.reloadMultiplier ?? 1,
+    magazineRiskMultiplier: playerPerformance?.magazineRiskMultiplier ?? 1,
+  });
+  const testTarget = createShip("test-target", "enemy", 0, -460, Math.PI / 2);
+  testTarget.speedKnots = 0;
+  testTarget.throttle = 0;
+  testTarget.isTestTarget = true;
+  return {
+    mode,
+    time: 0,
+    status: "running",
+    ships: mode === "battle"
+      ? [player, createShip("enemy", "enemy", 180, 1_250, Math.PI)]
+      : [player, testTarget],
+    projectiles: [],
+    shots: [],
+    impacts: [],
+    nextEntityId: 1,
+    randomSeed: seed >>> 0,
+    collisionCooldowns: {},
+  };
+}
+
+function random(state: BattleState): number {
+  state.randomSeed = (Math.imul(1_664_525, state.randomSeed) + 1_013_904_223) >>> 0;
+  return state.randomSeed / 0x1_0000_0000;
+}
+
+function moduleRatio(ship: ShipState, id: ModuleId): number {
+  const module = ship.modules[id];
+  return module.maxHealth === 0 ? 0 : module.health / module.maxHealth;
+}
+
+function applyHullDamage(ship: ShipState, damage: number, permanentFraction: number): void {
+  ship.hull = Math.max(0, ship.hull - damage);
+  ship.recoverableHull = Math.max(
+    ship.hull,
+    Math.min(ship.maxHull, ship.recoverableHull - damage * permanentFraction),
+  );
+}
+
+function desiredTurretHeading(ship: ShipState): { heading: number; blocked: boolean } {
+  const desiredHeading = Math.atan2(
+    ship.aimPoint.x - ship.position.x,
+    ship.aimPoint.z - ship.position.z,
+  );
+  const desiredRelative = wrapAngle(desiredHeading - ship.heading);
+  const blocked = Math.abs(desiredRelative) > FRONT_TURRET_TRAVERSE_LIMIT_RADIANS;
+  const safeRelative = clamp(
+    desiredRelative,
+    -FRONT_TURRET_TRAVERSE_LIMIT_RADIANS,
+    FRONT_TURRET_TRAVERSE_LIMIT_RADIANS,
+  );
+  return { heading: wrapAngle(ship.heading + safeRelative), blocked };
+}
+
+export function turretAlignmentError(ship: ShipState): number {
+  return wrapAngle(desiredTurretHeading(ship).heading - ship.turretHeading);
+}
+
+export function isGunBearingBlocked(ship: ShipState): boolean {
+  return desiredTurretHeading(ship).blocked;
+}
+
+export function isGunFireBlocked(ship: ShipState): boolean {
+  const actualRelative = Math.abs(wrapAngle(ship.turretHeading - ship.heading));
+  return isGunBearingBlocked(ship)
+    || actualRelative > FRONT_TURRET_TRAVERSE_LIMIT_RADIANS + 0.5 * Math.PI / 180;
+}
+
+export function isTurretAligned(ship: ShipState): boolean {
+  return Math.abs(turretAlignmentError(ship)) <= TURRET.fireToleranceRadians;
+}
+
+function moveShip(ship: ShipState, command: ControlCommand, dt: number): void {
+  ship.previousPosition = copyVec(ship.position);
+  ship.throttle = clamp(command.throttle, -0.25, 1);
+  ship.rudder = clamp(command.rudder, -1, 1);
+  ship.aimPoint = copyVec(command.aimPoint);
+
+  const engineRatio = moduleRatio(ship, "engine");
+  const steeringRatio = moduleRatio(ship, "steering");
+  const floodingSpeedFactor = 1 - clamp(ship.flooding / 100, 0, 1) * 0.32;
+  const equippedMaxSpeed = SHIP.maxSpeedKnots * ship.performance.maxSpeedMultiplier;
+  const effectiveMaxSpeed = equippedMaxSpeed * engineRatio * floodingSpeedFactor * Math.max(0, ship.throttle);
+  const reverseTarget = ship.throttle < 0 ? equippedMaxSpeed * ship.throttle * 0.28 : effectiveMaxSpeed;
+  const targetSpeed = ship.throttle < 0 ? reverseTarget : effectiveMaxSpeed;
+  const rate = (targetSpeed >= ship.speedKnots
+    ? SHIP.accelerationKnotsPerSecond
+    : SHIP.brakingKnotsPerSecond) * ship.performance.accelerationMultiplier;
+  ship.speedKnots += clamp(targetSpeed - ship.speedKnots, -rate * dt, rate * dt);
+
+  const speedRatio = clamp(Math.abs(ship.speedKnots) / equippedMaxSpeed, 0, 1);
+  const turnAuthority = steeringRatio * (0.2 + 0.8 * speedRatio);
+  const previousHeading = ship.heading;
+  ship.heading += ship.rudder * SHIP.maxTurnRateRadians * ship.performance.turnMultiplier * turnAuthority * dt;
+  ship.turnRateRadians = wrapAngle(ship.heading - previousHeading) / Math.max(dt, 0.0001);
+
+  const metersPerSecond = ship.speedKnots * KNOT_TO_MPS;
+  const moveX = Math.sin(ship.heading) * metersPerSecond * dt;
+  const moveZ = Math.cos(ship.heading) * metersPerSecond * dt;
+  ship.position.x += moveX;
+  ship.position.z += moveZ;
+  ship.distanceTravelled += Math.hypot(moveX, moveZ);
+  const gunRatio = moduleRatio(ship, "gun");
+  const gunDefinition = getMainGun(ship.mainGunId);
+  const traverseRate = gunRatio <= 0
+    ? 0
+    : gunDefinition.traverseDegreesPerSecond * Math.PI / 180 * (0.3 + gunRatio * 0.7);
+  const turretTarget = desiredTurretHeading(ship);
+  ship.gunTraverseBlocked = turretTarget.blocked;
+  const alignmentError = turretAlignmentError(ship);
+  ship.turretHeading = wrapAngle(
+    ship.turretHeading + clamp(alignmentError, -traverseRate * dt, traverseRate * dt),
+  );
+  ship.reloadRemaining = Math.max(0, ship.reloadRemaining - dt);
+  ship.torpedoReloadRemaining = Math.max(0, ship.torpedoReloadRemaining - dt);
+}
+
+export function ballisticVelocity(
+  origin: Vec3,
+  target: Vec3,
+  muzzleVelocity: number = GUN.muzzleVelocity,
+): Vec3 | null {
+  const dx = target.x - origin.x;
+  const dz = target.z - origin.z;
+  const range = Math.hypot(dx, dz);
+  if (range < 1) return null;
+
+  const speed = muzzleVelocity;
+  const verticalOffset = target.y - origin.y;
+  const discriminant = speed ** 4
+    - GUN.gravity * (GUN.gravity * range ** 2 + 2 * verticalOffset * speed ** 2);
+  if (discriminant < 0) return null;
+
+  const angle = Math.atan((speed ** 2 - Math.sqrt(discriminant)) / (GUN.gravity * range));
+  const horizontalSpeed = speed * Math.cos(angle);
+  return {
+    x: (dx / range) * horizontalSpeed,
+    y: speed * Math.sin(angle),
+    z: (dz / range) * horizontalSpeed,
+  };
+}
+
+export function predictTrajectory(
+  origin: Vec3,
+  target: Vec3,
+  points = 28,
+  muzzleVelocity: number = GUN.muzzleVelocity,
+): Vec3[] {
+  const velocity = ballisticVelocity(origin, target, muzzleVelocity);
+  if (!velocity) return [];
+  const horizontalRange = Math.hypot(target.x - origin.x, target.z - origin.z);
+  const horizontalSpeed = Math.hypot(velocity.x, velocity.z);
+  const flightTime = horizontalRange / horizontalSpeed;
+  return Array.from({ length: points }, (_, index) => {
+    const t = (flightTime * index) / (points - 1);
+    return {
+      x: origin.x + velocity.x * t,
+      y: origin.y + velocity.y * t - 0.5 * GUN.gravity * t * t,
+      z: origin.z + velocity.z * t,
+    };
+  });
+}
+
+export function dispersionAtRange(
+  range: number,
+  gunHealthRatio = 1,
+  upgradeMultiplier = 1,
+): { longitudinal: number; lateral: number } {
+  const gunDamageFactor = 1 + (1 - clamp(gunHealthRatio, 0, 1)) * 0.8;
+  return {
+    longitudinal: (12 + range * 0.012) * gunDamageFactor * upgradeMultiplier,
+    lateral: (5 + range * 0.007) * gunDamageFactor * upgradeMultiplier,
+  };
+}
+
+export function gunMuzzleOrigin(ship: ShipState): Vec3 {
+  const mountDistance = 31;
+  const barrelDistance = getMainGun(ship.mainGunId).visual.barrelLength * 0.88;
+  return {
+    x: ship.position.x
+      + Math.sin(ship.heading) * mountDistance
+      + Math.sin(ship.turretHeading) * barrelDistance,
+    y: GUN.muzzleHeight,
+    z: ship.position.z
+      + Math.cos(ship.heading) * mountDistance
+      + Math.cos(ship.turretHeading) * barrelDistance,
+  };
+}
+
+export function gunMuzzleOrigins(ship: ShipState): Vec3[] {
+  const center = gunMuzzleOrigin(ship);
+  const gunDefinition = getMainGun(ship.mainGunId);
+  const offsets = gunDefinition.visual.barrelCount === 2
+    ? [-gunDefinition.visual.barrelSpacing / 2, gunDefinition.visual.barrelSpacing / 2]
+    : [0];
+  return offsets.map((offset) => ({
+    x: center.x + Math.cos(ship.turretHeading) * offset,
+    y: center.y,
+    z: center.z - Math.sin(ship.turretHeading) * offset,
+  }));
+}
+
+export function turretAimPoint(ship: ShipState, origin = gunMuzzleOrigin(ship)): Vec3 {
+  const range = Math.max(
+    1,
+    Math.hypot(ship.aimPoint.x - origin.x, ship.aimPoint.z - origin.z),
+  );
+  return {
+    x: origin.x + Math.sin(ship.turretHeading) * range,
+    y: ship.aimPoint.y,
+    z: origin.z + Math.cos(ship.turretHeading) * range,
+  };
+}
+
+function dispersedAimPoint(
+  state: BattleState,
+  ship: ShipState,
+  origin: Vec3,
+  target: Vec3,
+): Vec3 {
+  const dx = target.x - origin.x;
+  const dz = target.z - origin.z;
+  const range = Math.max(1, Math.hypot(dx, dz));
+  const forwardX = dx / range;
+  const forwardZ = dz / range;
+  const rightX = forwardZ;
+  const rightZ = -forwardX;
+  const gunDefinition = getMainGun(ship.mainGunId);
+  const dispersion = dispersionAtRange(
+    range,
+    moduleRatio(ship, "gun"),
+    gunDefinition.dispersionMultiplier,
+  );
+  const centeredNoise = (): number =>
+    ((random(state) + random(state) + random(state)) - 1.5) / 1.5;
+  const longitudinalError = centeredNoise() * dispersion.longitudinal;
+  const lateralError = centeredNoise() * dispersion.lateral;
+  return {
+    x: target.x + forwardX * longitudinalError + rightX * lateralError,
+    y: target.y,
+    z: target.z + forwardZ * longitudinalError + rightZ * lateralError,
+  };
+}
+
+function fireGun(state: BattleState, ship: ShipState): void {
+  if (ship.reloadRemaining > 0 || ship.modules.gun.health <= 0 || isGunFireBlocked(ship)) return;
+  const gunDefinition = getMainGun(ship.mainGunId);
+  const origins = gunMuzzleOrigins(ship);
+  const damagePerShell = gunDefinition.damage / origins.length;
+  let firedShells = 0;
+  for (const origin of origins) {
+    const barrelAimPoint = turretAimPoint(ship, origin);
+    const actualAimPoint = dispersedAimPoint(state, ship, origin, barrelAimPoint);
+    const velocity = ballisticVelocity(origin, actualAimPoint, gunDefinition.muzzleVelocity);
+    if (!velocity) continue;
+    state.projectiles.push({
+      id: state.nextEntityId++,
+      ownerId: ship.id,
+      team: ship.team,
+      kind: "shell",
+      position: copyVec(origin),
+      previousPosition: copyVec(origin),
+      velocity,
+      damage: damagePerShell,
+      age: 0,
+    });
+    state.shots.push({
+      id: state.nextEntityId++,
+      ownerId: ship.id,
+      team: ship.team,
+      kind: "shell",
+      position: copyVec(origin),
+    });
+    firedShells += 1;
+  }
+  if (firedShells === 0) return;
+  const gunRatio = Math.max(0.25, moduleRatio(ship, "gun"));
+  ship.reloadRemaining = gunDefinition.reloadSeconds * ship.performance.reloadMultiplier / gunRatio;
+}
+
+function fireTorpedoes(state: BattleState, ship: ShipState): void {
+  if (ship.torpedoReloadRemaining > 0 || ship.modules.gun.health <= 0) return;
+  const dx = ship.aimPoint.x - ship.position.x;
+  const dz = ship.aimPoint.z - ship.position.z;
+  const length = Math.max(1, Math.hypot(dx, dz));
+  const forwardX = dx / length;
+  const forwardZ = dz / length;
+  const rightX = forwardZ;
+  const rightZ = -forwardX;
+  for (const side of [-1, 1]) {
+    const origin = {
+      x: ship.position.x + forwardX * 3 + rightX * TORPEDO.launchOffset * side,
+      y: 0.35,
+      z: ship.position.z + forwardZ * 3 + rightZ * TORPEDO.launchOffset * side,
+    };
+    state.projectiles.push({
+      id: state.nextEntityId++,
+      ownerId: ship.id,
+      team: ship.team,
+      kind: "torpedo",
+      position: copyVec(origin),
+      previousPosition: copyVec(origin),
+      velocity: {
+        x: forwardX * TORPEDO.speedMetersPerSecond,
+        y: 0,
+        z: forwardZ * TORPEDO.speedMetersPerSecond,
+      },
+      damage: TORPEDO.damage,
+      age: 0,
+    });
+    state.shots.push({
+      id: state.nextEntityId++,
+      ownerId: ship.id,
+      team: ship.team,
+      kind: "torpedo",
+      position: copyVec(origin),
+    });
+  }
+  ship.torpedoReloadRemaining = TORPEDO.reloadSeconds;
+}
+
+function shipLocalPoint(ship: ShipState, point: Vec3): { longitudinal: number; lateral: number } {
+  const dx = point.x - ship.position.x;
+  const dz = point.z - ship.position.z;
+  const forwardX = Math.sin(ship.heading);
+  const forwardZ = Math.cos(ship.heading);
+  return {
+    longitudinal: dx * forwardX + dz * forwardZ,
+    lateral: dx * forwardZ - dz * forwardX,
+  };
+}
+
+function compartmentAt(longitudinal: number): CompartmentId {
+  if (longitudinal > SHIP.length * 0.27) return "bow";
+  if (longitudinal > SHIP.length * 0.06) return "bridge";
+  if (longitudinal > -SHIP.length * 0.14) return "engineRoom";
+  if (longitudinal > -SHIP.length * 0.31) return "magazine";
+  return "stern";
+}
+
+export function collisionDamageMultiplierFor(compartment: CompartmentId): number {
+  return COLLISION_DAMAGE_MULTIPLIER[compartment];
+}
+
+function projectileHitPoint(projectile: ProjectileState, ship: ShipState): Vec3 | null {
+  const start = projectile.previousPosition;
+  const end = projectile.position;
+  const steps = 5;
+  for (let index = 0; index <= steps; index += 1) {
+    const t = index / steps;
+    const point = {
+      x: start.x + (end.x - start.x) * t,
+      y: start.y + (end.y - start.y) * t,
+      z: start.z + (end.z - start.z) * t,
+    };
+    if (point.y < 0 || point.y > SHIP.deckHeight + 5) continue;
+    const local = shipLocalPoint(ship, point);
+    if (
+      Math.abs(local.longitudinal) <= SHIP.length / 2
+      && Math.abs(local.lateral) <= SHIP.beam / 2 + 2
+    ) return point;
+  }
+  return null;
+}
+
+function damageModule(
+  state: BattleState,
+  ship: ShipState,
+  compartment: CompartmentId,
+  baseDamage: number,
+): { moduleId: ModuleId; moduleDamage: number } {
+  const candidates: Record<CompartmentId, ModuleId[]> = {
+    bow: ["gun", "gun", "crew"],
+    bridge: ["crew", "steering", "gun", "crew"],
+    engineRoom: ["engine", "engine", "crew"],
+    magazine: ["magazine", "magazine", "engine", "crew"],
+    stern: ["steering", "engine", "crew"],
+  };
+  const list = candidates[compartment];
+  const moduleId = list[Math.floor(random(state) * list.length)] ?? "crew";
+  const module = ship.modules[moduleId];
+  const moduleDamage = baseDamage * (0.42 + random(state) * 0.28);
+  module.health = Math.max(0, module.health - moduleDamage);
+
+  if (moduleId === "magazine") {
+    applyHullDamage(ship, baseDamage * 0.35, 0.72);
+  }
+  return { moduleId, moduleDamage };
+}
+
+function applyHit(state: BattleState, projectile: ProjectileState, ship: ShipState, point: Vec3): void {
+  const local = shipLocalPoint(ship, point);
+  const compartment = compartmentAt(local.longitudinal);
+  const compartmentHealth = ship.compartments[compartment];
+  const damage = Math.min(projectile.damage, compartmentHealth + 30);
+  ship.compartments[compartment] = Math.max(0, compartmentHealth - damage * 0.72);
+  applyHullDamage(ship, damage, 0.38);
+  const moduleHit = damageModule(state, ship, compartment, damage);
+  const fireChance = compartment === "magazine" ? 0.48
+    : compartment === "engineRoom" || compartment === "bridge" ? 0.34 : 0.2;
+  const floodChance = projectile.kind === "torpedo"
+    ? 0.92
+    : compartment === "bow" || compartment === "stern" ? 0.42 : 0.25;
+  const startedFire = random(state) < fireChance;
+  const startedFlooding = random(state) < floodChance;
+  if (startedFire) ship.fireIntensity = clamp(ship.fireIntensity + 18 + random(state) * 28, 0, 100);
+  if (startedFlooding) ship.flooding = clamp(
+    ship.flooding + (projectile.kind === "torpedo" ? 38 : 14) + random(state) * 24,
+    0,
+    100,
+  );
+  state.impacts.push({
+    id: state.nextEntityId++,
+    kind: "hit",
+    position: copyVec(point),
+    targetId: ship.id,
+    damage,
+    compartment,
+    module: moduleHit.moduleId,
+    moduleDamage: moduleHit.moduleDamage,
+    startedFire,
+    startedFlooding,
+  });
+}
+
+interface HorizontalAxis {
+  x: number;
+  z: number;
+}
+
+function shipAxes(ship: ShipState): { forward: HorizontalAxis; right: HorizontalAxis } {
+  return {
+    forward: { x: Math.sin(ship.heading), z: Math.cos(ship.heading) },
+    right: { x: Math.cos(ship.heading), z: -Math.sin(ship.heading) },
+  };
+}
+
+function projectionRadius(ship: ShipState, axis: HorizontalAxis): number {
+  const axes = shipAxes(ship);
+  const forwardDot = Math.abs(axes.forward.x * axis.x + axes.forward.z * axis.z);
+  const rightDot = Math.abs(axes.right.x * axis.x + axes.right.z * axis.z);
+  return SHIP.length * 0.48 * forwardDot + SHIP.beam * 0.55 * rightDot;
+}
+
+interface CollisionManifold {
+  normal: HorizontalAxis;
+  penetration: number;
+}
+
+function collisionManifold(left: ShipState, right: ShipState): CollisionManifold | null {
+  const delta = {
+    x: right.position.x - left.position.x,
+    z: right.position.z - left.position.z,
+  };
+  const leftAxes = shipAxes(left);
+  const rightAxes = shipAxes(right);
+  const axes = [leftAxes.forward, leftAxes.right, rightAxes.forward, rightAxes.right];
+  let minimumPenetration = Number.POSITIVE_INFINITY;
+  let minimumAxis = axes[0] ?? { x: 1, z: 0 };
+  for (const axis of axes) {
+    const centerProjection = Math.abs(delta.x * axis.x + delta.z * axis.z);
+    const penetration = projectionRadius(left, axis) + projectionRadius(right, axis) - centerProjection;
+    if (penetration < 0) return null;
+    if (penetration < minimumPenetration) {
+      minimumPenetration = penetration;
+      const direction = delta.x * axis.x + delta.z * axis.z >= 0 ? 1 : -1;
+      minimumAxis = { x: axis.x * direction, z: axis.z * direction };
+    }
+  }
+  return { normal: minimumAxis, penetration: minimumPenetration };
+}
+
+function collisionCompartment(ship: ShipState, other: ShipState): CompartmentId {
+  const local = shipLocalPoint(ship, other.position);
+  return compartmentAt(clamp(local.longitudinal, -SHIP.length / 2, SHIP.length / 2));
+}
+
+function applyCollisionDamage(
+  state: BattleState,
+  ship: ShipState,
+  other: ShipState,
+  baseDamage: number,
+  position: Vec3,
+): void {
+  const compartment = collisionCompartment(ship, other);
+  const damage = baseDamage * collisionDamageMultiplierFor(compartment);
+  const compartmentHealth = ship.compartments[compartment];
+  ship.compartments[compartment] = Math.max(0, compartmentHealth - damage * 0.58);
+  applyHullDamage(ship, damage, 0.58);
+  const moduleHit = damageModule(state, ship, compartment, damage);
+  const startedFlooding = random(state) < Math.min(0.68, 0.12 + damage / 210);
+  if (startedFlooding) ship.flooding = clamp(ship.flooding + 10 + damage * 0.22, 0, 100);
+  state.impacts.push({
+    id: state.nextEntityId++,
+    kind: "collision",
+    position: copyVec(position),
+    targetId: ship.id,
+    otherShipId: other.id,
+    damage,
+    compartment,
+    module: moduleHit.moduleId,
+    moduleDamage: moduleHit.moduleDamage,
+    startedFlooding,
+  });
+}
+
+function resolveShipCollisions(state: BattleState): void {
+  for (let leftIndex = 0; leftIndex < state.ships.length; leftIndex += 1) {
+    const left = state.ships[leftIndex];
+    if (!left || left.hull <= 0) continue;
+    for (let rightIndex = leftIndex + 1; rightIndex < state.ships.length; rightIndex += 1) {
+      const right = state.ships[rightIndex];
+      if (!right || right.hull <= 0) continue;
+      const manifold = collisionManifold(left, right);
+      if (!manifold) continue;
+      const separation = manifold.penetration + 0.8;
+      const leftShare = right.isTestTarget ? 1 : left.isTestTarget ? 0 : 0.5;
+      const rightShare = left.isTestTarget ? 1 : right.isTestTarget ? 0 : 0.5;
+      left.position.x -= manifold.normal.x * separation * leftShare;
+      left.position.z -= manifold.normal.z * separation * leftShare;
+      right.position.x += manifold.normal.x * separation * rightShare;
+      right.position.z += manifold.normal.z * separation * rightShare;
+
+      const leftVelocity = left.speedKnots * KNOT_TO_MPS;
+      const rightVelocity = right.speedKnots * KNOT_TO_MPS;
+      const relativeX = Math.sin(left.heading) * leftVelocity - Math.sin(right.heading) * rightVelocity;
+      const relativeZ = Math.cos(left.heading) * leftVelocity - Math.cos(right.heading) * rightVelocity;
+      const relativeSpeed = Math.hypot(relativeX, relativeZ);
+      const baseDamage = clamp(
+        (relativeSpeed - COLLISION.minimumRelativeSpeedMps) * COLLISION.damagePerRelativeMps,
+        0,
+        COLLISION.maximumBaseDamage,
+      );
+      const pairKey = [left.id, right.id].sort().join(":");
+      const ready = (state.collisionCooldowns[pairKey] ?? 0) <= state.time;
+      if (baseDamage > 0.5 && ready) {
+        const impactPosition = {
+          x: (left.position.x + right.position.x) / 2,
+          y: SHIP.deckHeight * 0.45,
+          z: (left.position.z + right.position.z) / 2,
+        };
+        applyCollisionDamage(state, left, right, baseDamage, impactPosition);
+        applyCollisionDamage(state, right, left, baseDamage, impactPosition);
+        state.collisionCooldowns[pairKey] = state.time + COLLISION.cooldownSeconds;
+      }
+      left.speedKnots *= left.isTestTarget ? 0 : 0.12;
+      right.speedKnots *= right.isTestTarget ? 0 : 0.12;
+    }
+  }
+}
+
+function advanceProjectiles(state: BattleState, dt: number): void {
+  const active: ProjectileState[] = [];
+  for (const projectile of state.projectiles) {
+    projectile.previousPosition = copyVec(projectile.position);
+    projectile.position.x += projectile.velocity.x * dt;
+    projectile.position.y += projectile.velocity.y * dt;
+    projectile.position.z += projectile.velocity.z * dt;
+    if (projectile.kind === "shell") projectile.velocity.y -= GUN.gravity * dt;
+    projectile.age += dt;
+
+    let consumed = false;
+    for (const ship of state.ships) {
+      if (ship.team === projectile.team || ship.hull <= 0) continue;
+      const hitPoint = projectileHitPoint(projectile, ship);
+      if (hitPoint) {
+        applyHit(state, projectile, ship, hitPoint);
+        consumed = true;
+        break;
+      }
+    }
+
+    if (!consumed && projectile.kind === "shell" && projectile.position.y <= 0 && projectile.age > 0.1) {
+      state.impacts.push({
+        id: state.nextEntityId++,
+        kind: "splash",
+        position: { x: projectile.position.x, y: 0, z: projectile.position.z },
+      });
+      consumed = true;
+    }
+    const lifetime = projectile.kind === "torpedo" ? TORPEDO.lifetimeSeconds : 18;
+    if (!consumed && projectile.age < lifetime) active.push(projectile);
+  }
+  state.projectiles = active;
+}
+
+function repairModules(ship: ShipState, dt: number): void {
+  const crewRatio = moduleRatio(ship, "crew");
+  for (const moduleId of Object.keys(ship.modules) as ModuleId[]) {
+    const module = ship.modules[moduleId];
+    if (module.health <= 0 || module.health >= module.maxHealth) continue;
+    const crewFactor = moduleId === "crew" ? 1 : 0.15 + 0.85 * crewRatio;
+    module.health = Math.min(
+      module.maxHealth,
+      module.health + BASE_REPAIR_PER_SECOND[moduleId] * crewFactor * dt,
+    );
+  }
+}
+
+function updateDamageControl(ship: ShipState, dt: number): void {
+  const crewRatio = moduleRatio(ship, "crew");
+  const damageControl = 0.18 + crewRatio * 0.82;
+  if (ship.fireIntensity > 0) {
+    applyHullDamage(
+      ship,
+      ship.fireIntensity * DAMAGE_CONTROL.fireHullDamagePerPointSecond * dt,
+      0.52,
+    );
+    ship.fireIntensity = Math.max(
+      0,
+      ship.fireIntensity - DAMAGE_CONTROL.baseFireReductionPerSecond * damageControl * dt,
+    );
+  }
+  if (ship.flooding > 0) {
+    applyHullDamage(
+      ship,
+      ship.flooding * DAMAGE_CONTROL.floodingHullDamagePerPointSecond * dt,
+      0.6,
+    );
+    ship.flooding = Math.max(
+      0,
+      ship.flooding - DAMAGE_CONTROL.baseFloodReductionPerSecond * damageControl * dt,
+    );
+  }
+}
+
+function repairHull(ship: ShipState, active: boolean, dt: number): void {
+  if (!active || ship.hull <= 0 || ship.hull >= ship.recoverableHull) return;
+  const crewRatio = moduleRatio(ship, "crew");
+  const crewFactor = HULL_REPAIR.minimumCrewFactor
+    + (1 - HULL_REPAIR.minimumCrewFactor) * crewRatio;
+  ship.hull = Math.min(
+    ship.recoverableHull,
+    ship.hull + HULL_REPAIR.pointsPerSecond * crewFactor * dt,
+  );
+}
+
+function updateStatus(state: BattleState): void {
+  const player = state.ships.find((ship) => ship.team === "player");
+  const enemy = state.ships.find((ship) => ship.team === "enemy");
+  if (!player || player.hull <= 0) {
+    state.status = "enemy-won";
+    state.endReason = "destroyed";
+  } else if (state.mode === "sea-trials") {
+    return;
+  } else if (!enemy || enemy.hull <= 0) {
+    state.status = "player-won";
+    state.endReason = "destroyed";
+  } else if (state.time >= BATTLE_DURATION_SECONDS) {
+    const playerRatio = player.hull / player.maxHull;
+    const enemyRatio = enemy.hull / enemy.maxHull;
+    state.status = Math.abs(playerRatio - enemyRatio) < 0.01
+      ? "draw"
+      : playerRatio > enemyRatio
+        ? "player-won"
+        : "enemy-won";
+    state.endReason = "time";
+  }
+}
+
+export function observe(state: BattleState, shipId: string) {
+  const self = state.ships.find((ship) => ship.id === shipId);
+  if (!self) throw new Error(`Unknown ship: ${shipId}`);
+  return {
+    self,
+    enemies: state.ships.filter((ship) => ship.team !== self.team && ship.hull > 0),
+    time: state.time,
+  };
+}
+
+export function stepSimulation(
+  state: BattleState,
+  commands: ReadonlyMap<string, ControlCommand>,
+  dt = FIXED_STEP,
+): void {
+  if (state.status !== "running") return;
+  state.shots = [];
+  state.impacts = [];
+  state.time += dt;
+  for (const ship of state.ships) {
+    if (ship.hull <= 0) continue;
+    const command = commands.get(ship.id) ?? { ...zeroCommand, aimPoint: ship.aimPoint };
+    moveShip(ship, command, dt);
+    repairModules(ship, dt);
+    updateDamageControl(ship, dt);
+    repairHull(ship, Boolean(command.repairHull), dt);
+    if (command.fire) {
+      if ((command.weaponSlot ?? "mainGun") === "mainGun") fireGun(state, ship);
+      else if (command.weaponSlot === "torpedo") fireTorpedoes(state, ship);
+    }
+  }
+  resolveShipCollisions(state);
+  advanceProjectiles(state, dt);
+  updateStatus(state);
+}
