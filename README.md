@@ -4,9 +4,11 @@
 
 # Super Boring Battleship Game
 
+**Official Chinese title / 正式中文名：Game：超级无聊战舰游戏**
+
 > A deliberately unhurried, lightweight 3D WWII destroyer combat prototype by **koko**.
 
-[Download the latest Windows build](../../releases/latest) · [中文说明](#超级无聊战舰游戏)
+[Download the latest Windows build](https://github.com/Arsenic-er/Game-Super-Boring-Battleship/releases/latest) · [中文说明](#game超级无聊战舰游戏)
 
 ## About the game
 
@@ -77,11 +79,11 @@ Third-party libraries and the Fusion Pixel Font remain under their respective li
 
 ---
 
-# 超级无聊战舰游戏
+# Game：超级无聊战舰游戏
 
 > 由 **koko** 制作的、节奏刻意偏慢并照顾普通电脑配置的二战驱逐舰 3D 战斗原型。
 
-[下载最新版 Windows 压缩包](../../releases/latest) · [返回英文介绍](#super-boring-battleship-game)
+[下载最新版 Windows 压缩包](https://github.com/Arsenic-er/Game-Super-Boring-Battleship/releases/latest) · [返回英文介绍](#super-boring-battleship-game)
 
 ## 游戏简介
 
