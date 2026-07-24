@@ -17,6 +17,23 @@ export const OBJECTIVE = {
   destroyScore: 100,
 } as const;
 
+export const SENSOR = {
+  observationIntervalSeconds: 2.5,
+  acquisitionSamples: 2,
+  guaranteedDetectionMeters: 1_700,
+  maximumDetectionMeters: 3_400,
+  burningDetectionBonusMeters: 650,
+  highSpeedDetectionBonusMeters: 220,
+  nearBearingErrorRadians: 0.45 * Math.PI / 180,
+  farBearingErrorRadians: 2.4 * Math.PI / 180,
+  nearRangeErrorFraction: 0.012,
+  farRangeErrorFraction: 0.075,
+  headingErrorRadians: 8 * Math.PI / 180,
+  speedErrorKnots: 2.8,
+  fireFromMemorySeconds: 6,
+  memorySeconds: 24,
+} as const;
+
 export const SHIP = {
   length: 112,
   beam: 11,

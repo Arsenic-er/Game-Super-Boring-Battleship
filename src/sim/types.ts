@@ -18,6 +18,7 @@ export type AmmoType = "he" | "ap";
 export type PenetrationResult = "penetration" | "overpenetration" | "ricochet" | "shatter";
 export type ArmorZoneId = "side" | "end" | "deck";
 export type DamageControlPriority = "balanced" | "fire" | "flood" | "module";
+export type PerceptionMode = "unaware" | "acquiring" | "tracking" | "lost" | "searching";
 
 export interface DamageControlAllocation {
   fire: number;
@@ -35,6 +36,31 @@ export interface ObjectiveState {
   contested: boolean;
   occupants: Record<Team, number>;
   scores: Record<Team, number>;
+}
+
+export type ObjectiveObservation = Omit<ObjectiveState, "occupants">;
+
+export interface SensorContact {
+  id: string;
+  team: Team;
+  observedAt: number;
+  position: Vec3;
+  heading: number;
+  speedKnots: number;
+  rangeMeters: number;
+  confidence: number;
+}
+
+export interface SensorSnapshot {
+  sampleIndex: number;
+  contacts: SensorContact[];
+}
+
+export interface PerceptionTelemetry {
+  mode: PerceptionMode;
+  confidence: number;
+  lastObservedAt?: number;
+  estimatedPosition?: Vec3;
 }
 
 export interface ModuleState {
@@ -78,6 +104,7 @@ export interface ShipState {
   damageControlAllocation: DamageControlAllocation;
   damageControlModule?: ModuleId;
   hullRepairActive: boolean;
+  perception?: PerceptionTelemetry;
   distanceTravelled: number;
   turnRateRadians: number;
   isTestTarget?: boolean;
@@ -138,6 +165,7 @@ export interface BattleState {
   nextEntityId: number;
   randomSeed: number;
   collisionCooldowns: Record<string, number>;
+  sensorSnapshots: Record<string, SensorSnapshot>;
 }
 
 export interface ControlCommand {
@@ -149,12 +177,13 @@ export interface ControlCommand {
   repairHull?: boolean;
   damageControlPriority?: DamageControlPriority;
   ammoType?: AmmoType;
+  perception?: PerceptionTelemetry;
 }
 
 export interface Observation {
   self: Readonly<ShipState>;
-  enemies: readonly Readonly<ShipState>[];
-  objective: Readonly<ObjectiveState>;
+  contacts: readonly Readonly<SensorContact>[];
+  objective: Readonly<ObjectiveObservation>;
   time: number;
 }
 

@@ -33,6 +33,7 @@ export class DeveloperPanel {
   private readonly element: HTMLElement;
   private readonly shipSelect: HTMLSelectElement;
   private readonly live: HTMLElement;
+  private readonly perception: HTMLElement;
   private open = false;
 
   constructor(
@@ -47,6 +48,7 @@ export class DeveloperPanel {
       <header><div><small>DEVELOPER TOOLS · F3</small><h2>舰船状态调试器</h2></div><button data-action="close" type="button">×</button></header>
       <label class="dev-select"><span>调试对象</span><select data-role="ship"></select></label>
       <div class="dev-live" data-role="live">等待状态</div>
+      <div class="dev-perception" data-role="perception">感知：无遥测</div>
       <section class="dev-section">
         <h3>船体与运动</h3>
         ${this.field("hull", "当前生命", 0, 1000, 1)}
@@ -89,9 +91,11 @@ export class DeveloperPanel {
     parent.append(this.element);
     const shipSelect = this.element.querySelector<HTMLSelectElement>('[data-role="ship"]');
     const live = this.element.querySelector<HTMLElement>('[data-role="live"]');
-    if (!shipSelect || !live) throw new Error("Missing developer panel controls");
+    const perception = this.element.querySelector<HTMLElement>('[data-role="perception"]');
+    if (!shipSelect || !live || !perception) throw new Error("Missing developer panel controls");
     this.shipSelect = shipSelect;
     this.live = live;
+    this.perception = perception;
     this.bindControls();
   }
 
@@ -293,5 +297,24 @@ export class DeveloperPanel {
     const ship = this.selectedShip();
     if (!ship) return;
     this.live.textContent = `速度 ${ship.speedKnots.toFixed(1)} kn · 转向率 ${(ship.turnRateRadians * 180 / Math.PI).toFixed(2)}°/s · 坐标 ${ship.position.x.toFixed(0)}, ${ship.position.z.toFixed(0)}`;
+    const telemetry = ship.perception;
+    if (!telemetry) {
+      this.perception.textContent = "感知：玩家/无 AI 遥测";
+      return;
+    }
+    const labels = {
+      unaware: "未发现",
+      acquiring: "识别中",
+      tracking: "稳定跟踪",
+      lost: "目标丢失",
+      searching: "搜索预测区",
+    };
+    const age = telemetry.lastObservedAt === undefined
+      ? "—"
+      : `${Math.max(0, this.getState().time - telemetry.lastObservedAt).toFixed(1)} s`;
+    const position = telemetry.estimatedPosition
+      ? `${telemetry.estimatedPosition.x.toFixed(0)}, ${telemetry.estimatedPosition.z.toFixed(0)}`
+      : "—";
+    this.perception.textContent = `感知 ${labels[telemetry.mode]} · 置信度 ${(telemetry.confidence * 100).toFixed(0)}% · 观测龄 ${age} · 估位 ${position}`;
   }
 }

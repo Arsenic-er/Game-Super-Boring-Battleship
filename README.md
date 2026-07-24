@@ -24,6 +24,7 @@ This is an early prototype rather than a finished commercial game. Visuals, bala
 - Weapon slots: `1` main guns, `2` twin torpedo launch, `3` reserved aircraft slot.
 - Hull compartments, module damage, fire, flooding, crew-dependent repair and recoverable health.
 - Central objective A with capture progress, contested superiority, team scores and score victory.
+- Non-omniscient AI optics with sampled noisy contacts, acquisition, target loss, search and reacquisition; firing requires a live track.
 - Physical ship collision and location-dependent collision damage.
 - Tactical minimap and full map, dedicated aiming scope, developer diagnostics and adjustable sensitivity.
 - Local captain profile, supply draws, component inventory, upgrades and a modular dockyard preview.
@@ -97,6 +98,7 @@ Third-party libraries and the Fusion Pixel Font remain under their respective li
 
 - 10 分钟人机战斗，以及没有时间限制的舰船测试模式。
 - 中央 A 区占领、区域优势、双方积分与积分胜利。
+- 非全知 AI 光学观测：目标测量有刷新间隔与误差，并包含识别、丢失、搜索和重获；没有实时跟踪时禁止开火。
 - 接近现实节奏的驱逐舰航速、车钟和舵机操纵。
 - 可见炮弹轨迹、散布、装填进度、炮管实际指向与独立火控准线。
 - HE/AP 弹药切换、装甲入射角、跳弹、碎弹、正常穿透与过度穿透。

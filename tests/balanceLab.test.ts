@@ -36,5 +36,9 @@ describe("headless balance lab", () => {
     expect(report.playerHitRate).toBeLessThanOrEqual(1);
     expect(report.enemyHitRate).toBeGreaterThanOrEqual(0);
     expect(report.enemyHitRate).toBeLessThanOrEqual(1);
+    expect(report.firstTrackingSeconds.player.p50).toBeGreaterThanOrEqual(0);
+    expect(report.averageTrackingFraction.player).toBeGreaterThan(0);
+    expect(report.averageTrackingFraction.enemy).toBeGreaterThan(0);
+    expect(report.shotsWhileUntracked).toBe(0);
   });
 });

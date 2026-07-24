@@ -1,7 +1,13 @@
 import { RuleBasedAi } from "../controllers/ruleBasedAi";
 import { FIXED_STEP } from "./config";
 import { createInitialState, observe, stepSimulation } from "./simulation";
-import type { BattleEndReason, BattleState, BattleStatus, Team } from "./types";
+import type {
+  BattleEndReason,
+  BattleState,
+  BattleStatus,
+  PerceptionMode,
+  Team,
+} from "./types";
 
 export interface TeamCombatMetrics {
   shots: number;
@@ -16,6 +22,8 @@ export interface TeamCombatMetrics {
   firesStarted: number;
   floodsStarted: number;
   moduleHits: number;
+  perceptionSeconds: Record<PerceptionMode, number>;
+  shotsWhileUntracked: number;
 }
 
 export interface BattleTelemetry {
@@ -24,6 +32,7 @@ export interface BattleTelemetry {
   endReason?: BattleEndReason;
   durationSeconds: number;
   firstHitSeconds?: number;
+  firstTrackingSeconds: Partial<Record<Team, number>>;
   player: TeamCombatMetrics;
   enemy: TeamCombatMetrics;
   collisions: number;
@@ -77,6 +86,12 @@ export interface BalanceReport {
   averageEnemyControlSeconds: number;
   averagePlayerScore: number;
   averageEnemyScore: number;
+  firstTrackingSeconds: {
+    player: PercentileSummary;
+    enemy: PercentileSummary;
+  };
+  averageTrackingFraction: Record<Team, number>;
+  shotsWhileUntracked: number;
 }
 
 const emptyTeamMetrics = (): TeamCombatMetrics => ({
@@ -92,6 +107,14 @@ const emptyTeamMetrics = (): TeamCombatMetrics => ({
   firesStarted: 0,
   floodsStarted: 0,
   moduleHits: 0,
+  perceptionSeconds: {
+    unaware: 0,
+    acquiring: 0,
+    tracking: 0,
+    lost: 0,
+    searching: 0,
+  },
+  shotsWhileUntracked: 0,
 });
 
 const round = (value: number, digits = 4): number => {
@@ -182,6 +205,7 @@ export function runHeadlessBattle(
     enemy: emptyTeamMetrics(),
   };
   let firstHitSeconds: number | undefined;
+  const firstTrackingSeconds: Partial<Record<Team, number>> = {};
   let firstCaptureSeconds: number | undefined;
   let collisions = 0;
   let contestedSeconds = 0;
@@ -196,6 +220,13 @@ export function runHeadlessBattle(
       ["player", controllers.player.command(observe(state, "player"))],
       ["enemy", controllers.enemy.command(observe(state, "enemy"))],
     ]);
+    for (const [shipId, command] of commands) {
+      const team = state.ships.find((ship) => ship.id === shipId)?.team;
+      const mode = command.perception?.mode;
+      if (!team || !mode) continue;
+      metrics[team].perceptionSeconds[mode] += FIXED_STEP;
+      if (mode === "tracking") firstTrackingSeconds[team] ??= state.time;
+    }
     stepSimulation(state, commands, FIXED_STEP);
     if (state.objective.owner) firstCaptureSeconds ??= state.time;
     if (state.objective.contested) contestedSeconds += FIXED_STEP;
@@ -205,6 +236,9 @@ export function runHeadlessBattle(
     const teamsFiring = new Set<Team>();
     for (const shot of state.shots) {
       metrics[shot.team].shots += 1;
+      if (commands.get(shot.ownerId)?.perception?.mode !== "tracking") {
+        metrics[shot.team].shotsWhileUntracked += 1;
+      }
       teamsFiring.add(shot.team);
     }
     for (const team of teamsFiring) metrics[team].salvos += 1;
@@ -240,6 +274,7 @@ export function runHeadlessBattle(
     endReason: state.endReason,
     durationSeconds: state.time,
     firstHitSeconds,
+    firstTrackingSeconds,
     player: metrics.player,
     enemy: metrics.enemy,
     collisions,
@@ -343,6 +378,27 @@ export function summarizeBattles(battles: readonly BattleTelemetry[]): BalanceRe
     averageEnemyScore: round(
       safeRate(total((battle) => battle.finalScores.enemy), runs),
       2,
+    ),
+    firstTrackingSeconds: {
+      player: percentiles(battles.flatMap((battle) =>
+        battle.firstTrackingSeconds.player === undefined
+          ? [] : [battle.firstTrackingSeconds.player])),
+      enemy: percentiles(battles.flatMap((battle) =>
+        battle.firstTrackingSeconds.enemy === undefined
+          ? [] : [battle.firstTrackingSeconds.enemy])),
+    },
+    averageTrackingFraction: {
+      player: round(safeRate(
+        total((battle) => battle.player.perceptionSeconds.tracking),
+        total((battle) => battle.durationSeconds),
+      ), 4),
+      enemy: round(safeRate(
+        total((battle) => battle.enemy.perceptionSeconds.tracking),
+        total((battle) => battle.durationSeconds),
+      ), 4),
+    },
+    shotsWhileUntracked: total(
+      (battle) => battle.player.shotsWhileUntracked + battle.enemy.shotsWhileUntracked,
     ),
   };
 }

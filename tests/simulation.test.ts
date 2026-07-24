@@ -5,6 +5,7 @@ import {
   FIXED_STEP,
   GUN,
   OBJECTIVE,
+  SENSOR,
 } from "../src/sim/config";
 import {
   FRONT_TURRET_TRAVERSE_LIMIT_RADIANS,
@@ -214,6 +215,68 @@ describe("deterministic battle simulation", () => {
     expect(splashes).toBeGreaterThan(0);
     expect(hits).toBeLessThan(splashes);
     expect(hits / (hits + splashes)).toBeLessThan(0.35);
+  });
+
+  it("publishes sampled noisy contacts without exposing live enemy state", () => {
+    const state = createInitialState(177);
+    const player = state.ships.find((ship) => ship.id === "player")!;
+    const enemy = state.ships.find((ship) => ship.id === "enemy")!;
+    enemy.position = {
+      x: player.position.x + 1_150,
+      y: player.position.y,
+      z: player.position.z + 250,
+    };
+    state.time = SENSOR.observationIntervalSeconds + 0.1;
+    const first = observe(state, "player");
+    const second = observe(state, "player");
+    expect(first.contacts).toHaveLength(1);
+    expect(second.contacts).toEqual(first.contacts);
+    expect(first.contacts[0]).not.toBe(enemy);
+    expect(first.contacts[0]!.position).not.toBe(enemy.position);
+    expect(first.contacts[0]!.position).not.toEqual(enemy.position);
+    expect("hull" in first.contacts[0]!).toBe(false);
+    expect("occupants" in first.objective).toBe(false);
+
+    state.time += SENSOR.observationIntervalSeconds;
+    const nextScan = observe(state, "player");
+    expect(nextScan.contacts).toHaveLength(1);
+    expect(nextScan.contacts[0]!.observedAt).toBeGreaterThan(first.contacts[0]!.observedAt);
+    expect(nextScan.contacts[0]!.position).not.toEqual(first.contacts[0]!.position);
+  });
+
+  it("requires acquisition and forbids firing after optical contact is lost", () => {
+    const state = createInitialState(178);
+    const observer = state.ships.find((ship) => ship.id === "enemy")!;
+    const target = state.ships.find((ship) => ship.id === "player")!;
+    target.position = {
+      x: observer.position.x + 1_100,
+      y: observer.position.y,
+      z: observer.position.z + 300,
+    };
+    const ai = new RuleBasedAi(178);
+    const first = ai.command(observe(state, "enemy"));
+    expect(first.perception?.mode).toBe("acquiring");
+    expect(first.fire).toBe(false);
+
+    state.time = SENSOR.observationIntervalSeconds + 0.1;
+    const tracked = ai.command(observe(state, "enemy"));
+    expect(tracked.perception?.mode).toBe("tracking");
+
+    target.position = {
+      x: observer.position.x + SENSOR.maximumDetectionMeters + 2_000,
+      y: observer.position.y,
+      z: observer.position.z,
+    };
+    state.time += SENSOR.observationIntervalSeconds;
+    const lost = ai.command(observe(state, "enemy"));
+    expect(lost.perception?.mode).toBe("lost");
+    expect(lost.fire).toBe(false);
+    expect(lost.perception?.estimatedPosition).not.toEqual(target.position);
+
+    state.time += SENSOR.memorySeconds + SENSOR.observationIntervalSeconds;
+    const unaware = ai.command(observe(state, "enemy"));
+    expect(unaware.perception?.mode).toBe("unaware");
+    expect(unaware.fire).toBe(false);
   });
 
   it("keeps sea trials running without an enemy or time limit", () => {

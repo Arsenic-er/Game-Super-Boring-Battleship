@@ -14,6 +14,7 @@ import {
   MODULE_MAX_HEALTH,
   OBJECTIVE,
   SHIP,
+  SENSOR,
   TURRET,
 } from "./config";
 import {
@@ -38,6 +39,7 @@ import type {
   Team,
   Vec3,
   ShipPerformanceModifiers,
+  SensorContact,
 } from "./types";
 
 const zeroCommand: ControlCommand = {
@@ -69,6 +71,24 @@ const wrapAngle = (angle: number): number => {
   while (wrapped < -Math.PI) wrapped += Math.PI * 2;
   return wrapped;
 };
+
+function stringSeed(value: string): number {
+  let seed = 2_166_136_261;
+  for (let index = 0; index < value.length; index += 1) {
+    seed ^= value.charCodeAt(index);
+    seed = Math.imul(seed, 16_777_619);
+  }
+  return seed >>> 0;
+}
+
+function sensorUnit(value: number): number {
+  let mixed = value >>> 0;
+  mixed = Math.imul(mixed ^ mixed >>> 16, 0x7feb352d);
+  mixed = Math.imul(mixed ^ mixed >>> 15, 0x846ca68b);
+  return ((mixed ^ mixed >>> 16) >>> 0) / 0x1_0000_0000;
+}
+
+const sensorSigned = (value: number): number => sensorUnit(value) * 2 - 1;
 
 function createModules(): ShipState["modules"] {
   return {
@@ -165,6 +185,7 @@ export function createInitialState(
     nextEntityId: 1,
     randomSeed: seed >>> 0,
     collisionCooldowns: {},
+    sensorSnapshots: {},
   };
 }
 
@@ -1275,10 +1296,102 @@ function updateStatus(state: BattleState): void {
 export function observe(state: BattleState, shipId: string) {
   const self = state.ships.find((ship) => ship.id === shipId);
   if (!self) throw new Error(`Unknown ship: ${shipId}`);
+  const objective = {
+    center: { ...state.objective.center },
+    radius: state.objective.radius,
+    captureProgress: state.objective.captureProgress,
+    owner: state.objective.owner,
+    capturingTeam: state.objective.capturingTeam,
+    contested: state.objective.contested,
+    scores: { ...state.objective.scores },
+  };
+  const sampleIndex = Math.floor(state.time / SENSOR.observationIntervalSeconds);
+  const cached = state.sensorSnapshots[shipId];
+  if (cached?.sampleIndex === sampleIndex) {
+    return {
+      self,
+      contacts: cached.contacts,
+      objective,
+      time: state.time,
+    };
+  }
+  const sampleSeed = (state.randomSeed ^ sampleIndex ^ stringSeed(shipId)) >>> 0;
+  const contacts: SensorContact[] = [];
+  for (const target of state.ships) {
+    if (target.team === self.team || target.hull <= 0) continue;
+    const dx = target.position.x - self.position.x;
+    const dz = target.position.z - self.position.z;
+    const actualRange = Math.hypot(dx, dz);
+    const detectionRange = SENSOR.maximumDetectionMeters
+      + target.fireIntensity / 100 * SENSOR.burningDetectionBonusMeters
+      + clamp(Math.abs(target.speedKnots) / SHIP.maxSpeedKnots, 0, 1)
+        * SENSOR.highSpeedDetectionBonusMeters;
+    const rangeFactor = clamp(
+      (actualRange - SENSOR.guaranteedDetectionMeters)
+        / Math.max(1, detectionRange - SENSOR.guaranteedDetectionMeters),
+      0,
+      1,
+    );
+    const detectionChance = 1 - rangeFactor * 0.72;
+    if (
+      actualRange > detectionRange
+      || (actualRange > SENSOR.guaranteedDetectionMeters
+        && sensorUnit(sampleSeed ^ stringSeed(target.id) ^ 0x91e10da5) > detectionChance)
+    ) {
+      continue;
+    }
+    const confidence = clamp(
+      0.94 - rangeFactor * 0.52 + target.fireIntensity / 100 * 0.08,
+      0.3,
+      0.98,
+    );
+    const actualBearing = Math.atan2(dx, dz);
+    const bearingErrorLimit = SENSOR.nearBearingErrorRadians
+      + (SENSOR.farBearingErrorRadians - SENSOR.nearBearingErrorRadians) * rangeFactor;
+    const bearingError = sensorSigned(sampleSeed ^ stringSeed(target.id) ^ 0x4c957f2d)
+      * bearingErrorLimit;
+    const rangeErrorFraction = SENSOR.nearRangeErrorFraction
+      + (SENSOR.farRangeErrorFraction - SENSOR.nearRangeErrorFraction) * rangeFactor;
+    const observedRange = Math.max(
+      1,
+      actualRange * (
+        1
+        + sensorSigned(sampleSeed ^ stringSeed(target.id) ^ 0x7f4a7c15)
+        * rangeErrorFraction
+      ),
+    );
+    const observedBearing = actualBearing + bearingError;
+    contacts.push({
+      id: target.id,
+      team: target.team,
+      observedAt: sampleIndex * SENSOR.observationIntervalSeconds,
+      position: {
+        x: self.position.x + Math.sin(observedBearing) * observedRange,
+        y: target.position.y,
+        z: self.position.z + Math.cos(observedBearing) * observedRange,
+      },
+      heading: wrapAngle(
+        target.heading
+          + sensorSigned(sampleSeed ^ stringSeed(target.id) ^ 0x6d2b79f5)
+          * SENSOR.headingErrorRadians
+          * (1.15 - confidence),
+      ),
+      speedKnots: Math.max(
+        0,
+        target.speedKnots
+          + sensorSigned(sampleSeed ^ stringSeed(target.id) ^ 0x2c1b3c6d)
+          * SENSOR.speedErrorKnots
+          * (1.15 - confidence),
+      ),
+      rangeMeters: observedRange,
+      confidence,
+    });
+  }
+  state.sensorSnapshots[shipId] = { sampleIndex, contacts };
   return {
     self,
-    enemies: state.ships.filter((ship) => ship.team !== self.team && ship.hull > 0),
-    objective: state.objective,
+    contacts,
+    objective,
     time: state.time,
   };
 }
@@ -1295,6 +1408,14 @@ export function stepSimulation(
   for (const ship of state.ships) {
     if (ship.hull <= 0) continue;
     const command = commands.get(ship.id) ?? { ...zeroCommand, aimPoint: ship.aimPoint };
+    if (command.perception) {
+      ship.perception = {
+        ...command.perception,
+        estimatedPosition: command.perception.estimatedPosition
+          ? { ...command.perception.estimatedPosition }
+          : undefined,
+      };
+    }
     ship.damageControlPriority = command.damageControlPriority ?? ship.damageControlPriority;
     const damageControlAllocation = damageControlAllocationFor(
       ship,

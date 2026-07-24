@@ -1103,6 +1103,7 @@ kbd { display: inline-block; margin-right: 3px; padding: 3px 5px; color: #e5eeee
   padding: 7px;
 }
 .dev-live { margin: 10px 0 12px; padding: 8px; color: #83d4df; background: rgba(47, 151, 167, .12); font: 700 10px/1.5 "Fusion Bold Pixel", "Microsoft YaHei", sans-serif; }
+.dev-perception { margin: -5px 0 12px; padding: 8px; color: #e8d79c; border: 1px solid rgba(232, 215, 156, .18); background: rgba(91, 77, 30, .16); font: 700 9px/1.55 "Fusion Bold Pixel", "Microsoft YaHei", sans-serif; }
 .dev-section { margin-top: 12px; padding-top: 10px; border-top: 1px solid rgba(151, 198, 199, .16); }
 .dev-section h3 { margin: 0 0 8px; color: #9ec9c9; font-size: 11px; letter-spacing: .1em; }
 .dev-range { display: grid; grid-template-columns: 82px 1fr 52px; align-items: center; gap: 7px; min-height: 27px; color: #9fb6b7; font-size: 10px; }
