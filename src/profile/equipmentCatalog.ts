@@ -1,4 +1,6 @@
 import type { MainGunId } from "../ships/components";
+import { getTorpedo } from "../ships/torpedoes";
+import type { TorpedoId } from "../ships/torpedoes";
 
 export type EquipmentRarity = "common" | "purple" | "gold" | "redGold";
 export type EquipmentCategory =
@@ -15,6 +17,7 @@ export interface EquipmentDefinition {
   description: string;
   compatibleHulls: HullId[];
   mainGunId?: MainGunId;
+  torpedoId?: TorpedoId;
   bonus: number;
   drawback?: number;
 }
@@ -28,7 +31,7 @@ export const RARITY_META: Record<EquipmentRarity, { label: string; color: string
 
 export const CATEGORY_META: Record<EquipmentCategory, { label: string; icon: string; slot: string }> = {
   mainGun: { label: "主炮", icon: "fa-solid fa-gun", slot: "主炮槽 ×1" },
-  torpedo: { label: "鱼雷", icon: "fa-solid fa-rocket", slot: "鱼雷槽 ×2" },
+  torpedo: { label: "鱼雷", icon: "fa-solid fa-rocket", slot: "双管发射器槽 ×1" },
   antiAir: { label: "防空炮", icon: "fa-solid fa-crosshairs", slot: "防空槽 ×2" },
   sideGun: { label: "侧炮", icon: "fa-solid fa-shield-halved", slot: "侧炮槽" },
   magazine: { label: "弹药库", icon: "fa-solid fa-boxes-stacked", slot: "弹药库槽 ×1" },
@@ -213,6 +216,13 @@ const gunByRarity: Record<EquipmentRarity, MainGunId> = {
   redGold: "mk4-twin",
 };
 
+const torpedoByRarity: Record<EquipmentRarity, TorpedoId> = {
+  common: "mk-ix",
+  purple: "g7a-t1",
+  gold: "mk-15-mod-3",
+  redGold: "type-93-mod-3",
+};
+
 const categories = Object.keys(CATEGORY_META) as EquipmentCategory[];
 const rarities = Object.keys(RARITY_META) as EquipmentRarity[];
 
@@ -226,8 +236,13 @@ export const EQUIPMENT_CATALOG: EquipmentDefinition[] = categories.flatMap((cate
     description: historicalModels[category][rarity].description,
     compatibleHulls: category === "sideGun" ? ["lightCruiser", "battleship"] : ["destroyer", "lightCruiser", "battleship"],
     mainGunId: category === "mainGun" ? gunByRarity[rarity] : undefined,
+    torpedoId: category === "torpedo" ? torpedoByRarity[rarity] : undefined,
     bonus: bonuses[rarity],
-    drawback: category === "magazine" && rarity !== "common" ? bonuses[rarity] * 0.24 : undefined,
+    drawback: category === "magazine" && rarity !== "common"
+      ? bonuses[rarity] * 0.24
+      : category === "torpedo"
+        ? getTorpedo(torpedoByRarity[rarity]).storageRiskMultiplier - 1
+        : undefined,
   })),
 );
 
@@ -237,7 +252,7 @@ export const EQUIPMENT_BY_ID = Object.fromEntries(
 
 export const DESTROYER_SLOT_COUNTS: Record<EquipmentCategory, number> = {
   mainGun: 1,
-  torpedo: 2,
+  torpedo: 1,
   antiAir: 2,
   sideGun: 0,
   magazine: 1,

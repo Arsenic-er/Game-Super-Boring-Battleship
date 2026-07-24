@@ -8,6 +8,7 @@ import {
   setCommanderName,
 } from "../src/profile/localProfile";
 import { EQUIPMENT_CATALOG } from "../src/profile/equipmentCatalog";
+import { getTorpedo } from "../src/ships/torpedoes";
 
 describe("local commander profile", () => {
   it("migrates the legacy main gun loadout into component inventory", () => {
@@ -42,6 +43,25 @@ describe("local commander profile", () => {
     expect(modifiers.maxSpeedMultiplier).toBeGreaterThan(1.1);
     expect(modifiers.turnMultiplier).toBeGreaterThan(1.05);
     expect(modifiers.reloadMultiplier).toBeLessThan(1);
+  });
+
+  it("maps every historical torpedo component into a distinct battle definition", () => {
+    const expected = ["mk-ix", "g7a-t1", "mk-15-mod-3", "type-93-mod-3"] as const;
+    for (const [index, itemId] of [
+      "torpedo-common",
+      "torpedo-purple",
+      "torpedo-gold",
+      "torpedo-redGold",
+    ].entries()) {
+      const base = createDefaultLocalProfile();
+      const owned = normalizeLocalProfile({
+        ...base,
+        inventory: { ...base.inventory, [itemId]: 1 },
+      });
+      const loadout = battleLoadout(equipComponent(owned, itemId));
+      expect(loadout.torpedoId).toBe(expected[index]);
+      expect(getTorpedo(loadout.torpedoId).name.length).toBeGreaterThan(8);
+    }
   });
 
   it("normalizes the locally saved commander name", () => {

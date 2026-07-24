@@ -117,4 +117,24 @@ describe("player optical perception", () => {
     shell.position.x = player.position.x + 900;
     expect(isProjectileVisibleToPlayer(shell, player, target)).toBe(true);
   });
+
+  it("uses each torpedo projectile's own wake detection distance", () => {
+    const battle = createInitialState(304);
+    const player = battle.ships.find((ship) => ship.id === "player")!;
+    const torpedo: ProjectileState = {
+      id: 2,
+      ownerId: "enemy",
+      team: "enemy",
+      kind: "torpedo",
+      position: { x: player.position.x + 600, y: 0, z: player.position.z },
+      previousPosition: { x: player.position.x + 601, y: 0, z: player.position.z },
+      velocity: { x: -27, y: 0, z: 0 },
+      damage: 152,
+      age: 1,
+      detectionRange: 650,
+    };
+    expect(isProjectileVisibleToPlayer(torpedo, player)).toBe(true);
+    torpedo.detectionRange = 360;
+    expect(isProjectileVisibleToPlayer(torpedo, player)).toBe(false);
+  });
 });

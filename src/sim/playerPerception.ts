@@ -36,7 +36,7 @@ export function isProjectileVisibleToPlayer(
     projectile.position.z - player.position.z,
   );
   if (projectile.kind === "torpedo") {
-    return distance <= TORPEDO.detectionRangeMeters;
+    return distance <= (projectile.detectionRange ?? TORPEDO.detectionRangeMeters);
   }
   return Boolean(target?.live) || distance <= 1_200;
 }

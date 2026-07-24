@@ -145,6 +145,7 @@ export const TURRET = {
 
 export const MODULE_MAX_HEALTH = {
   gun: 180,
+  torpedoTubes: 150,
   engine: 220,
   steering: 160,
   magazine: 150,
@@ -153,6 +154,7 @@ export const MODULE_MAX_HEALTH = {
 
 export const BASE_REPAIR_PER_SECOND = {
   gun: 1.15,
+  torpedoTubes: 1.05,
   engine: 1.0,
   steering: 1.25,
   magazine: 0.55,

@@ -23,6 +23,8 @@ This is an early prototype rather than a finished commercial game. Visuals, bala
 - Main-gun ballistics with visible shell arcs, dispersion, reload progress and independent turret alignment.
 - Weapon slots: `1` main guns, `2` twin torpedo launch, `3` reserved aircraft slot.
 - Torpedo side arcs, narrow/wide spread, 120 m arming distance, 3.5 km maximum range, lead prediction and proximity warnings.
+- Four historical torpedo loadouts with distinct compressed gameplay trade-offs in speed, range, damage, reload, wake visibility and onboard risk.
+- A separately damageable torpedo-launcher module; partial damage slows reloading and destruction blocks launch.
 - Hull compartments, module damage, fire, flooding, crew-dependent repair and recoverable health.
 - Central objective A with capture progress, contested superiority, team scores and score victory.
 - Non-omniscient AI optics with sampled noisy contacts, acquisition, target loss, search and reacquisition; firing requires a live track.
@@ -108,6 +110,8 @@ Third-party libraries and the Fusion Pixel Font remain under their respective li
 - HE/AP 弹药切换、装甲入射角、跳弹、碎弹、正常穿透与过度穿透。
 - 武器栏：`1` 主炮、`2` 双雷齐射、`3` 预留舰载机。
 - 鱼雷具有左右舷射界、窄/宽扇面、120 米武装距离、3.5 千米最大射程、提前量预测线与近距来袭警报。
+- 四种历史鱼雷组件拥有独立的航速、射程、装药、装填、尾迹可见性与舰上风险取舍，并从船坞配装真实继承到战斗。
+- 鱼雷发射器成为独立可损伤模块；部分损坏延长装填，完全摧毁后禁止发射。
 - 船体分区、组件损伤、起火、进水、有限人力损管与可恢复血量。
 - 舰船实体碰撞，以及依据碰撞部位计算的不同伤害。
 - 小地图、大地图、专用瞄准镜、开发者调试面板与灵敏度设置。

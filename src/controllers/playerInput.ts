@@ -1,4 +1,5 @@
 import { GUN, TORPEDO } from "../sim/config";
+import { getTorpedo } from "../ships/torpedoes";
 import type {
   AmmoType,
   ControlCommand,
@@ -32,6 +33,7 @@ export class PlayerInput {
   private firePressed = false;
   private ammoType: AmmoType = "he";
   private damageControlPriority: DamageControlPriority = "balanced";
+  private activeShip?: ShipState;
 
   constructor(canvas: HTMLCanvasElement, private readonly aimProvider: AimProvider) {
     window.addEventListener("keydown", this.onKeyDown);
@@ -77,9 +79,9 @@ export class PlayerInput {
 
   private onWheel = (event: WheelEvent): void => {
     event.preventDefault();
-    const maximumRange = this.weaponSlot === "torpedo"
-      ? TORPEDO.maximumRangeMeters
-      : GUN.maxAimRange;
+    const maximumRange = this.weaponSlot === "torpedo" && this.activeShip
+      ? getTorpedo(this.activeShip.torpedoId).maximumRangeMeters
+      : this.weaponSlot === "torpedo" ? TORPEDO.maximumRangeMeters : GUN.maxAimRange;
     this.range = Math.max(
       GUN.minAimRange,
       Math.min(maximumRange, this.range + Math.sign(event.deltaY) * 150),
@@ -87,6 +89,7 @@ export class PlayerInput {
   };
 
   command(ship: ShipState): ControlCommand {
+    this.activeShip = ship;
     const steeringInput = (this.pressed.has("KeyD") ? 1 : 0)
       - (this.pressed.has("KeyA") ? 1 : 0);
     const fire = this.firePressed;
@@ -150,6 +153,7 @@ export class PlayerInput {
     this.ammoType = "he";
     this.torpedoSpread = "narrow";
     this.damageControlPriority = "balanced";
+    this.activeShip = undefined;
     this.aimProvider.setAiming(false);
   }
 }

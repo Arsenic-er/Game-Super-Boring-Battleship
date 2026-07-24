@@ -1,4 +1,5 @@
-import { GUN, KNOT_TO_MPS, SENSOR, TORPEDO } from "../sim/config";
+import { GUN, KNOT_TO_MPS, SENSOR } from "../sim/config";
+import { getTorpedo } from "../ships/torpedoes";
 import { torpedoInterceptPoint, torpedoLaunchSolution } from "../sim/simulation";
 import type {
   AmmoType,
@@ -282,6 +283,7 @@ export class RuleBasedAi implements Controller {
       bearingToTarget = Math.atan2(dx, dz);
     }
     const torpedoSpread = "narrow" as const;
+    const torpedo = getTorpedo(observation.self.torpedoId);
     const torpedoAim = perception.mode === "tracking" && target
       ? torpedoInterceptPoint(observation.self, target)
       : undefined;
@@ -291,9 +293,9 @@ export class RuleBasedAi implements Controller {
     const torpedoReady = Boolean(
       torpedoAim
       && range >= 900
-      && range <= Math.min(2_200, TORPEDO.maximumRangeMeters)
+      && range <= Math.min(2_200, torpedo.maximumRangeMeters)
       && observation.self.torpedoReloadRemaining <= 0
-      && observation.self.modules.magazine.health > 0
+      && observation.self.modules.torpedoTubes.health > 0
       && observation.time >= this.nextTorpedoAt,
     );
     const launchTorpedoes = Boolean(torpedoReady && torpedoSolution?.allowed);

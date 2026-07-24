@@ -1,4 +1,4 @@
-import { BATTLE_DURATION_SECONDS, GUN, OBJECTIVE, TORPEDO } from "../sim/config";
+import { BATTLE_DURATION_SECONDS, GUN, OBJECTIVE } from "../sim/config";
 import {
   ballisticVelocity,
   dispersionAtRange,
@@ -8,6 +8,7 @@ import {
   turretAlignmentError,
 } from "../sim/simulation";
 import { getMainGun } from "../ships/components";
+import { getTorpedo } from "../ships/torpedoes";
 import type {
   AmmoType,
   BattleState,
@@ -23,6 +24,7 @@ import type {
 
 const moduleLabels: Record<ModuleId, string> = {
   gun: "主炮",
+  torpedoTubes: "鱼雷发射器",
   engine: "动力",
   steering: "舵机",
   magazine: "弹药库",
@@ -405,6 +407,7 @@ export class Hud {
   ): void {
     const player = state.ships.find((ship) => ship.team === "player");
     if (!player) return;
+    const torpedoDefinition = getTorpedo(player.torpedoId);
     const torpedoThreats = torpedoThreatsFor(state, player.id);
     const nearestTorpedo = torpedoThreats[0];
     this.torpedoWarning.hidden = !nearestTorpedo;
@@ -509,7 +512,7 @@ export class Hud {
       button.setAttribute("aria-pressed", String(active));
       if (button.dataset.weapon === "torpedo") {
         const readiness = Math.round(
-          clamp(1 - player.torpedoReloadRemaining / TORPEDO.reloadSeconds, 0, 1) * 100,
+          clamp(1 - player.torpedoReloadRemaining / player.torpedoReloadDuration, 0, 1) * 100,
         );
         const small = button.querySelector("small");
         if (small) small.textContent = player.torpedoReloadRemaining > 0
@@ -584,21 +587,21 @@ export class Hud {
     if (selectedWeapon === "torpedo") {
       const spreadLabel = player.torpedoSpreadMode === "narrow" ? "窄扇面" : "宽扇面";
       const torpedoReloadPercent = Math.round(
-        clamp(1 - player.torpedoReloadRemaining / TORPEDO.reloadSeconds, 0, 1) * 100,
+        clamp(1 - player.torpedoReloadRemaining / player.torpedoReloadDuration, 0, 1) * 100,
       );
-      this.reloadLabel.textContent = `533 mm 鱼雷 · ${spreadLabel}`;
-      this.reload.textContent = player.modules.magazine.health <= 0
+      this.reloadLabel.textContent = `${torpedoDefinition.shortLabel} · ${spreadLabel}`;
+      this.reload.textContent = player.modules.torpedoTubes.health <= 0
         ? "发射器失效 · 0%"
         : player.torpedoReloadRemaining > 0
           ? `装填 ${torpedoReloadPercent}% · ${player.torpedoReloadRemaining.toFixed(1)} s`
           : torpedoSolution.allowed
             ? `左/右舷可发射 · 100%`
             : "艏艉射界受阻";
-      this.flightTime.textContent = `${(aimRange / TORPEDO.speedMetersPerSecond).toFixed(1)} s`;
-      this.dispersion.textContent = `${spreadLabel} · 武装 ${TORPEDO.armingDistanceMeters} m`;
-      this.scopeGun.textContent = `533 mm 鱼雷 · ${spreadLabel}`;
+      this.flightTime.textContent = `${(aimRange / torpedoDefinition.speedMetersPerSecond).toFixed(1)} s`;
+      this.dispersion.textContent = `${spreadLabel} · 武装 ${torpedoDefinition.armingDistanceMeters} m`;
+      this.scopeGun.textContent = `${torpedoDefinition.caliberMm} mm · ${torpedoDefinition.shortLabel}`;
       this.scopeFlightTime.textContent = this.flightTime.textContent;
-      this.scopeDispersion.textContent = `射程 ${(TORPEDO.maximumRangeMeters / 1_000).toFixed(1)} km`;
+      this.scopeDispersion.textContent = `射程 ${(torpedoDefinition.maximumRangeMeters / 1_000).toFixed(1)} km · 发现 ${torpedoDefinition.detectionRangeMeters} m`;
       this.scopeReload.textContent = this.reload.textContent;
       this.scopeReload.classList.toggle(
         "blocked",

@@ -173,6 +173,7 @@ export function battleStateFingerprint(state: BattleState): string {
         speedKnots: round(ship.speedKnots),
         hull: round(ship.hull),
         ammoType: ship.ammoType,
+        torpedoId: ship.torpedoId,
         recoverableHull: round(ship.recoverableHull),
         compartments: Object.fromEntries(
           Object.entries(ship.compartments).map(([id, health]) => [id, round(health)]),
@@ -182,6 +183,7 @@ export function battleStateFingerprint(state: BattleState): string {
         ),
         reloadRemaining: round(ship.reloadRemaining),
         torpedoReloadRemaining: round(ship.torpedoReloadRemaining),
+        torpedoReloadDuration: round(ship.torpedoReloadDuration),
         fireIntensity: round(ship.fireIntensity),
         flooding: round(ship.flooding),
       })),
@@ -202,6 +204,7 @@ export function battleStateFingerprint(state: BattleState): string {
           y: round(projectile.velocity.y),
           z: round(projectile.velocity.z),
         },
+        detectionRange: round(projectile.detectionRange ?? 0),
       })),
   });
 }

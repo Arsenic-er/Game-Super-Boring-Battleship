@@ -1,5 +1,7 @@
 import { DEFAULT_MAIN_GUN_ID } from "../ships/components";
 import type { MainGunId } from "../ships/components";
+import { DEFAULT_TORPEDO_ID } from "../ships/torpedoes";
+import type { TorpedoId } from "../ships/torpedoes";
 import {
   CATEGORY_META,
   EQUIPMENT_BY_ID,
@@ -31,6 +33,7 @@ export interface SupplyDrawResult {
 
 export interface BattleLoadout {
   mainGunId: MainGunId;
+  torpedoId: TorpedoId;
   maxSpeedMultiplier: number;
   accelerationMultiplier: number;
   turnMultiplier: number;
@@ -173,16 +176,18 @@ export function battleLoadout(profileSource: LocalProfile): BattleLoadout {
     return id ? EQUIPMENT_BY_ID[id] : undefined;
   };
   const gun = equipped("mainGun");
+  const torpedo = equipped("torpedo");
   const engine = equipped("engine");
   const steering = equipped("steering");
   const magazine = equipped("magazine");
   return {
     mainGunId: gun?.mainGunId ?? DEFAULT_MAIN_GUN_ID,
+    torpedoId: torpedo?.torpedoId ?? DEFAULT_TORPEDO_ID,
     maxSpeedMultiplier: 1 + (engine?.bonus ?? 0),
     accelerationMultiplier: 1 + (engine?.bonus ?? 0) * 0.85,
     turnMultiplier: 1 + (steering?.bonus ?? 0),
     reloadMultiplier: 1 - (magazine?.bonus ?? 0) * 0.72,
-    magazineRiskMultiplier: 1 + (magazine?.drawback ?? 0),
+    magazineRiskMultiplier: (1 + (magazine?.drawback ?? 0)) * (1 + (torpedo?.drawback ?? 0)),
   };
 }
 

@@ -24,6 +24,8 @@ import {
   getMainGun,
 } from "../ships/components";
 import type { MainGunId } from "../ships/components";
+import { DEFAULT_TORPEDO_ID, getTorpedo } from "../ships/torpedoes";
+import type { TorpedoId } from "../ships/torpedoes";
 import type {
   AmmoType,
   ArmorZoneId,
@@ -89,6 +91,10 @@ const sensorSigned = (value: number): number => sensorUnit(value) * 2 - 1;
 function createModules(): ShipState["modules"] {
   return {
     gun: { health: MODULE_MAX_HEALTH.gun, maxHealth: MODULE_MAX_HEALTH.gun },
+    torpedoTubes: {
+      health: MODULE_MAX_HEALTH.torpedoTubes,
+      maxHealth: MODULE_MAX_HEALTH.torpedoTubes,
+    },
     engine: { health: MODULE_MAX_HEALTH.engine, maxHealth: MODULE_MAX_HEALTH.engine },
     steering: { health: MODULE_MAX_HEALTH.steering, maxHealth: MODULE_MAX_HEALTH.steering },
     magazine: { health: MODULE_MAX_HEALTH.magazine, maxHealth: MODULE_MAX_HEALTH.magazine },
@@ -103,6 +109,7 @@ function createShip(
   z: number,
   heading: number,
   mainGunId: MainGunId = DEFAULT_MAIN_GUN_ID,
+  torpedoId: TorpedoId = DEFAULT_TORPEDO_ID,
   performance: ShipPerformanceModifiers = {
     maxSpeedMultiplier: 1,
     accelerationMultiplier: 1,
@@ -127,10 +134,12 @@ function createShip(
     compartments: { ...COMPARTMENT_MAX_HEALTH },
     modules: createModules(),
     mainGunId,
+    torpedoId,
     performance,
     gunTraverseBlocked: false,
     reloadRemaining: 0,
     torpedoReloadRemaining: 0,
+    torpedoReloadDuration: getTorpedo(torpedoId).reloadSeconds,
     torpedoSpreadMode: "narrow",
     aimPoint: { x, y: 0, z: z + Math.cos(heading) * 1_800 },
     ammoType: "he",
@@ -149,8 +158,9 @@ export function createInitialState(
   mode: GameMode = "battle",
   playerMainGunId: MainGunId = DEFAULT_MAIN_GUN_ID,
   playerPerformance?: Partial<ShipPerformanceModifiers>,
+  playerTorpedoId: TorpedoId = DEFAULT_TORPEDO_ID,
 ): BattleState {
-  const player = createShip("player", "player", 0, -900, 0, playerMainGunId, {
+  const player = createShip("player", "player", 0, -900, 0, playerMainGunId, playerTorpedoId, {
     maxSpeedMultiplier: playerPerformance?.maxSpeedMultiplier ?? 1,
     accelerationMultiplier: playerPerformance?.accelerationMultiplier ?? 1,
     turnMultiplier: playerPerformance?.turnMultiplier ?? 1,
@@ -458,16 +468,17 @@ function fireGun(state: BattleState, ship: ShipState): void {
 }
 
 export function torpedoInterceptPoint(
-  shooter: Pick<ShipState, "position">,
+  shooter: Pick<ShipState, "position" | "torpedoId">,
   target: Pick<SensorContact, "position" | "heading" | "speedKnots">,
 ): Vec3 | undefined {
+  const torpedo = getTorpedo(shooter.torpedoId);
   const relativeX = target.position.x - shooter.position.x;
   const relativeZ = target.position.z - shooter.position.z;
   const targetSpeed = target.speedKnots * KNOT_TO_MPS;
   const targetVelocityX = Math.sin(target.heading) * targetSpeed;
   const targetVelocityZ = Math.cos(target.heading) * targetSpeed;
   const a = targetVelocityX ** 2 + targetVelocityZ ** 2
-    - TORPEDO.speedMetersPerSecond ** 2;
+    - torpedo.speedMetersPerSecond ** 2;
   const b = 2 * (relativeX * targetVelocityX + relativeZ * targetVelocityZ);
   const c = relativeX ** 2 + relativeZ ** 2;
   let interceptSeconds: number | undefined;
@@ -487,7 +498,7 @@ export function torpedoInterceptPoint(
   }
   if (
     interceptSeconds === undefined
-    || interceptSeconds * TORPEDO.speedMetersPerSecond > TORPEDO.maximumRangeMeters
+    || interceptSeconds * torpedo.speedMetersPerSecond > torpedo.maximumRangeMeters
   ) {
     return undefined;
   }
@@ -524,7 +535,8 @@ export function torpedoLaunchSolution(
 }
 
 function fireTorpedoes(state: BattleState, ship: ShipState): void {
-  if (ship.torpedoReloadRemaining > 0 || ship.modules.magazine.health <= 0) return;
+  if (ship.torpedoReloadRemaining > 0 || ship.modules.torpedoTubes.health <= 0) return;
+  const torpedo = getTorpedo(ship.torpedoId);
   const solution = torpedoLaunchSolution(
     ship,
     ship.aimPoint,
@@ -557,15 +569,16 @@ function fireTorpedoes(state: BattleState, ship: ShipState): void {
       position: copyVec(origin),
       previousPosition: copyVec(origin),
       velocity: {
-        x: forwardX * TORPEDO.speedMetersPerSecond,
+        x: forwardX * torpedo.speedMetersPerSecond,
         y: 0,
-        z: forwardZ * TORPEDO.speedMetersPerSecond,
+        z: forwardZ * torpedo.speedMetersPerSecond,
       },
-      damage: TORPEDO.damage,
+      damage: torpedo.damage,
       age: 0,
       distanceTravelled: 0,
-      armingDistance: TORPEDO.armingDistanceMeters,
-      maximumRange: TORPEDO.maximumRangeMeters,
+      armingDistance: torpedo.armingDistanceMeters,
+      maximumRange: torpedo.maximumRangeMeters,
+      detectionRange: torpedo.detectionRangeMeters,
     });
     state.shots.push({
       id: state.nextEntityId++,
@@ -575,7 +588,9 @@ function fireTorpedoes(state: BattleState, ship: ShipState): void {
       position: copyVec(origin),
     });
   }
-  ship.torpedoReloadRemaining = TORPEDO.reloadSeconds;
+  const tubeRatio = Math.max(0.25, moduleRatio(ship, "torpedoTubes"));
+  ship.torpedoReloadDuration = torpedo.reloadSeconds / tubeRatio;
+  ship.torpedoReloadRemaining = ship.torpedoReloadDuration;
 }
 
 function shipLocalPoint(
@@ -835,7 +850,7 @@ function damageModule(
   const candidates: Record<CompartmentId, ModuleId[]> = {
     bow: ["gun", "gun", "crew"],
     bridge: ["crew", "steering", "gun", "crew"],
-    engineRoom: ["engine", "engine", "crew"],
+    engineRoom: ["engine", "torpedoTubes", "engine", "crew"],
     magazine: ["magazine", "magazine", "engine", "crew"],
     stern: ["steering", "engine", "crew"],
   };
@@ -844,12 +859,18 @@ function damageModule(
     ?? list[Math.floor(random(state) * list.length)]
     ?? "crew";
   const module = ship.modules[moduleId];
-  const riskMultiplier = moduleId === "magazine" ? ship.performance.magazineRiskMultiplier : 1;
+  const riskMultiplier = moduleId === "magazine"
+    ? ship.performance.magazineRiskMultiplier
+    : moduleId === "torpedoTubes"
+      ? getTorpedo(ship.torpedoId).storageRiskMultiplier
+      : 1;
   const moduleDamage = baseDamage * (0.42 + random(state) * 0.28) * riskMultiplier;
   module.health = Math.max(0, module.health - moduleDamage);
 
   if (moduleId === "magazine") {
     applyHullDamage(ship, baseDamage * 0.35, 0.72);
+  } else if (moduleId === "torpedoTubes" && riskMultiplier > 1) {
+    applyHullDamage(ship, baseDamage * (riskMultiplier - 1) * 0.8, 0.8);
   }
   return { moduleId, moduleDamage };
 }
@@ -860,7 +881,9 @@ export function moduleForProjectileHit(
 ): ModuleId {
   if (compartment === "bow") return height >= SHIP.deckHeight * 0.55 ? "gun" : "crew";
   if (compartment === "bridge") return "crew";
-  if (compartment === "engineRoom") return "engine";
+  if (compartment === "engineRoom") {
+    return height >= SHIP.deckHeight * 0.55 ? "torpedoTubes" : "engine";
+  }
   if (compartment === "magazine") return "magazine";
   return "steering";
 }
@@ -1116,6 +1139,7 @@ function advanceProjectiles(state: BattleState, dt: number): void {
 const moduleRepairUrgency: Record<ModuleId, number> = {
   steering: 1.3,
   engine: 1.25,
+  torpedoTubes: 1.15,
   gun: 1.1,
   crew: 1,
   magazine: 0.8,
@@ -1389,6 +1413,10 @@ export function torpedoThreatsFor(
   if (!ship) return [];
   return state.projectiles
     .filter((projectile) => projectile.kind === "torpedo" && projectile.team !== ship.team)
+    .filter((projectile) => Math.hypot(
+      projectile.position.x - ship.position.x,
+      projectile.position.z - ship.position.z,
+    ) <= (projectile.detectionRange ?? TORPEDO.detectionRangeMeters))
     .map((projectile) => {
       const distanceMeters = Math.hypot(
         projectile.position.x - ship.position.x,
@@ -1402,7 +1430,6 @@ export function torpedoThreatsFor(
         armed: (projectile.distanceTravelled ?? 0) >= (projectile.armingDistance ?? 0),
       };
     })
-    .filter((threat) => threat.distanceMeters <= TORPEDO.detectionRangeMeters)
     .sort((left, right) => left.distanceMeters - right.distanceMeters);
 }
 

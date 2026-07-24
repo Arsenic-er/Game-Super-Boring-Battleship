@@ -23,7 +23,13 @@ if (!root) throw new Error("Missing #app root");
 
 let profile: LocalProfile = loadLocalProfile();
 const initialEquipment = battleLoadout(profile);
-let state: BattleState = createInitialState(undefined, "battle", initialEquipment.mainGunId, initialEquipment);
+let state: BattleState = createInitialState(
+  undefined,
+  "battle",
+  initialEquipment.mainGunId,
+  initialEquipment,
+  initialEquipment.torpedoId,
+);
 let view: GameView;
 let input: PlayerInput;
 let tacticalMap: TacticalMap;
@@ -40,7 +46,7 @@ let currentMode: GameMode = "battle";
 function startMode(mode: GameMode): void {
   currentMode = mode;
   const equipment = battleLoadout(profile);
-  state = createInitialState(undefined, mode, equipment.mainGunId, equipment);
+  state = createInitialState(undefined, mode, equipment.mainGunId, equipment, equipment.torpedoId);
   input.reset();
   view.resetTransient();
   tacticalMap?.close();
@@ -72,7 +78,13 @@ function returnToMainMenu(): void {
   view.setAiming(false);
   gameShell?.classList.remove("game-active", "aiming");
   const equipment = battleLoadout(profile);
-  state = createInitialState(undefined, "battle", equipment.mainGunId, equipment);
+  state = createInitialState(
+    undefined,
+    "battle",
+    equipment.mainGunId,
+    equipment,
+    equipment.torpedoId,
+  );
   playerPerception.reset();
   view.resetTransient();
   hud.resetMetrics();

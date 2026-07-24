@@ -12,6 +12,7 @@ export interface DeveloperPanelCallbacks {
 
 const moduleLabels: Record<ModuleId, string> = {
   gun: "主炮",
+  torpedoTubes: "鱼雷发射器",
   engine: "动力",
   steering: "舵机",
   magazine: "弹药库",

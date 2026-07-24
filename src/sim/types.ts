@@ -1,4 +1,5 @@
 import type { MainGunId } from "../ships/components";
+import type { TorpedoId } from "../ships/torpedoes";
 
 export interface Vec3 {
   x: number;
@@ -9,7 +10,7 @@ export interface Vec3 {
 export type Team = "player" | "enemy";
 export type GameMode = "battle" | "sea-trials";
 export type CompartmentId = "bow" | "bridge" | "engineRoom" | "magazine" | "stern";
-export type ModuleId = "gun" | "engine" | "steering" | "magazine" | "crew";
+export type ModuleId = "gun" | "torpedoTubes" | "engine" | "steering" | "magazine" | "crew";
 export type BattleStatus = "running" | "player-won" | "enemy-won" | "draw";
 export type BattleEndReason = "destroyed" | "score" | "time";
 export type WeaponSlot = "mainGun" | "torpedo" | "aircraft";
@@ -108,10 +109,12 @@ export interface ShipState {
   compartments: Record<CompartmentId, number>;
   modules: Record<ModuleId, ModuleState>;
   mainGunId: MainGunId;
+  torpedoId: TorpedoId;
   performance: ShipPerformanceModifiers;
   gunTraverseBlocked: boolean;
   reloadRemaining: number;
   torpedoReloadRemaining: number;
+  torpedoReloadDuration: number;
   torpedoSpreadMode: TorpedoSpreadMode;
   aimPoint: Vec3;
   ammoType: AmmoType;
@@ -141,6 +144,7 @@ export interface ProjectileState {
   distanceTravelled?: number;
   armingDistance?: number;
   maximumRange?: number;
+  detectionRange?: number;
 }
 
 export interface ShotEvent {

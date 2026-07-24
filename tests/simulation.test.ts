@@ -28,6 +28,8 @@ import {
   updateObjective,
 } from "../src/sim/simulation";
 import type { ControlCommand } from "../src/sim/types";
+import { getTorpedo } from "../src/ships/torpedoes";
+import type { TorpedoId } from "../src/ships/torpedoes";
 
 const idle = (x: number, z: number): ControlCommand => ({
   throttle: 0,
@@ -158,6 +160,55 @@ describe("deterministic battle simulation", () => {
     }
     expect(state.projectiles).toHaveLength(0);
     expect(player.torpedoReloadRemaining).toBe(0);
+  });
+
+  it("uses the equipped historical torpedo definition for every spawned projectile", () => {
+    const ids: TorpedoId[] = ["mk-ix", "g7a-t1", "mk-15-mod-3", "type-93-mod-3"];
+    for (const [index, id] of ids.entries()) {
+      const state = createInitialState(970 + index, "sea-trials", undefined, undefined, id);
+      const player = state.ships[0]!;
+      const definition = getTorpedo(id);
+      stepSimulation(state, new Map([["player", {
+        ...idle(player.position.x + 2_000, player.position.z),
+        fire: true,
+        weaponSlot: "torpedo",
+      }]]), FIXED_STEP);
+      const torpedoes = state.projectiles.filter((projectile) => projectile.kind === "torpedo");
+      expect(player.torpedoId).toBe(id);
+      expect(torpedoes).toHaveLength(2);
+      expect(Math.hypot(torpedoes[0]!.velocity.x, torpedoes[0]!.velocity.z))
+        .toBeCloseTo(definition.speedMetersPerSecond, 5);
+      expect(torpedoes[0]!.damage).toBe(definition.damage);
+      expect(torpedoes[0]!.armingDistance).toBe(definition.armingDistanceMeters);
+      expect(torpedoes[0]!.maximumRange).toBe(definition.maximumRangeMeters);
+      expect(torpedoes[0]!.detectionRange).toBe(definition.detectionRangeMeters);
+      expect(player.torpedoReloadDuration).toBeCloseTo(definition.reloadSeconds, 5);
+    }
+  });
+
+  it("slows reload when the torpedo launcher is damaged and blocks fire when destroyed", () => {
+    const damaged = createInitialState(980, "sea-trials");
+    const damagedPlayer = damaged.ships[0]!;
+    damagedPlayer.modules.torpedoTubes.health *= 0.5;
+    stepSimulation(damaged, new Map([["player", {
+      ...idle(damagedPlayer.position.x + 2_000, damagedPlayer.position.z),
+      fire: true,
+      weaponSlot: "torpedo",
+    }]]), FIXED_STEP);
+    const healthyReload = getTorpedo(damagedPlayer.torpedoId).reloadSeconds;
+    expect(damagedPlayer.torpedoReloadDuration).toBeGreaterThan(healthyReload * 1.9);
+    expect(damagedPlayer.torpedoReloadDuration).toBeLessThanOrEqual(healthyReload * 2);
+
+    const destroyed = createInitialState(981, "sea-trials");
+    const destroyedPlayer = destroyed.ships[0]!;
+    destroyedPlayer.modules.torpedoTubes.health = 0;
+    stepSimulation(destroyed, new Map([["player", {
+      ...idle(destroyedPlayer.position.x + 2_000, destroyedPlayer.position.z),
+      fire: true,
+      weaponSlot: "torpedo",
+    }]]), FIXED_STEP);
+    expect(destroyed.projectiles).toHaveLength(0);
+    expect(destroyedPlayer.torpedoReloadRemaining).toBe(0);
   });
 
   it("creates a wider angular separation in wide spread mode", () => {

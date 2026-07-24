@@ -13,7 +13,12 @@ import {
   EQUIPMENT_BY_ID,
   EQUIPMENT_CATALOG,
 } from "../profile/equipmentCatalog";
-import type { EquipmentCategory, EquipmentRarity } from "../profile/equipmentCatalog";
+import type {
+  EquipmentCategory,
+  EquipmentDefinition,
+  EquipmentRarity,
+} from "../profile/equipmentCatalog";
+import { getTorpedo } from "../ships/torpedoes";
 import type { GameSettings } from "../settings/gameSettings";
 import type { GameMode } from "../sim/types";
 import { DockPreview } from "../render/dockPreview";
@@ -30,6 +35,32 @@ export interface GameMenuCallbacks {
 }
 
 type StartTab = "mission" | "store" | "dock" | "codex";
+const DESTROYER_TOTAL_SLOTS = Object.values(DESTROYER_SLOT_COUNTS)
+  .reduce((total, count) => total + count, 0);
+
+function equipmentSummary(item: EquipmentDefinition): string {
+  if (item.torpedoId) {
+    const torpedo = getTorpedo(item.torpedoId);
+    return `${torpedo.speedMetersPerSecond} m/s · ${(torpedo.maximumRangeMeters / 1_000).toFixed(1)} km · 伤害 ${torpedo.damage}`;
+  }
+  return `核心增益 +${Math.round(item.bonus * 100)}%`;
+}
+
+function equipmentDetailRows(item: EquipmentDefinition): string {
+  if (item.torpedoId) {
+    const torpedo = getTorpedo(item.torpedoId);
+    return [
+      ["航速", `${torpedo.speedMetersPerSecond} m/s`],
+      ["最大射程", `${(torpedo.maximumRangeMeters / 1_000).toFixed(1)} km`],
+      ["装药伤害", String(torpedo.damage)],
+      ["再装填", `${torpedo.reloadSeconds} s`],
+      ["发现距离", `${torpedo.detectionRangeMeters} m`],
+      ["武装距离", `${torpedo.armingDistanceMeters} m`],
+      ["舰上风险", `×${torpedo.storageRiskMultiplier.toFixed(2)}`],
+    ].map(([label, value]) => `<div><dt>${label}</dt><dd>${value}</dd></div>`).join("");
+  }
+  return `<div><dt>核心增益</dt><dd>+${Math.round(item.bonus * 100)}%</dd></div>${item.drawback ? `<div><dt>殉爆风险</dt><dd>+${Math.round(item.drawback * 100)}%</dd></div>` : ""}`;
+}
 
 export class GameMenus {
   private readonly startOverlay: HTMLElement;
@@ -115,7 +146,7 @@ export class GameMenus {
           <div class="menu-tab-panel dock-panel" data-menu-panel="dock" hidden>
             <div class="screen-heading"><div><p class="eyebrow">模块化船坞蓝图</p><h2>舰队船坞</h2></div><span class="dock-save-state">配装自动保存至本机</span></div>
             <div class="dock-layout">
-              <aside class="hull-list"><h3>更换舰体</h3><button class="hull-option active" type="button"><b>驱逐舰 DD-01</b><span>8 个可用槽位</span></button><button class="hull-option" disabled><b>轻巡洋舰 CL-01</b><span>尚未解锁</span></button><button class="hull-option" disabled><b>战列舰 BB-01</b><span>尚未解锁</span></button><div class="slot-list"></div></aside>
+              <aside class="hull-list"><h3>更换舰体</h3><button class="hull-option active" type="button"><b>驱逐舰 DD-01</b><span>${DESTROYER_TOTAL_SLOTS} 个可用槽位</span></button><button class="hull-option" disabled><b>轻巡洋舰 CL-01</b><span>尚未解锁</span></button><button class="hull-option" disabled><b>战列舰 BB-01</b><span>尚未解锁</span></button><div class="slot-list"></div></aside>
               <section class="dock-blueprint"><canvas class="dock-preview" aria-label="可旋转驱逐舰船坞预览"></canvas><div class="dock-callouts"></div><small>拖动舰船预览可旋转 · 滚轮缩放</small></section>
               <aside class="component-library"><h3>组件库</h3><div class="component-filters"></div><div class="inventory-grid"></div><div class="component-detail"></div></aside>
             </div>
@@ -123,7 +154,7 @@ export class GameMenus {
           <div class="menu-tab-panel codex-panel" data-menu-panel="codex" hidden>
             <div class="screen-heading"><div><p class="eyebrow">二战舰装档案</p><h2>组件图鉴</h2></div><span>边框表示舰装档位 · 名称采用历史型号</span></div>
             <div class="codex-table-wrap"><table class="codex-table"><thead><tr><th>类别</th><th>常备舰装</th><th>改装舰装</th><th>精锐舰装</th><th>舰队试验</th><th>驱逐舰</th></tr></thead><tbody></tbody></table></div>
-            <p class="codex-note">鱼雷、防空炮与侧炮已进入掉落、库存和舰型兼容系统；后续版本接入战斗操作。侧炮仅供轻巡洋舰与战列舰。</p>
+            <p class="codex-note">历史鱼雷型号已接入战斗性能与发射器损伤；防空炮和侧炮仍等待对应战斗系统。侧炮仅供轻巡洋舰与战列舰。</p>
           </div>
         </section>
       </div>
@@ -171,7 +202,7 @@ export class GameMenus {
       filters.innerHTML = `<button class="active" data-category="all">全部</button>${categories.map(([category, meta]) => `<button data-category="${category}" title="${meta.label}"><i class="${meta.icon}"></i></button>`).join("")}`;
       for (const button of filters.querySelectorAll<HTMLButtonElement>("button")) button.addEventListener("click", () => { this.activeCategory = (button.dataset.category as EquipmentCategory | "all") ?? "all"; for (const item of filters.querySelectorAll("button")) item.classList.toggle("active", item === button); this.renderDock(); });
     }
-    this.codexBody.innerHTML = categories.map(([category, meta]) => `<tr><th><i class="${meta.icon}"></i>${meta.label}</th>${(["common", "purple", "gold", "redGold"] as EquipmentRarity[]).map((rarity) => { const item = EQUIPMENT_BY_ID[`${category}-${rarity}`]; return `<td class="rarity-${rarity}"><b>${item.name}</b><small>${item.origin}<br>核心增益 +${Math.round(item.bonus * 100)}%</small></td>`; }).join("")}<td>${DESTROYER_SLOT_COUNTS[category] > 0 ? `可装 ×${DESTROYER_SLOT_COUNTS[category]}` : "不可安装"}</td></tr>`).join("");
+    this.codexBody.innerHTML = categories.map(([category, meta]) => `<tr><th><i class="${meta.icon}"></i>${meta.label}</th>${(["common", "purple", "gold", "redGold"] as EquipmentRarity[]).map((rarity) => { const item = EQUIPMENT_BY_ID[`${category}-${rarity}`]; return `<td class="rarity-${rarity}"><b>${item.name}</b><small>${item.origin}<br>${equipmentSummary(item)}</small></td>`; }).join("")}<td>${DESTROYER_SLOT_COUNTS[category] > 0 ? `可装 ×${DESTROYER_SLOT_COUNTS[category]}` : "不可安装"}</td></tr>`).join("");
   }
 
   private renderProfile(): void {
@@ -206,7 +237,7 @@ export class GameMenus {
     const item = this.selectedItemId ? EQUIPMENT_BY_ID[this.selectedItemId] : undefined;
     if (!item) { this.componentDetail.innerHTML = "<p>选择组件查看详情</p>"; return; }
     const compatible = item.compatibleHulls.includes(this.profile.hullId); const installed = this.profile.loadout[item.category] === item.id;
-    this.componentDetail.innerHTML = `<div class="detail-heading rarity-${item.rarity}"><i class="${CATEGORY_META[item.category].icon}"></i><div><b>${item.name}</b><small>${CATEGORY_META[item.category].label} · ${item.origin}</small></div></div><p>${item.description}</p><dl><div><dt>核心增益</dt><dd>+${Math.round(item.bonus * 100)}%</dd></div>${item.drawback ? `<div><dt>殉爆风险</dt><dd>+${Math.round(item.drawback * 100)}%</dd></div>` : ""}<div><dt>适配</dt><dd>${compatible ? "驱逐舰" : "轻巡 / 战列"}</dd></div></dl><button class="equip-selected" type="button" ${installed || !compatible ? "disabled" : ""}>${installed ? "已安装" : compatible ? "安装组件" : "该舰型不可安装"}</button>`;
+    this.componentDetail.innerHTML = `<div class="detail-heading rarity-${item.rarity}"><i class="${CATEGORY_META[item.category].icon}"></i><div><b>${item.name}</b><small>${CATEGORY_META[item.category].label} · ${item.origin}</small></div></div><p>${item.description}</p><dl>${equipmentDetailRows(item)}<div><dt>适配</dt><dd>${compatible ? "驱逐舰" : "轻巡 / 战列"}</dd></div></dl><button class="equip-selected" type="button" ${installed || !compatible ? "disabled" : ""}>${installed ? "已安装" : compatible ? "安装组件" : "该舰型不可安装"}</button>`;
     this.componentDetail.querySelector<HTMLButtonElement>(".equip-selected")?.addEventListener("click", () => { this.profile = equipComponent(this.profile, item.id); this.emitProfile(); });
   }
 

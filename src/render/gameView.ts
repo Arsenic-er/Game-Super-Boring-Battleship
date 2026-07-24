@@ -16,7 +16,7 @@ import { LinesMesh } from "@babylonjs/core/Meshes/linesMesh";
 import { Mesh } from "@babylonjs/core/Meshes/mesh";
 import { TransformNode } from "@babylonjs/core/Meshes/transformNode";
 import { Scene } from "@babylonjs/core/scene";
-import { OBJECTIVE, TORPEDO } from "../sim/config";
+import { OBJECTIVE } from "../sim/config";
 import {
   isProjectileVisibleToPlayer,
   isShipVisibleToPlayer,
@@ -29,6 +29,7 @@ import {
   turretAimPoint,
 } from "../sim/simulation";
 import { getMainGun } from "../ships/components";
+import { getTorpedo } from "../ships/torpedoes";
 import { createSymmetricBow } from "./shipGeometry";
 import type { AimProvider } from "../controllers/playerInput";
 import type {
@@ -804,8 +805,9 @@ export class GameView implements AimProvider {
   ): void {
     const visible = weaponSlot === "torpedo";
     const solution = torpedoLaunchSolution(player, player.aimPoint, spread);
+    const torpedo = getTorpedo(player.torpedoId);
     const origin = new Vector3(player.position.x, 0.45, player.position.z);
-    const lineLength = Math.min(1_450, TORPEDO.maximumRangeMeters);
+    const lineLength = Math.min(1_450, torpedo.maximumRangeMeters);
     for (const [index, direction] of solution.directions.entries()) {
       const points = [
         origin,
