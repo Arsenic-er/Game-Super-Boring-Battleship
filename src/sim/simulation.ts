@@ -12,6 +12,7 @@ import {
   HULL_REPAIR,
   KNOT_TO_MPS,
   MODULE_MAX_HEALTH,
+  OBJECTIVE,
   SHIP,
   TURRET,
 } from "./config";
@@ -147,6 +148,14 @@ export function createInitialState(
     mode,
     time: 0,
     status: "running",
+    objective: {
+      center: { x: OBJECTIVE.centerX, y: 0, z: OBJECTIVE.centerZ },
+      radius: OBJECTIVE.radiusMeters,
+      captureProgress: 0,
+      contested: false,
+      occupants: { player: 0, enemy: 0 },
+      scores: { player: 0, enemy: 0 },
+    },
     ships: mode === "battle"
       ? [player, createShip("enemy", "enemy", 180, 1_250, Math.PI)]
       : [player, testTarget],
@@ -1139,25 +1148,126 @@ function repairHull(ship: ShipState, allocation: number, dt: number): void {
   );
 }
 
+export function updateObjective(state: BattleState, dt: number): void {
+  if (state.mode === "sea-trials") return;
+  const objective = state.objective;
+  objective.occupants.player = 0;
+  objective.occupants.enemy = 0;
+  for (const ship of state.ships) {
+    if (ship.hull <= 0) continue;
+    const distance = Math.hypot(
+      ship.position.x - objective.center.x,
+      ship.position.z - objective.center.z,
+    );
+    if (distance <= objective.radius) objective.occupants[ship.team] += 1;
+  }
+
+  const playerPresent = objective.occupants.player > 0;
+  const enemyPresent = objective.occupants.enemy > 0;
+  objective.contested = playerPresent && enemyPresent;
+  let captureRateMultiplier = 1;
+  if (objective.contested) {
+    const influence: Record<Team, number> = { player: 0, enemy: 0 };
+    for (const ship of state.ships) {
+      if (ship.hull <= 0) continue;
+      const distance = Math.hypot(
+        ship.position.x - objective.center.x,
+        ship.position.z - objective.center.z,
+      );
+      if (distance <= objective.radius) influence[ship.team] += ship.hull / ship.maxHull;
+    }
+    const difference = influence.player - influence.enemy;
+    objective.capturingTeam = Math.abs(difference) >= OBJECTIVE.dominanceHullDifference
+      ? difference > 0 ? "player" : "enemy"
+      : undefined;
+    captureRateMultiplier = OBJECTIVE.contestedCaptureMultiplier;
+  } else {
+    objective.capturingTeam = playerPresent ? "player" : enemyPresent ? "enemy" : undefined;
+  }
+
+  if (objective.capturingTeam) {
+    const direction = objective.capturingTeam === "player" ? 1 : -1;
+    objective.captureProgress = clamp(
+      objective.captureProgress
+        + direction * dt / OBJECTIVE.captureSeconds * captureRateMultiplier,
+      -1,
+      1,
+    );
+    if (objective.owner === "player" && objective.captureProgress <= 0) {
+      objective.owner = undefined;
+    } else if (objective.owner === "enemy" && objective.captureProgress >= 0) {
+      objective.owner = undefined;
+    }
+    if (objective.captureProgress >= 1) objective.owner = "player";
+    if (objective.captureProgress <= -1) objective.owner = "enemy";
+  }
+
+  if (objective.owner) {
+    const blockingTeam: Team = objective.owner === "player" ? "enemy" : "player";
+    const scoreMultiplier = objective.occupants[blockingTeam] === 0
+      ? 1
+      : objective.capturingTeam === objective.owner
+        ? OBJECTIVE.contestedScoreMultiplier
+        : 0;
+    if (scoreMultiplier > 0) {
+      objective.scores[objective.owner] = Math.min(
+        OBJECTIVE.scoreToWin,
+        objective.scores[objective.owner]
+          + OBJECTIVE.scorePerSecond * scoreMultiplier * dt,
+      );
+    }
+  }
+}
+
 function updateStatus(state: BattleState): void {
   const player = state.ships.find((ship) => ship.team === "player");
   const enemy = state.ships.find((ship) => ship.team === "enemy");
-  if (!player || player.hull <= 0) {
+  const playerDestroyed = !player || player.hull <= 0;
+  const enemyDestroyed = !enemy || enemy.hull <= 0;
+  if (playerDestroyed && enemyDestroyed) {
+    state.objective.scores.player = Math.min(
+      OBJECTIVE.scoreToWin,
+      state.objective.scores.player + OBJECTIVE.destroyScore,
+    );
+    state.objective.scores.enemy = Math.min(
+      OBJECTIVE.scoreToWin,
+      state.objective.scores.enemy + OBJECTIVE.destroyScore,
+    );
+    state.status = "draw";
+    state.endReason = "destroyed";
+  } else if (playerDestroyed) {
+    state.objective.scores.enemy = Math.min(
+      OBJECTIVE.scoreToWin,
+      state.objective.scores.enemy + OBJECTIVE.destroyScore,
+    );
     state.status = "enemy-won";
     state.endReason = "destroyed";
   } else if (state.mode === "sea-trials") {
     return;
-  } else if (!enemy || enemy.hull <= 0) {
+  } else if (enemyDestroyed) {
+    state.objective.scores.player = Math.min(
+      OBJECTIVE.scoreToWin,
+      state.objective.scores.player + OBJECTIVE.destroyScore,
+    );
     state.status = "player-won";
     state.endReason = "destroyed";
+  } else if (state.objective.scores.player >= OBJECTIVE.scoreToWin) {
+    state.status = "player-won";
+    state.endReason = "score";
+  } else if (state.objective.scores.enemy >= OBJECTIVE.scoreToWin) {
+    state.status = "enemy-won";
+    state.endReason = "score";
   } else if (state.time >= BATTLE_DURATION_SECONDS) {
+    const scoreDifference = state.objective.scores.player - state.objective.scores.enemy;
     const playerRatio = player.hull / player.maxHull;
     const enemyRatio = enemy.hull / enemy.maxHull;
-    state.status = Math.abs(playerRatio - enemyRatio) < 0.01
-      ? "draw"
-      : playerRatio > enemyRatio
-        ? "player-won"
-        : "enemy-won";
+    state.status = Math.abs(scoreDifference) >= 1
+      ? scoreDifference > 0 ? "player-won" : "enemy-won"
+      : Math.abs(playerRatio - enemyRatio) < 0.01
+        ? "draw"
+        : playerRatio > enemyRatio
+          ? "player-won"
+          : "enemy-won";
     state.endReason = "time";
   }
 }
@@ -1168,6 +1278,7 @@ export function observe(state: BattleState, shipId: string) {
   return {
     self,
     enemies: state.ships.filter((ship) => ship.team !== self.team && ship.hull > 0),
+    objective: state.objective,
     time: state.time,
   };
 }
@@ -1202,5 +1313,6 @@ export function stepSimulation(
   }
   resolveShipCollisions(state);
   advanceProjectiles(state, dt);
+  updateObjective(state, dt);
   updateStatus(state);
 }

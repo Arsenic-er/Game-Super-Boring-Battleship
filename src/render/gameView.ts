@@ -16,6 +16,7 @@ import { LinesMesh } from "@babylonjs/core/Meshes/linesMesh";
 import { Mesh } from "@babylonjs/core/Meshes/mesh";
 import { TransformNode } from "@babylonjs/core/Meshes/transformNode";
 import { Scene } from "@babylonjs/core/scene";
+import { OBJECTIVE } from "../sim/config";
 import { gunMuzzleOrigin, predictTrajectory, turretAimPoint } from "../sim/simulation";
 import { getMainGun } from "../ships/components";
 import { createSymmetricBow } from "./shipGeometry";
@@ -73,6 +74,8 @@ export class GameView implements AimProvider {
   private readonly effects: TimedMesh[] = [];
   private readonly sharedEffectMaterials = new Map<string, StandardMaterial>();
   private readonly waveLayers: Mesh[];
+  private readonly objectiveRing: Mesh;
+  private readonly objectiveMaterial: StandardMaterial;
   private aimArc?: LinesMesh;
   private barrelArc?: LinesMesh;
   private aiming = false;
@@ -109,6 +112,20 @@ export class GameView implements AimProvider {
     oceanMaterial.specularPower = 72;
     ocean.material = oceanMaterial;
     ocean.position.y = -0.8;
+
+    this.objectiveRing = CreateTorus("objective-zone-a", {
+      diameter: OBJECTIVE.radiusMeters * 2,
+      thickness: 4,
+      tessellation: 96,
+    }, this.scene);
+    this.objectiveRing.position.set(OBJECTIVE.centerX, -0.28, OBJECTIVE.centerZ);
+    this.objectiveMaterial = new StandardMaterial("objective-zone-material", this.scene);
+    this.objectiveMaterial.diffuseColor = new Color3(0.48, 0.72, 0.7);
+    this.objectiveMaterial.emissiveColor = new Color3(0.12, 0.32, 0.34);
+    this.objectiveMaterial.specularColor = Color3.Black();
+    this.objectiveMaterial.alpha = 0.66;
+    this.objectiveMaterial.disableLighting = true;
+    this.objectiveRing.material = this.objectiveMaterial;
 
     const nearWaveMaterial = this.material(
       "near-wave-material",
@@ -970,6 +987,20 @@ export class GameView implements AimProvider {
   sync(state: BattleState, dt: number): void {
     this.syncShips(state);
     this.syncProjectiles(state);
+    this.objectiveRing.visibility = state.mode === "battle"
+      ? state.objective.contested ? 0.72 + Math.sin(state.time * 7) * 0.18 : 0.72
+      : 0;
+    this.objectiveRing.position.x = state.objective.center.x;
+    this.objectiveRing.position.z = state.objective.center.z;
+    const objectiveColor = state.objective.contested
+      ? new Color3(0.86, 0.58, 0.24)
+      : state.objective.owner === "player"
+        ? new Color3(0.18, 0.72, 0.45)
+        : state.objective.owner === "enemy"
+          ? new Color3(0.82, 0.25, 0.2)
+          : new Color3(0.36, 0.66, 0.68);
+    this.objectiveMaterial.diffuseColor.copyFrom(objectiveColor);
+    this.objectiveMaterial.emissiveColor.copyFrom(objectiveColor.scale(0.36));
     const player = state.ships.find((ship) => ship.team === "player");
     if (player) {
       for (const [index, waves] of this.waveLayers.entries()) {

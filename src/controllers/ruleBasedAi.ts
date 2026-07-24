@@ -167,17 +167,39 @@ export class RuleBasedAi implements Controller {
       this.nextManoeuvreAt = observation.time + 14 + this.random() * 18;
     }
 
+    const objective = observation.objective;
+    const objectiveDx = objective.center.x - observation.self.position.x;
+    const objectiveDz = objective.center.z - observation.self.position.z;
+    const objectiveDistance = Math.hypot(objectiveDx, objectiveDz);
+    const objectiveBearing = Math.atan2(objectiveDx, objectiveDz);
+    const ownScore = objective.scores[observation.self.team];
+    const opposingScore = objective.scores[
+      observation.self.team === "player" ? "enemy" : "player"
+    ];
+    const opponentInZone = objective.occupants[
+      observation.self.team === "player" ? "enemy" : "player"
+    ] > 0;
+    const shouldSecureObjective = objectiveDistance > objective.radius * 0.68
+      && (
+        objective.owner !== observation.self.team
+        || opponentInZone
+        || ownScore - opposingScore < 300
+      );
+
     // Fight from a readable destroyer gunnery band instead of charging into a
     // point-blank accuracy contest. The broadside offset also creates periods
     // in which both the hull and fire-control solution can settle.
-    let desiredHeading = bearingToEnemy + this.manoeuvreOffset;
-    if (range < 1_200) desiredHeading += Math.PI * 0.82;
-    else if (range < 1_900) desiredHeading += Math.PI * 0.42;
+    let desiredHeading = shouldSecureObjective
+      ? objectiveBearing
+        + this.manoeuvreOffset * 0.16
+      : bearingToEnemy + this.manoeuvreOffset;
+    if (!shouldSecureObjective && range < 1_200) desiredHeading += Math.PI * 0.82;
+    else if (!shouldSecureObjective && range < 1_900) desiredHeading += Math.PI * 0.42;
     const headingError = wrapAngle(desiredHeading - observation.self.heading);
     const damaged = observation.self.hull / observation.self.maxHull < 0.38;
-    const tacticalThrottle = range < 1_200
-      ? 0.88
-      : range > 2_300 ? 0.76 : 0.62;
+    const tacticalThrottle = shouldSecureObjective
+      ? 0.9
+      : range < 1_200 ? 0.88 : range > 2_300 ? 0.76 : 0.62;
     const priority = damageControlPriority(observation);
     const recoverableDamage = observation.self.recoverableHull - observation.self.hull;
     const repairHull = priority === "balanced"

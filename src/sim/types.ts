@@ -11,7 +11,7 @@ export type GameMode = "battle" | "sea-trials";
 export type CompartmentId = "bow" | "bridge" | "engineRoom" | "magazine" | "stern";
 export type ModuleId = "gun" | "engine" | "steering" | "magazine" | "crew";
 export type BattleStatus = "running" | "player-won" | "enemy-won" | "draw";
-export type BattleEndReason = "destroyed" | "time";
+export type BattleEndReason = "destroyed" | "score" | "time";
 export type WeaponSlot = "mainGun" | "torpedo" | "aircraft";
 export type ProjectileKind = "shell" | "torpedo";
 export type AmmoType = "he" | "ap";
@@ -24,6 +24,17 @@ export interface DamageControlAllocation {
   flood: number;
   module: number;
   hull: number;
+}
+
+export interface ObjectiveState {
+  center: Vec3;
+  radius: number;
+  captureProgress: number;
+  owner?: Team;
+  capturingTeam?: Team;
+  contested: boolean;
+  occupants: Record<Team, number>;
+  scores: Record<Team, number>;
 }
 
 export interface ModuleState {
@@ -119,6 +130,7 @@ export interface BattleState {
   time: number;
   status: BattleStatus;
   endReason?: BattleEndReason;
+  objective: ObjectiveState;
   ships: ShipState[];
   projectiles: ProjectileState[];
   shots: ShotEvent[];
@@ -142,6 +154,7 @@ export interface ControlCommand {
 export interface Observation {
   self: Readonly<ShipState>;
   enemies: readonly Readonly<ShipState>[];
+  objective: Readonly<ObjectiveState>;
   time: number;
 }
 

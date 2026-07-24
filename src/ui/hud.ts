@@ -1,4 +1,4 @@
-import { BATTLE_DURATION_SECONDS, GUN } from "../sim/config";
+import { BATTLE_DURATION_SECONDS, GUN, OBJECTIVE } from "../sim/config";
 import {
   ballisticVelocity,
   dispersionAtRange,
@@ -86,6 +86,12 @@ export class Hud {
   private readonly battleTime: HTMLElement;
   private readonly timeLabel: HTMLElement;
   private readonly modeLabel: HTMLElement;
+  private readonly objectivePanel: HTMLElement;
+  private readonly playerScore: HTMLElement;
+  private readonly enemyScore: HTMLElement;
+  private readonly objectiveState: HTMLElement;
+  private readonly playerCapture: HTMLElement;
+  private readonly enemyCapture: HTMLElement;
   private readonly targetPanel: HTMLElement;
   private readonly telemetry: HTMLElement;
   private readonly damageState: HTMLElement;
@@ -128,6 +134,19 @@ export class Hud {
           <div class="battle-clock"><span id="time-label">剩余时间</span><strong id="battle-time">10:00</strong></div>
           <button id="quality" class="ghost-button" type="button">画质：低</button>
         </header>
+        <section id="objective-score" class="objective-score" aria-label="中央目标区积分">
+          <div class="objective-score-row">
+            <strong id="player-score">0</strong>
+            <span>中央目标区 A</span>
+            <strong id="enemy-score">0</strong>
+          </div>
+          <div class="capture-track" aria-hidden="true">
+            <i id="player-capture" class="player-capture"></i>
+            <i id="enemy-capture" class="enemy-capture"></i>
+            <b></b>
+          </div>
+          <small id="objective-state">目标区中立 · 进入区域开始占领</small>
+        </section>
         <section class="panel own-status">
           <p class="eyebrow">本舰状态</p>
           <div class="metric-row"><span>航速</span><strong id="speed">0.0 kn</strong></div>
@@ -246,6 +265,12 @@ export class Hud {
     this.battleTime = find("#battle-time");
     this.timeLabel = find("#time-label");
     this.modeLabel = find("#mode-label");
+    this.objectivePanel = find("#objective-score");
+    this.playerScore = find("#player-score");
+    this.enemyScore = find("#enemy-score");
+    this.objectiveState = find("#objective-state");
+    this.playerCapture = find("#player-capture");
+    this.enemyCapture = find("#enemy-capture");
     this.targetPanel = find("#target-status");
     this.telemetry = find("#telemetry");
     this.damageState = find("#damage-state");
@@ -375,8 +400,37 @@ export class Hud {
     this.battleTime.textContent = `${Math.floor(clockSeconds / 60)}:${String(clockSeconds % 60).padStart(2, "0")}`;
     this.timeLabel.textContent = seaTrials ? "海试时间" : "剩余时间";
     this.modeLabel.textContent = seaTrials ? "舰船测试模式 · 无攻击 AI" : "单人战斗 · 1943";
+    this.objectivePanel.hidden = seaTrials;
     this.targetPanel.hidden = seaTrials;
     this.telemetry.hidden = !seaTrials;
+
+    if (!seaTrials) {
+      const objective = state.objective;
+      const playerObjectiveScore = Math.round(objective.scores.player);
+      const enemyObjectiveScore = Math.round(objective.scores.enemy);
+      this.playerScore.textContent = String(playerObjectiveScore);
+      this.enemyScore.textContent = String(enemyObjectiveScore);
+      const playerProgress = Math.max(0, objective.captureProgress) * 50;
+      const enemyProgress = Math.max(0, -objective.captureProgress) * 50;
+      this.playerCapture.style.width = `${playerProgress}%`;
+      this.enemyCapture.style.width = `${enemyProgress}%`;
+      const objectiveDistance = Math.round(Math.hypot(
+        player.position.x - objective.center.x,
+        player.position.z - objective.center.z,
+      ));
+      const ownerText = objective.owner === "player"
+        ? "我方控制"
+        : objective.owner === "enemy" ? "敌方控制" : "目标区中立";
+      const activityText = objective.contested
+        ? "双方争夺中"
+        : objective.capturingTeam === "player"
+          ? `${objective.owner === "enemy" ? "解除敌方控制" : "我方占领"} ${Math.round(Math.abs(objective.captureProgress) * 100)}%`
+          : objective.capturingTeam === "enemy"
+            ? `${objective.owner === "player" ? "敌方正在解除控制" : "敌方占领"} ${Math.round(Math.abs(objective.captureProgress) * 100)}%`
+            : `${objectiveDistance.toLocaleString("zh-CN")} m`;
+      this.objectiveState.textContent = `${ownerText} · ${activityText} · ${OBJECTIVE.scoreToWin} 分获胜`;
+      this.objectivePanel.className = `objective-score${objective.contested ? " contested" : objective.owner ? ` owner-${objective.owner}` : ""}`;
+    }
 
     const hull = percent(player.hull, player.maxHull);
     const recoverableHull = percent(player.recoverableHull, player.maxHull);
@@ -526,8 +580,10 @@ export class Hud {
         ? "战斗胜利"
         : state.status === "enemy-won" ? "战斗失败" : "战斗平局";
     }
-    this.resultDetail.textContent = state.endReason === "time"
-      ? "十分钟作战时间结束，按双方剩余舰体耐久判定结果。"
+    this.resultDetail.textContent = state.endReason === "score"
+      ? `一方中央目标积分达到 ${OBJECTIVE.scoreToWin} 分，取得海域控制权。`
+      : state.endReason === "time"
+        ? `十分钟结束：我方 ${Math.round(state.objective.scores.player)} 分，敌方 ${Math.round(state.objective.scores.enemy)} 分；同分时按舰体耐久判定。`
       : state.status === "player-won"
         ? "敌舰已经失去战斗能力。"
         : state.status === "enemy-won" ? "本舰已经失去战斗能力。" : "双方均未取得决定性优势。";

@@ -60,6 +60,38 @@ function drawShip(
   context.restore();
 }
 
+function objectiveColor(state: BattleState): string {
+  if (state.objective.contested) return "#e2b66c";
+  if (state.objective.owner === "player") return "#72d5a3";
+  if (state.objective.owner === "enemy") return "#df7965";
+  return "rgba(207, 225, 222, .68)";
+}
+
+function drawObjective(
+  context: CanvasRenderingContext2D,
+  state: BattleState,
+  point: MapPoint,
+  radius: number,
+): void {
+  context.save();
+  context.strokeStyle = objectiveColor(state);
+  context.fillStyle = state.objective.owner === "player"
+    ? "rgba(74, 171, 119, .1)"
+    : state.objective.owner === "enemy"
+      ? "rgba(181, 75, 59, .1)"
+      : "rgba(192, 216, 212, .055)";
+  context.lineWidth = state.objective.contested ? 2 : 1.2;
+  context.beginPath();
+  context.arc(point.x, point.y, radius, 0, Math.PI * 2);
+  context.fill();
+  context.stroke();
+  context.fillStyle = objectiveColor(state);
+  context.font = "700 10px monospace";
+  context.textAlign = "center";
+  context.fillText("A", point.x, point.y + 3);
+  context.restore();
+}
+
 export class TacticalMap {
   private readonly minimap: HTMLCanvasElement;
   private readonly largeMap: HTMLCanvasElement;
@@ -179,6 +211,15 @@ export class TacticalMap {
     context.moveTo(0, center.y);
     context.lineTo(width, center.y);
     context.stroke();
+    const objectivePoint = worldToHeadingUpMap(
+      state.objective.center.x - player.position.x,
+      state.objective.center.z - player.position.z,
+      player.heading,
+      scale,
+      center.x,
+      center.y,
+    );
+    drawObjective(context, state, objectivePoint, state.objective.radius * scale);
     for (const ship of state.ships) {
       const point = worldToHeadingUpMap(
         ship.position.x - player.position.x,
@@ -225,6 +266,15 @@ export class TacticalMap {
       center.y - halfExtent * scale,
       halfExtent * 2 * scale,
       halfExtent * 2 * scale,
+    );
+    drawObjective(
+      context,
+      state,
+      {
+        x: center.x + state.objective.center.x * scale,
+        y: center.y - state.objective.center.z * scale,
+      },
+      state.objective.radius * scale,
     );
     for (const ship of state.ships) {
       const point = { x: center.x + ship.position.x * scale, y: center.y - ship.position.z * scale };

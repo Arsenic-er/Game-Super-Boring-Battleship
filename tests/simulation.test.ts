@@ -1,6 +1,11 @@
 import { describe, expect, it } from "vitest";
 import { RuleBasedAi } from "../src/controllers/ruleBasedAi";
-import { BATTLE_DURATION_SECONDS, FIXED_STEP, GUN } from "../src/sim/config";
+import {
+  BATTLE_DURATION_SECONDS,
+  FIXED_STEP,
+  GUN,
+  OBJECTIVE,
+} from "../src/sim/config";
 import {
   FRONT_TURRET_TRAVERSE_LIMIT_RADIANS,
   MAIN_GUNS,
@@ -15,6 +20,7 @@ import {
   observe,
   stepSimulation,
   turretAimPoint,
+  updateObjective,
 } from "../src/sim/simulation";
 import type { ControlCommand } from "../src/sim/types";
 
@@ -416,11 +422,109 @@ describe("deterministic battle simulation", () => {
     expect(player.hull).toBeCloseTo(700, 5);
   });
 
+  it("captures and scores the central objective while one team occupies it", () => {
+    const state = createInitialState(41);
+    const player = state.ships.find((ship) => ship.team === "player")!;
+    const enemy = state.ships.find((ship) => ship.team === "enemy")!;
+    player.position = { ...state.objective.center };
+    enemy.position = { x: 4_000, y: 0, z: 4_000 };
+    updateObjective(state, OBJECTIVE.captureSeconds + 1);
+    expect(state.objective.owner).toBe("player");
+    expect(state.objective.captureProgress).toBe(1);
+    expect(state.objective.scores.player).toBeGreaterThan(0);
+  });
+
+  it("freezes capture and scoring while both teams contest the objective", () => {
+    const state = createInitialState(42);
+    for (const ship of state.ships) ship.position = { ...state.objective.center };
+    state.objective.captureProgress = 0.45;
+    state.objective.owner = "player";
+    state.objective.scores.player = 120;
+    updateObjective(state, 20);
+    expect(state.objective.contested).toBe(true);
+    expect(state.objective.captureProgress).toBeCloseTo(0.45, 8);
+    expect(state.objective.scores.player).toBe(120);
+  });
+
+  it("lets the healthier ship slowly establish superiority in a contested zone", () => {
+    const state = createInitialState(47);
+    for (const ship of state.ships) ship.position = { ...state.objective.center };
+    state.ships.find((ship) => ship.team === "enemy")!.hull = 700;
+    updateObjective(state, 10);
+    expect(state.objective.contested).toBe(true);
+    expect(state.objective.capturingTeam).toBe("player");
+    expect(state.objective.captureProgress).toBeGreaterThan(0);
+    expect(state.objective.captureProgress).toBeLessThan(10 / OBJECTIVE.captureSeconds);
+  });
+
+  it("lets an uncontested enemy neutralize an owned objective", () => {
+    const state = createInitialState(43);
+    const player = state.ships.find((ship) => ship.team === "player")!;
+    const enemy = state.ships.find((ship) => ship.team === "enemy")!;
+    player.position = { x: -4_000, y: 0, z: -4_000 };
+    enemy.position = { ...state.objective.center };
+    state.objective.captureProgress = 1;
+    state.objective.owner = "player";
+    state.objective.scores.player = 80;
+    updateObjective(state, OBJECTIVE.captureSeconds + 1);
+    expect(state.objective.owner).toBeUndefined();
+    expect(state.objective.captureProgress).toBeLessThan(0);
+    expect(state.objective.scores.player).toBe(80);
+  });
+
+  it("ends the battle when objective score reaches the victory threshold", () => {
+    const state = createInitialState(44);
+    const player = state.ships.find((ship) => ship.team === "player")!;
+    const enemy = state.ships.find((ship) => ship.team === "enemy")!;
+    player.position = { ...state.objective.center };
+    enemy.position = { x: 4_000, y: 0, z: 4_000 };
+    state.objective.captureProgress = 1;
+    state.objective.owner = "player";
+    state.objective.scores.player = OBJECTIVE.scoreToWin - 1;
+    stepSimulation(state, new Map([
+      ["player", idle(0, 1_000)],
+      ["enemy", idle(0, -1_000)],
+    ]), 1);
+    expect(state.status).toBe("player-won");
+    expect(state.endReason).toBe("score");
+  });
+
+  it("does not run objective capture or scoring in sea trials", () => {
+    const state = createInitialState(45, "sea-trials");
+    for (const ship of state.ships) ship.position = { ...state.objective.center };
+    updateObjective(state, 120);
+    expect(state.objective.captureProgress).toBe(0);
+    expect(state.objective.scores).toEqual({ player: 0, enemy: 0 });
+  });
+
+  it("declares a draw if both ships are destroyed in the same simulation step", () => {
+    const state = createInitialState(46);
+    for (const ship of state.ships) ship.hull = 0;
+    stepSimulation(state, new Map(), FIXED_STEP);
+    expect(state.status).toBe("draw");
+    expect(state.endReason).toBe("destroyed");
+  });
+
   it("awards a time-limit victory to the ship with more hull remaining", () => {
     const state = createInitialState(12);
     state.time = BATTLE_DURATION_SECONDS - FIXED_STEP / 2;
     state.ships.find((ship) => ship.id === "player")!.hull = 720;
     state.ships.find((ship) => ship.id === "enemy")!.hull = 510;
+    stepSimulation(state, new Map([
+      ["player", idle(0, 1_000)],
+      ["enemy", idle(0, -1_000)],
+    ]), FIXED_STEP);
+    expect(state.status).toBe("player-won");
+    expect(state.endReason).toBe("time");
+  });
+
+  it("uses objective score before hull durability at the time limit", () => {
+    const state = createInitialState(14);
+    state.time = BATTLE_DURATION_SECONDS - FIXED_STEP / 2;
+    state.objective.scores.player = 125;
+    state.objective.scores.enemy = 90;
+    state.ships.find((ship) => ship.id === "player")!.hull = 350;
+    state.ships.find((ship) => ship.id === "enemy")!.hull = 900;
     stepSimulation(state, new Map([
       ["player", idle(0, 1_000)],
       ["enemy", idle(0, -1_000)],

@@ -27,6 +27,11 @@ export interface BattleTelemetry {
   player: TeamCombatMetrics;
   enemy: TeamCombatMetrics;
   collisions: number;
+  firstCaptureSeconds?: number;
+  contestedSeconds: number;
+  playerControlSeconds: number;
+  enemyControlSeconds: number;
+  finalScores: Record<Team, number>;
   finalStateFingerprint: string;
 }
 
@@ -42,7 +47,9 @@ export interface BalanceReport {
   enemyWins: number;
   draws: number;
   destroyedBattles: number;
+  scoreBattles: number;
   timedBattles: number;
+  noCaptureBattles: number;
   playerWinRate: number;
   durationSeconds: PercentileSummary;
   firstHitSeconds: PercentileSummary;
@@ -65,6 +72,11 @@ export interface BalanceReport {
   firesPerBattle: number;
   floodsPerBattle: number;
   collisionsPerBattle: number;
+  averageContestedSeconds: number;
+  averagePlayerControlSeconds: number;
+  averageEnemyControlSeconds: number;
+  averagePlayerScore: number;
+  averageEnemyScore: number;
 }
 
 const emptyTeamMetrics = (): TeamCombatMetrics => ({
@@ -98,6 +110,17 @@ export function battleStateFingerprint(state: BattleState): string {
     status: state.status,
     endReason: state.endReason ?? null,
     randomSeed: state.randomSeed,
+    objective: {
+      captureProgress: round(state.objective.captureProgress),
+      owner: state.objective.owner ?? null,
+      capturingTeam: state.objective.capturingTeam ?? null,
+      contested: state.objective.contested,
+      occupants: state.objective.occupants,
+      scores: {
+        player: round(state.objective.scores.player),
+        enemy: round(state.objective.scores.enemy),
+      },
+    },
     ships: [...state.ships]
       .sort((left, right) => left.id.localeCompare(right.id))
       .map((ship) => ({
@@ -159,7 +182,11 @@ export function runHeadlessBattle(
     enemy: emptyTeamMetrics(),
   };
   let firstHitSeconds: number | undefined;
+  let firstCaptureSeconds: number | undefined;
   let collisions = 0;
+  let contestedSeconds = 0;
+  let playerControlSeconds = 0;
+  let enemyControlSeconds = 0;
   // One guard tick avoids a 599.999999... boundary leaving a nominal
   // ten-minute battle in the "running" state.
   const maximumSteps = Math.ceil(maximumSeconds / FIXED_STEP) + 1;
@@ -170,6 +197,10 @@ export function runHeadlessBattle(
       ["enemy", controllers.enemy.command(observe(state, "enemy"))],
     ]);
     stepSimulation(state, commands, FIXED_STEP);
+    if (state.objective.owner) firstCaptureSeconds ??= state.time;
+    if (state.objective.contested) contestedSeconds += FIXED_STEP;
+    if (state.objective.owner === "player") playerControlSeconds += FIXED_STEP;
+    if (state.objective.owner === "enemy") enemyControlSeconds += FIXED_STEP;
 
     const teamsFiring = new Set<Team>();
     for (const shot of state.shots) {
@@ -212,6 +243,11 @@ export function runHeadlessBattle(
     player: metrics.player,
     enemy: metrics.enemy,
     collisions,
+    firstCaptureSeconds,
+    contestedSeconds,
+    playerControlSeconds,
+    enemyControlSeconds,
+    finalScores: { ...state.objective.scores },
     finalStateFingerprint: battleStateFingerprint(state),
   };
 }
@@ -247,7 +283,9 @@ export function summarizeBattles(battles: readonly BattleTelemetry[]): BalanceRe
     enemyWins: battles.filter((battle) => battle.status === "enemy-won").length,
     draws: battles.filter((battle) => battle.status === "draw").length,
     destroyedBattles: battles.filter((battle) => battle.endReason === "destroyed").length,
+    scoreBattles: battles.filter((battle) => battle.endReason === "score").length,
     timedBattles: battles.filter((battle) => battle.endReason === "time").length,
+    noCaptureBattles: battles.filter((battle) => battle.firstCaptureSeconds === undefined).length,
     playerWinRate: round(safeRate(
       battles.filter((battle) => battle.status === "player-won").length,
       runs,
@@ -286,6 +324,26 @@ export function summarizeBattles(battles: readonly BattleTelemetry[]): BalanceRe
     firesPerBattle: round(safeRate(fires, runs), 3),
     floodsPerBattle: round(safeRate(floods, runs), 3),
     collisionsPerBattle: round(safeRate(total((battle) => battle.collisions), runs), 3),
+    averageContestedSeconds: round(
+      safeRate(total((battle) => battle.contestedSeconds), runs),
+      2,
+    ),
+    averagePlayerControlSeconds: round(
+      safeRate(total((battle) => battle.playerControlSeconds), runs),
+      2,
+    ),
+    averageEnemyControlSeconds: round(
+      safeRate(total((battle) => battle.enemyControlSeconds), runs),
+      2,
+    ),
+    averagePlayerScore: round(
+      safeRate(total((battle) => battle.finalScores.player), runs),
+      2,
+    ),
+    averageEnemyScore: round(
+      safeRate(total((battle) => battle.finalScores.enemy), runs),
+      2,
+    ),
   };
 }
 

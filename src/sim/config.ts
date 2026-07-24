@@ -4,6 +4,19 @@ export const GRAVITY = 9.81;
 export const KNOT_TO_MPS = 0.514444;
 export const BATTLE_DURATION_SECONDS = 10 * 60;
 
+export const OBJECTIVE = {
+  centerX: 90,
+  centerZ: 175,
+  radiusMeters: 450,
+  captureSeconds: 25,
+  contestedCaptureMultiplier: 0.35,
+  contestedScoreMultiplier: 0.35,
+  dominanceHullDifference: 0.08,
+  scorePerSecond: 2.5,
+  scoreToWin: 200,
+  destroyScore: 100,
+} as const;
+
 export const SHIP = {
   length: 112,
   beam: 11,

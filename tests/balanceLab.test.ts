@@ -25,7 +25,9 @@ describe("headless balance lab", () => {
     expect(report.runs).toBe(4);
     expect(report.draws).toBeGreaterThanOrEqual(0);
     expect(report.playerWins + report.enemyWins + report.draws).toBe(4);
-    expect(report.destroyedBattles + report.timedBattles).toBe(4);
+    expect(report.destroyedBattles + report.scoreBattles + report.timedBattles).toBe(4);
+    expect(report.noCaptureBattles).toBeGreaterThanOrEqual(0);
+    expect(report.averageContestedSeconds).toBeGreaterThanOrEqual(0);
     expect(report.durationSeconds.p25).toBeLessThanOrEqual(report.durationSeconds.p50);
     expect(report.averagePlayerSalvos).toBeGreaterThan(12);
     expect(report.averageEnemySalvos).toBeGreaterThan(12);

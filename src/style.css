@@ -227,6 +227,70 @@ button { font: inherit; }
   letter-spacing: .16em;
 }
 
+.objective-score {
+  position: fixed;
+  left: 50%;
+  top: 76px;
+  z-index: 4;
+  width: 360px;
+  padding: 7px 11px 8px;
+  transform: translateX(-50%);
+  border: 1px solid rgba(132, 188, 192, .28);
+  background: rgba(4, 24, 31, .78);
+  box-shadow: 3px 3px 0 rgba(0, 0, 0, .32);
+  text-align: center;
+  pointer-events: none;
+}
+.objective-score[hidden] { display: none; }
+.objective-score-row {
+  display: grid;
+  grid-template-columns: 56px 1fr 56px;
+  align-items: center;
+  gap: 8px;
+}
+.objective-score-row strong {
+  color: #9ee4c1;
+  font: 700 16px/1 "Fusion Bold Pixel", "Microsoft YaHei", sans-serif;
+}
+.objective-score-row strong:last-child { color: #ef927e; }
+.objective-score-row span {
+  color: #c8dcda;
+  font: 700 10px/1 "Fusion Bold Pixel", "Microsoft YaHei", sans-serif;
+  letter-spacing: .1em;
+}
+.capture-track {
+  position: relative;
+  height: 4px;
+  margin: 6px 0 5px;
+  overflow: hidden;
+  background: rgba(191, 218, 215, .1);
+}
+.capture-track i {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  width: 0;
+  transition: width .18s linear;
+}
+.capture-track .player-capture { left: 50%; background: #76d0a1; }
+.capture-track .enemy-capture { right: 50%; background: #dc745f; }
+.capture-track b {
+  position: absolute;
+  left: 50%;
+  top: 0;
+  bottom: 0;
+  width: 1px;
+  background: #e7eee6;
+}
+.objective-score small { color: #789699; font-size: 8px; }
+.objective-score.owner-player { border-color: rgba(102, 210, 156, .46); }
+.objective-score.owner-enemy { border-color: rgba(224, 112, 91, .48); }
+.objective-score.contested {
+  border-color: #d5ac69;
+  animation: objective-contested .8s steps(2, end) infinite;
+}
+@keyframes objective-contested { 50% { filter: brightness(1.24); } }
+
 .ghost-button {
   color: #c8dfe0;
   border: 1px solid rgba(184, 217, 218, .34);
