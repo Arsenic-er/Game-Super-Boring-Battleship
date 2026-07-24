@@ -14,6 +14,7 @@ import type {
   ImpactEvent,
   ModuleId,
   PenetrationResult,
+  PlayerTargetView,
   ShipState,
   WeaponSlot,
 } from "../sim/types";
@@ -391,9 +392,13 @@ export class Hud {
     set("rudder", `${Math.round(player.rudder * 100)}%`);
   }
 
-  update(state: BattleState, aimRange: number, selectedWeapon: WeaponSlot): void {
+  update(
+    state: BattleState,
+    aimRange: number,
+    selectedWeapon: WeaponSlot,
+    target?: PlayerTargetView,
+  ): void {
     const player = state.ships.find((ship) => ship.team === "player");
-    const enemy = state.ships.find((ship) => ship.team === "enemy");
     if (!player) return;
     const seaTrials = state.mode === "sea-trials";
     const clockSeconds = seaTrials ? Math.floor(state.time) : Math.max(0, Math.ceil(BATTLE_DURATION_SECONDS - state.time));
@@ -540,9 +545,19 @@ export class Hud {
     this.scopeBarrelMarker.classList.toggle("blocked", fireBlocked);
     this.scopeBearing.textContent = `${relativeBearing >= 0 ? "+" : ""}${relativeBearing.toFixed(1)}°`;
     this.scopeRange.textContent = `${Math.round(aimRange).toLocaleString("zh-CN")} m`;
-    this.scopeOpticalRange.textContent = enemy
-      ? `${Math.round(Math.hypot(enemy.position.x - player.position.x, enemy.position.z - player.position.z) / 50) * 50} m`
-      : "无目标";
+    const perceivedRange = target
+      ? target.live
+        ? target.rangeMeters
+        : Math.hypot(
+          target.position.x - player.position.x,
+          target.position.z - player.position.z,
+        )
+      : undefined;
+    this.scopeOpticalRange.textContent = perceivedRange === undefined
+      ? "无光学接触"
+      : target?.live
+        ? `约 ${Math.round(perceivedRange / 50) * 50} m`
+        : `最后已知 ${Math.round(perceivedRange / 100) * 100} m`;
     this.scopeFlightTime.textContent = this.flightTime.textContent ?? "--";
     this.scopeDispersion.textContent = `纵±${Math.round(spread.longitudinal)} 横±${Math.round(spread.lateral)} m`;
     this.scopeGun.textContent = `${ammoLabels[player.ammoType]} · ${gunDefinition.name}`;
@@ -554,19 +569,45 @@ export class Hud {
       this.result.hidden = true;
       return;
     }
-    if (enemy) {
-      const enemyHull = percent(enemy.hull, enemy.maxHull);
-      this.enemyText.textContent = `${enemyHull}%`;
-      this.enemyFill.style.width = `${enemyHull}%`;
-      const targetDistance = Math.hypot(enemy.position.x - player.position.x, enemy.position.z - player.position.z);
-      const opticalEstimate = Math.round((targetDistance + Math.sin(state.time * 0.31) * 32) / 50) * 50;
-      this.targetRange.textContent = `${opticalEstimate.toLocaleString("zh-CN")} m`;
-      this.targetMotion.textContent = `${enemy.speedKnots.toFixed(0)} kn · ${String(Math.round((enemy.heading * 180 / Math.PI + 360) % 360)).padStart(3, "0")}°`;
-      const rangeError = Math.round((aimRange - opticalEstimate) / 10) * 10;
-      this.rangeCorrection.textContent = Math.abs(rangeError) <= 35
-        ? "距离吻合"
-        : rangeError > 0 ? `落点过远 ${rangeError} m` : `落点过近 ${Math.abs(rangeError)} m`;
-      this.rangeCorrection.className = Math.abs(rangeError) <= 35 ? "matched" : "";
+    this.targetPanel.classList.toggle("contact-lost", Boolean(target && !target.live));
+    this.targetPanel.classList.toggle("contact-acquiring", target?.mode === "acquiring");
+    if (!target) {
+      this.enemyText.textContent = "未发现";
+      this.enemyFill.style.width = "0%";
+      this.targetRange.textContent = "--";
+      this.targetMotion.textContent = "--";
+      this.rangeCorrection.textContent = "等待光学接触";
+      this.rangeCorrection.className = "";
+    } else if (target.mode === "acquiring") {
+      this.enemyText.textContent = "识别中";
+      this.enemyFill.style.width = "0%";
+      this.targetRange.textContent = `约 ${Math.round(target.rangeMeters / 100) * 100} m`;
+      this.targetMotion.textContent = `方位解算中 · 置信 ${Math.round(target.confidence * 100)}%`;
+      this.rangeCorrection.textContent = "等待稳定跟踪";
+      this.rangeCorrection.className = "";
+    } else {
+      const hullEstimate = Math.round(target.estimatedHullRatio * 100);
+      this.enemyText.textContent = target.live ? `约 ${hullEstimate}%` : `失联 · ${hullEstimate}%`;
+      this.enemyFill.style.width = `${hullEstimate}%`;
+      const opticalEstimate = Math.round((perceivedRange ?? 0) / (target.live ? 50 : 100))
+        * (target.live ? 50 : 100);
+      const age = Math.max(0, state.time - target.lastObservedAt);
+      this.targetRange.textContent = target.live
+        ? `约 ${opticalEstimate.toLocaleString("zh-CN")} m`
+        : `${opticalEstimate.toLocaleString("zh-CN")} m · ${age.toFixed(1)} s 前`;
+      this.targetMotion.textContent = `${target.speedKnots.toFixed(0)} kn · ${String(Math.round((target.heading * 180 / Math.PI + 360) % 360)).padStart(3, "0")}° · ${Math.round(target.confidence * 100)}%`;
+      if (target.live) {
+        const rangeError = Math.round((aimRange - opticalEstimate) / 10) * 10;
+        this.rangeCorrection.textContent = Math.abs(rangeError) <= 35
+          ? "距离吻合"
+          : rangeError > 0 ? `落点过远 ${rangeError} m` : `落点过近 ${Math.abs(rangeError)} m`;
+        this.rangeCorrection.className = Math.abs(rangeError) <= 35 ? "matched" : "";
+      } else {
+        this.rangeCorrection.textContent = target.mode === "lost"
+          ? "目标丢失 · 保持搜索"
+          : "搜索最后已知区域";
+        this.rangeCorrection.className = "";
+      }
     }
 
     if (state.status === "running") {

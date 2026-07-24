@@ -1,4 +1,4 @@
-import type { BattleState, ShipState } from "../sim/types";
+import type { BattleState, PlayerTargetView, ShipState } from "../sim/types";
 
 export interface MapPoint {
   x: number;
@@ -60,6 +60,47 @@ function drawShip(
   context.restore();
 }
 
+function drawContact(
+  context: CanvasRenderingContext2D,
+  target: PlayerTargetView,
+  point: MapPoint,
+  heading: number,
+  time: number,
+): void {
+  const stale = !target.live;
+  const age = Math.max(0, time - target.lastObservedAt);
+  context.save();
+  context.globalAlpha = stale ? Math.max(0.28, target.confidence) : 0.72 + target.confidence * 0.28;
+  context.translate(point.x, point.y);
+  context.rotate(heading);
+  context.strokeStyle = stale ? "#e4b97b" : "#ffe1d9";
+  context.fillStyle = stale ? "rgba(228, 185, 123, .18)" : "#ef806b";
+  context.lineWidth = stale ? 1 : 1.2;
+  if (stale) context.setLineDash([3, 3]);
+  context.beginPath();
+  if (stale) {
+    context.moveTo(0, -7);
+    context.lineTo(7, 0);
+    context.lineTo(0, 7);
+    context.lineTo(-7, 0);
+  } else {
+    context.moveTo(0, -8);
+    context.lineTo(5, 6);
+    context.lineTo(0, 4);
+    context.lineTo(-5, 6);
+  }
+  context.closePath();
+  context.fill();
+  context.stroke();
+  if (stale) {
+    context.rotate(-heading);
+    context.beginPath();
+    context.arc(0, 0, Math.min(28, 9 + age * 0.75), 0, Math.PI * 2);
+    context.stroke();
+  }
+  context.restore();
+}
+
 function objectiveColor(state: BattleState): string {
   if (state.objective.contested) return "#e2b66c";
   if (state.objective.owner === "player") return "#72d5a3";
@@ -101,6 +142,7 @@ export class TacticalMap {
   private lastDrawTime = -1;
   private lastLargeMapDrawTime = -1;
   private lastState?: BattleState;
+  private lastTarget?: PlayerTargetView;
 
   constructor(parent: HTMLElement) {
     const minimapPanel = document.createElement("section");
@@ -152,7 +194,7 @@ export class TacticalMap {
     this.expanded = true;
     this.overlay.hidden = false;
     if (this.lastState) {
-      this.drawLargeMap(this.lastState);
+      this.drawLargeMap(this.lastState, this.lastTarget);
       this.lastLargeMapDrawTime = this.lastState.time;
     }
   }
@@ -171,24 +213,29 @@ export class TacticalMap {
     return this.expanded;
   }
 
-  update(state: BattleState): void {
+  update(state: BattleState, target?: PlayerTargetView): void {
     this.lastState = state;
+    this.lastTarget = target;
     const player = state.ships.find((ship) => ship.team === "player");
     if (!player) return;
     this.compassNeedle.style.transform = `rotate(${-player.heading}rad)`;
     if (this.lastDrawTime >= 0 && state.time - this.lastDrawTime < 1 / 15) return;
     this.lastDrawTime = state.time;
-    this.drawMinimap(state, player);
+    this.drawMinimap(state, player, target);
     if (
       this.expanded
       && (this.lastLargeMapDrawTime < 0 || state.time - this.lastLargeMapDrawTime >= 1 / 4)
     ) {
       this.lastLargeMapDrawTime = state.time;
-      this.drawLargeMap(state);
+      this.drawLargeMap(state, target);
     }
   }
 
-  private drawMinimap(state: BattleState, player: ShipState): void {
+  private drawMinimap(
+    state: BattleState,
+    player: ShipState,
+    target?: PlayerTargetView,
+  ): void {
     const context = resizeCanvas(this.minimap);
     if (!context) return;
     const width = this.minimap.clientWidth;
@@ -220,21 +267,31 @@ export class TacticalMap {
       center.y,
     );
     drawObjective(context, state, objectivePoint, state.objective.radius * scale);
-    for (const ship of state.ships) {
+    const playerPoint = worldToHeadingUpMap(
+      0,
+      0,
+      player.heading,
+      scale,
+      center.x,
+      center.y,
+    );
+    drawShip(context, player, playerPoint, 0, true);
+    if (target) {
       const point = worldToHeadingUpMap(
-        ship.position.x - player.position.x,
-        ship.position.z - player.position.z,
+        target.position.x - player.position.x,
+        target.position.z - player.position.z,
         player.heading,
         scale,
         center.x,
         center.y,
       );
-      if (point.x < 6 || point.x > width - 6 || point.y < 6 || point.y > height - 6) continue;
-      drawShip(context, ship, point, ship.heading - player.heading, ship.id === player.id);
+      if (point.x >= 6 && point.x <= width - 6 && point.y >= 6 && point.y <= height - 6) {
+        drawContact(context, target, point, target.heading - player.heading, state.time);
+      }
     }
   }
 
-  private drawLargeMap(state: BattleState): void {
+  private drawLargeMap(state: BattleState, target?: PlayerTargetView): void {
     const context = resizeCanvas(this.largeMap, 1);
     if (!context) return;
     const width = this.largeMap.clientWidth;
@@ -276,11 +333,24 @@ export class TacticalMap {
       },
       state.objective.radius * scale,
     );
-    for (const ship of state.ships) {
-      const point = { x: center.x + ship.position.x * scale, y: center.y - ship.position.z * scale };
-      drawShip(context, ship, point, ship.heading, ship.team === "player");
-      context.fillStyle = ship.team === "player" ? "#b7ebce" : "#ffad9d";
-      context.fillText(ship.team === "player" ? "本舰" : "敌舰", point.x + 10, point.y - 8);
+    const player = state.ships.find((ship) => ship.team === "player");
+    if (player) {
+      const point = {
+        x: center.x + player.position.x * scale,
+        y: center.y - player.position.z * scale,
+      };
+      drawShip(context, player, point, player.heading, true);
+      context.fillStyle = "#b7ebce";
+      context.fillText("本舰", point.x + 10, point.y - 8);
+    }
+    if (target) {
+      const point = {
+        x: center.x + target.position.x * scale,
+        y: center.y - target.position.z * scale,
+      };
+      drawContact(context, target, point, target.heading, state.time);
+      context.fillStyle = target.live ? "#ffad9d" : "#e4b97b";
+      context.fillText(target.live ? "敌舰观测" : "最后已知", point.x + 10, point.y - 8);
     }
   }
 }

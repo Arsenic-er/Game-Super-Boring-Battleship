@@ -1385,6 +1385,15 @@ export function observe(state: BattleState, shipId: string) {
       ),
       rangeMeters: observedRange,
       confidence,
+      estimatedHullRatio: clamp(
+        Math.round((
+          target.hull / target.maxHull
+          + sensorSigned(sampleSeed ^ stringSeed(target.id) ^ 0x3a6f2d91)
+            * (0.06 + rangeFactor * 0.12)
+        ) * 20) / 20,
+        0,
+        1,
+      ),
     });
   }
   state.sensorSnapshots[shipId] = { sampleIndex, contacts };

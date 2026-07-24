@@ -17,11 +17,22 @@ import { Mesh } from "@babylonjs/core/Meshes/mesh";
 import { TransformNode } from "@babylonjs/core/Meshes/transformNode";
 import { Scene } from "@babylonjs/core/scene";
 import { OBJECTIVE } from "../sim/config";
+import {
+  isProjectileVisibleToPlayer,
+  isShipVisibleToPlayer,
+} from "../sim/playerPerception";
 import { gunMuzzleOrigin, predictTrajectory, turretAimPoint } from "../sim/simulation";
 import { getMainGun } from "../ships/components";
 import { createSymmetricBow } from "./shipGeometry";
 import type { AimProvider } from "../controllers/playerInput";
-import type { BattleState, ImpactEvent, ShipState, ShotEvent, Vec3 } from "../sim/types";
+import type {
+  BattleState,
+  ImpactEvent,
+  PlayerTargetView,
+  ShipState,
+  ShotEvent,
+  Vec3,
+} from "../sim/types";
 
 interface ShipVisual {
   root: TransformNode;
@@ -560,13 +571,16 @@ export class GameView implements AimProvider {
     return this.quality;
   }
 
-  private syncShips(state: BattleState): void {
+  private syncShips(state: BattleState, perceivedTarget?: PlayerTargetView): void {
     for (const ship of state.ships) {
       let visual = this.ships.get(ship.id);
       if (!visual) {
         visual = this.createShip(ship);
         this.ships.set(ship.id, visual);
       }
+      const visible = isShipVisibleToPlayer(ship, state.mode, perceivedTarget);
+      visual.root.setEnabled(visible);
+      if (!visible) continue;
       const seaMotion = ship.hull > 0 ? Math.sin(state.time * 0.7 + (ship.team === "enemy" ? 1.8 : 0)) : 0;
       const settling = ship.flooding * 0.022 + (1 - ship.hull / ship.maxHull) * 1.2;
       visual.root.position.set(ship.position.x, ship.hull > 0 ? seaMotion * 0.16 - settling : -4, ship.position.z);
@@ -598,8 +612,11 @@ export class GameView implements AimProvider {
     }
   }
 
-  private syncProjectiles(state: BattleState): void {
-    const activeIds = new Set(state.projectiles.map((projectile) => projectile.id));
+  private syncProjectiles(state: BattleState, perceivedTarget?: PlayerTargetView): void {
+    const player = state.ships.find((ship) => ship.team === "player");
+    const visibleProjectiles = state.projectiles.filter((projectile) =>
+      isProjectileVisibleToPlayer(projectile, player, perceivedTarget));
+    const activeIds = new Set(visibleProjectiles.map((projectile) => projectile.id));
     for (const [id, visual] of this.projectileMeshes) {
       if (!activeIds.has(id)) {
         visual.root.dispose(false, true);
@@ -610,7 +627,7 @@ export class GameView implements AimProvider {
       }
     }
 
-    for (const projectile of state.projectiles) {
+    for (const projectile of visibleProjectiles) {
       const nextPoint = toVector(projectile.position);
       const direction = toVector(projectile.velocity).normalize();
       let visual = this.projectileMeshes.get(projectile.id);
@@ -984,9 +1001,9 @@ export class GameView implements AimProvider {
     }
   }
 
-  sync(state: BattleState, dt: number): void {
-    this.syncShips(state);
-    this.syncProjectiles(state);
+  sync(state: BattleState, dt: number, perceivedTarget?: PlayerTargetView): void {
+    this.syncShips(state, perceivedTarget);
+    this.syncProjectiles(state, perceivedTarget);
     this.objectiveRing.visibility = state.mode === "battle"
       ? state.objective.contested ? 0.72 + Math.sin(state.time * 7) * 0.18 : 0.72
       : 0;

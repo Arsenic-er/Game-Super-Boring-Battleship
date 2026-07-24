@@ -49,6 +49,7 @@ export interface SensorContact {
   speedKnots: number;
   rangeMeters: number;
   confidence: number;
+  estimatedHullRatio: number;
 }
 
 export interface SensorSnapshot {
@@ -61,6 +62,20 @@ export interface PerceptionTelemetry {
   confidence: number;
   lastObservedAt?: number;
   estimatedPosition?: Vec3;
+}
+
+export interface PlayerTargetView {
+  id: string;
+  team: Team;
+  mode: PerceptionMode;
+  live: boolean;
+  confidence: number;
+  lastObservedAt: number;
+  position: Vec3;
+  heading: number;
+  speedKnots: number;
+  rangeMeters: number;
+  estimatedHullRatio: number;
 }
 
 export interface ModuleState {

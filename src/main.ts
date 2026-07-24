@@ -11,6 +11,7 @@ import { loadGameSettings, saveGameSettings } from "./settings/gameSettings";
 import type { GameSettings } from "./settings/gameSettings";
 import { FIXED_STEP } from "./sim/config";
 import { createInitialState, observe, stepSimulation } from "./sim/simulation";
+import { PlayerPerceptionTracker } from "./sim/playerPerception";
 import type { BattleState, ControlCommand, GameMode } from "./sim/types";
 import { GameMenus } from "./ui/gameMenus";
 import { Hud } from "./ui/hud";
@@ -29,6 +30,7 @@ let tacticalMap: TacticalMap;
 let menus: GameMenus;
 let developerPanel: DeveloperPanel | undefined;
 let ai = new RuleBasedAi();
+const playerPerception = new PlayerPerceptionTracker();
 const audio = new CombatAudio();
 let started = false;
 let paused = true;
@@ -46,6 +48,7 @@ function startMode(mode: GameMode): void {
   menus?.closeAll();
   hud.resetMetrics();
   ai = new RuleBasedAi(state.randomSeed ^ 0xa11ce);
+  playerPerception.reset();
   audio.unlock();
   started = true;
   paused = false;
@@ -70,6 +73,7 @@ function returnToMainMenu(): void {
   gameShell?.classList.remove("game-active", "aiming");
   const equipment = battleLoadout(profile);
   state = createInitialState(undefined, "battle", equipment.mainGunId, equipment);
+  playerPerception.reset();
   view.resetTransient();
   hud.resetMetrics();
   menus?.showStart();
@@ -167,6 +171,9 @@ window.addEventListener("keydown", (event) => {
 
 view.engine.runRenderLoop(() => {
   const frameSeconds = Math.min(view.engine.getDeltaTime() / 1_000, 0.1);
+  let perceivedTarget = started && state.mode === "battle"
+    ? playerPerception.update(observe(state, "player"))
+    : undefined;
   if (started && !paused && state.status === "running") {
     accumulator += frameSeconds;
     while (accumulator >= FIXED_STEP) {
@@ -178,7 +185,11 @@ view.engine.runRenderLoop(() => {
         commands.set("enemy", ai.command(observe(state, "enemy")));
       }
       stepSimulation(state, commands, FIXED_STEP);
-      view.consumeShots(state.shots);
+      perceivedTarget = state.mode === "battle"
+        ? playerPerception.update(observe(state, "player"))
+        : undefined;
+      view.consumeShots(state.shots.filter((shot) =>
+        shot.team === "player" || Boolean(perceivedTarget?.live)));
       view.consumeImpacts(state.impacts);
       audio.consumeShots(state.shots);
       audio.consumeImpacts(state.impacts);
@@ -189,14 +200,14 @@ view.engine.runRenderLoop(() => {
     accumulator = 0;
   }
 
-  view.sync(state, frameSeconds);
+  view.sync(state, frameSeconds, perceivedTarget);
   if (state.status !== "running") {
     gameShell.classList.remove("game-active");
     view.releasePointerLock();
   }
   hud.setAimMode(input.isAiming);
-  hud.update(state, input.aimRange, input.selectedWeapon);
-  tacticalMap.update(state);
+  hud.update(state, input.aimRange, input.selectedWeapon, perceivedTarget);
+  tacticalMap.update(state, perceivedTarget);
   developerPanel?.update();
   view.render();
 });

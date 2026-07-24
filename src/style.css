@@ -311,6 +311,10 @@ button { font: inherit; }
 
 .own-status { left: 22px; bottom: 72px; }
 .target-status { right: 22px; top: 318px; }
+.target-status.contact-acquiring { border-color: rgba(228, 205, 123, .55); }
+.target-status.contact-lost { border-color: rgba(228, 185, 123, .42); background: rgba(27, 31, 26, .82); }
+.target-status.contact-lost .bar.enemy i { background: #b79a65; filter: saturate(.72); }
+.target-status.contact-lost .metric-row strong { color: #d8c495; }
 .eyebrow { margin: 0 0 12px; color: #8fb2b4; font: 700 10px/1.1 "Fusion Bold Pixel", "Microsoft YaHei", sans-serif; letter-spacing: .16em; text-transform: uppercase; }
 .metric-row, .bar-label { display: flex; justify-content: space-between; align-items: baseline; gap: 12px; margin: 8px 0; }
 .metric-row span, .bar-label { color: #a8c0c2; font-size: 12px; }
