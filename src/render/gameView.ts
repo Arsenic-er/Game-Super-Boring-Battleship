@@ -599,6 +599,7 @@ export class GameView implements AimProvider {
       let visual = this.projectileMeshes.get(projectile.id);
       if (!visual) {
         const torpedo = projectile.kind === "torpedo";
+        const apShell = projectile.kind === "shell" && projectile.ammoType === "ap";
         const root = new TransformNode(`${projectile.kind}-root-${projectile.id}`, this.scene);
         const shell = torpedo
           ? CreateCylinder(`torpedo-${projectile.id}`, {
@@ -614,8 +615,12 @@ export class GameView implements AimProvider {
         if (torpedo) shell.rotation.x = Math.PI / 2;
         const shellMaterial = this.material(
           `${projectile.kind}-material-${projectile.id}`,
-          torpedo ? new Color3(0.12, 0.18, 0.17) : new Color3(1, 0.78, 0.25),
-          torpedo ? new Color3(0.34, 0.42, 0.36) : new Color3(1, 0.4, 0.04),
+          torpedo
+            ? new Color3(0.12, 0.18, 0.17)
+            : apShell ? new Color3(0.62, 0.86, 1) : new Color3(1, 0.78, 0.25),
+          torpedo
+            ? new Color3(0.34, 0.42, 0.36)
+            : apShell ? new Color3(0.12, 0.48, 1) : new Color3(1, 0.4, 0.04),
         );
         shellMaterial.disableLighting = !torpedo;
         shell.material = shellMaterial;
@@ -626,8 +631,8 @@ export class GameView implements AimProvider {
         }, this.scene);
         const glowMaterial = this.material(
           `shell-glow-material-${projectile.id}`,
-          new Color3(1, 0.3, 0.02),
-          new Color3(1, 0.2, 0.01),
+          apShell ? new Color3(0.28, 0.72, 1) : new Color3(1, 0.3, 0.02),
+          apShell ? new Color3(0.08, 0.32, 1) : new Color3(1, 0.2, 0.01),
         );
         glowMaterial.alpha = 0.4;
         glowMaterial.disableLighting = true;
@@ -658,7 +663,9 @@ export class GameView implements AimProvider {
         }, this.scene);
         core.color = projectile.kind === "torpedo"
           ? new Color3(0.73, 0.91, 0.91)
-          : new Color3(1, 0.64, 0.14);
+          : projectile.ammoType === "ap"
+            ? new Color3(0.34, 0.75, 1)
+            : new Color3(1, 0.64, 0.14);
         core.alpha = projectile.kind === "torpedo" ? 0.74 : 0.96;
         const plume = CreateTube(`trail-plume-${projectile.id}`, {
           path: points,

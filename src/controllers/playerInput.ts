@@ -1,5 +1,5 @@
 import { GUN } from "../sim/config";
-import type { ControlCommand, ShipState, Vec3, WeaponSlot } from "../sim/types";
+import type { AmmoType, ControlCommand, ShipState, Vec3, WeaponSlot } from "../sim/types";
 
 export interface AimProvider {
   aimPoint(ship: ShipState, range: number): Vec3;
@@ -13,6 +13,7 @@ export class PlayerInput {
   private steeringSensitivity = 1;
   private aiming = false;
   private weaponSlot: WeaponSlot = "mainGun";
+  private ammoType: AmmoType = "he";
 
   constructor(canvas: HTMLCanvasElement, private readonly aimProvider: AimProvider) {
     window.addEventListener("keydown", this.onKeyDown);
@@ -32,7 +33,11 @@ export class PlayerInput {
     if (event.code === "Digit1") this.selectWeapon("mainGun");
     if (event.code === "Digit2") this.selectWeapon("torpedo");
     if (event.code === "Digit3") this.selectWeapon("aircraft");
-    if (["Space", "KeyW", "KeyS", "KeyA", "KeyD", "KeyR", "KeyH", "Digit1", "Digit2", "Digit3"].includes(event.code)) {
+    if (event.code === "KeyQ") {
+      this.ammoType = this.ammoType === "he" ? "ap" : "he";
+      this.selectWeapon("mainGun");
+    }
+    if (["Space", "KeyW", "KeyS", "KeyA", "KeyD", "KeyQ", "KeyR", "KeyH", "Digit1", "Digit2", "Digit3"].includes(event.code)) {
       event.preventDefault();
     }
   };
@@ -59,6 +64,7 @@ export class PlayerInput {
       fire: this.pressed.has("Space"),
       weaponSlot: this.weaponSlot,
       repairHull: this.pressed.has("KeyH"),
+      ammoType: this.ammoType,
     };
   }
 
@@ -72,6 +78,10 @@ export class PlayerInput {
 
   get selectedWeapon(): WeaponSlot {
     return this.weaponSlot;
+  }
+
+  get selectedAmmo(): AmmoType {
+    return this.ammoType;
   }
 
   selectWeapon(slot: WeaponSlot): void {
@@ -96,6 +106,7 @@ export class PlayerInput {
     this.range = 2_200;
     this.pressed.clear();
     this.aiming = false;
+    this.ammoType = "he";
     this.aimProvider.setAiming(false);
   }
 }

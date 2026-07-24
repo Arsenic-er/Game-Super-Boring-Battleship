@@ -14,6 +14,9 @@ export type BattleStatus = "running" | "player-won" | "enemy-won" | "draw";
 export type BattleEndReason = "destroyed" | "time";
 export type WeaponSlot = "mainGun" | "torpedo" | "aircraft";
 export type ProjectileKind = "shell" | "torpedo";
+export type AmmoType = "he" | "ap";
+export type PenetrationResult = "penetration" | "overpenetration" | "ricochet" | "shatter";
+export type ArmorZoneId = "side" | "end" | "deck";
 
 export interface ModuleState {
   health: number;
@@ -49,6 +52,7 @@ export interface ShipState {
   reloadRemaining: number;
   torpedoReloadRemaining: number;
   aimPoint: Vec3;
+  ammoType: AmmoType;
   fireIntensity: number;
   flooding: number;
   distanceTravelled: number;
@@ -61,6 +65,7 @@ export interface ProjectileState {
   ownerId: string;
   team: Team;
   kind: ProjectileKind;
+  ammoType?: AmmoType;
   position: Vec3;
   previousPosition: Vec3;
   velocity: Vec3;
@@ -73,6 +78,7 @@ export interface ShotEvent {
   ownerId: string;
   team: Team;
   kind: ProjectileKind;
+  ammoType?: AmmoType;
   position: Vec3;
 }
 
@@ -88,6 +94,12 @@ export interface ImpactEvent {
   startedFire?: boolean;
   startedFlooding?: boolean;
   otherShipId?: string;
+  ammoType?: AmmoType;
+  penetrationResult?: PenetrationResult;
+  armorThicknessMm?: number;
+  effectiveArmorMm?: number;
+  impactAngleDegrees?: number;
+  armorZone?: ArmorZoneId;
 }
 
 export interface BattleState {
@@ -111,6 +123,7 @@ export interface ControlCommand {
   fire: boolean;
   weaponSlot?: WeaponSlot;
   repairHull?: boolean;
+  ammoType?: AmmoType;
 }
 
 export interface Observation {

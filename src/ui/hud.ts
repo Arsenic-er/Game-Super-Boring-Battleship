@@ -6,7 +6,7 @@ import {
   turretAlignmentError,
 } from "../sim/simulation";
 import { getMainGun } from "../ships/components";
-import type { BattleState, CompartmentId, ImpactEvent, ModuleId, ShipState, WeaponSlot } from "../sim/types";
+import type { AmmoType, BattleState, CompartmentId, ImpactEvent, ModuleId, PenetrationResult, ShipState, WeaponSlot } from "../sim/types";
 
 const moduleLabels: Record<ModuleId, string> = {
   gun: "主炮",
@@ -22,6 +22,18 @@ const compartmentLabels: Record<CompartmentId, string> = {
   engineRoom: "动力舱",
   magazine: "弹药舱",
   stern: "舰艉",
+};
+
+const ammoLabels: Record<AmmoType, string> = {
+  he: "HE 高爆弹",
+  ap: "AP 穿甲弹",
+};
+
+const penetrationLabels: Record<PenetrationResult, string> = {
+  penetration: "击穿",
+  overpenetration: "过穿",
+  ricochet: "跳弹",
+  shatter: "未穿透",
 };
 
 const percent = (value: number, max: number): number => Math.round((value / max) * 100);
@@ -166,14 +178,14 @@ export class Hud {
         </div>
         <img id="game-cursor" class="game-cursor neon-arrow" src="./assets/cursors/neon-arrow.png" alt="" aria-hidden="true" />
         <section id="weapon-bar" class="weapon-bar panel" aria-label="武器选择">
-          <button type="button" data-weapon="mainGun"><kbd>1</kbd><span>主炮</span><small>127 mm</small></button>
+          <button type="button" data-weapon="mainGun"><kbd>1</kbd><span>主炮</span><small>HE 高爆弹 · Q 切换</small></button>
           <button type="button" data-weapon="torpedo"><kbd>2</kbd><span>鱼雷</span><small>双雷齐射</small></button>
           <button type="button" data-weapon="aircraft" class="reserved"><kbd>3</kbd><span>舰载机</span><small>预留</small></button>
         </section>
         <section class="controls panel">
           <span><kbd>W</kbd><kbd>S</kbd> 车钟</span><span><kbd>A</kbd><kbd>D</kbd> 舵</span><span><kbd>移动鼠标</kbd> 视角</span>
           <span><kbd>滚轮</kbd> 测距</span><span><kbd>R</kbd> 瞄准开关</span>
-          <span><kbd>Space</kbd> 齐射</span><span><kbd>H</kbd> 抢修</span><span><kbd>M</kbd> 地图</span><span><kbd>F3</kbd> 调试</span>
+          <span><kbd>Q</kbd> HE / AP</span><span><kbd>Space</kbd> 齐射</span><span><kbd>H</kbd> 抢修</span><span><kbd>M</kbd> 地图</span><span><kbd>F3</kbd> 调试</span>
         </section>
         <section id="result" class="result-card" hidden>
           <p class="eyebrow">战斗结束</p><h1></h1><p id="result-detail"></p>
@@ -298,12 +310,15 @@ export class Hud {
       const incoming = impact.targetId === "player";
       const moduleText = impact.module ? ` · ${moduleLabels[impact.module]}受损` : "";
       const hazard = `${impact.startedFire ? " · 起火" : ""}${impact.startedFlooding ? " · 进水" : ""}`;
+      const armorResult = impact.penetrationResult
+        ? ` · ${impact.ammoType ? ammoLabels[impact.ammoType].split(" ")[0] : ""}${penetrationLabels[impact.penetrationResult]}`
+        : "";
       const element = document.createElement("div");
       element.className = `combat-message${incoming ? " incoming" : ""}`;
       const collision = impact.kind === "collision";
       element.textContent = incoming
-        ? `${collision ? "碰撞" : "中弹"} · ${compartmentLabels[impact.compartment]}${moduleText}${hazard} · -${Math.round(impact.damage ?? 0)}`
-        : `${collision ? "敌舰碰撞" : "命中敌舰"}${compartmentLabels[impact.compartment]}${moduleText}${hazard} · ${Math.round(impact.damage ?? 0)}`;
+        ? `${collision ? "碰撞" : "中弹"} · ${compartmentLabels[impact.compartment]}${armorResult}${moduleText}${hazard} · -${Math.round(impact.damage ?? 0)}`
+        : `${collision ? "敌舰碰撞" : "命中敌舰"}${compartmentLabels[impact.compartment]}${armorResult}${moduleText}${hazard} · ${Math.round(impact.damage ?? 0)}`;
       this.feedback.prepend(element);
       while (this.feedback.children.length > 4) this.feedback.lastElementChild?.remove();
       window.setTimeout(() => element.remove(), 2_800);
@@ -367,6 +382,9 @@ export class Hud {
         if (small) small.textContent = player.torpedoReloadRemaining > 0
           ? `装填 ${readiness}% · ${player.torpedoReloadRemaining.toFixed(1)} s`
           : "双雷齐射 · 就绪";
+      } else if (button.dataset.weapon === "mainGun") {
+        const small = button.querySelector("small");
+        if (small) small.textContent = `${ammoLabels[player.ammoType]} · Q 切换`;
       }
     }
 
@@ -374,7 +392,7 @@ export class Hud {
     const relativeBearing = wrapAngle(aimBearing - player.heading) * 180 / Math.PI;
     this.aimReadout.textContent = `相对方位 ${relativeBearing >= 0 ? "+" : ""}${relativeBearing.toFixed(1)}° · ${Math.round(aimRange).toLocaleString("zh-CN")} m`;
     const gunDefinition = getMainGun(player.mainGunId);
-    this.reloadLabel.textContent = gunDefinition.shortLabel;
+    this.reloadLabel.textContent = `${ammoLabels[player.ammoType]} · ${gunDefinition.shortLabel}`;
     const velocity = ballisticVelocity(
       { x: 0, y: GUN.muzzleHeight, z: 0 },
       { x: 0, y: 1.5, z: aimRange },
@@ -387,7 +405,9 @@ export class Hud {
     const gunRatio = player.modules.gun.health / player.modules.gun.maxHealth;
     const spread = dispersionAtRange(aimRange, gunRatio, gunDefinition.dispersionMultiplier);
     this.dispersion.textContent = `纵 ±${Math.round(spread.longitudinal)} / 横 ±${Math.round(spread.lateral)} m`;
-    const reloadDuration = gunDefinition.reloadSeconds / Math.max(0.25, gunRatio);
+    const reloadDuration = gunDefinition.reloadSeconds
+      * player.performance.reloadMultiplier
+      / Math.max(0.25, gunRatio);
     const reloadPercent = Math.round(
       Math.max(0, Math.min(1, 1 - player.reloadRemaining / reloadDuration)) * 100,
     );
@@ -410,7 +430,7 @@ export class Hud {
       : "无目标";
     this.scopeFlightTime.textContent = this.flightTime.textContent ?? "--";
     this.scopeDispersion.textContent = `纵±${Math.round(spread.longitudinal)} 横±${Math.round(spread.lateral)} m`;
-    this.scopeGun.textContent = gunDefinition.name;
+    this.scopeGun.textContent = `${ammoLabels[player.ammoType]} · ${gunDefinition.name}`;
     this.scopeReload.textContent = this.reload.textContent ?? "--";
     this.scopeReload.classList.toggle("blocked", fireBlocked);
 

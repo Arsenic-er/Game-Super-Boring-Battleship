@@ -1,12 +1,17 @@
 import { RuleBasedAi } from "../controllers/ruleBasedAi";
 import { FIXED_STEP } from "./config";
 import { createInitialState, observe, stepSimulation } from "./simulation";
-import type { BattleState, BattleStatus, Team } from "./types";
+import type { BattleEndReason, BattleState, BattleStatus, Team } from "./types";
 
 export interface TeamCombatMetrics {
   shots: number;
   salvos: number;
   hits: number;
+  effectiveHits: number;
+  penetrations: number;
+  overpenetrations: number;
+  ricochets: number;
+  shatters: number;
   damage: number;
   firesStarted: number;
   floodsStarted: number;
@@ -16,6 +21,7 @@ export interface TeamCombatMetrics {
 export interface BattleTelemetry {
   seed: number;
   status: BattleStatus;
+  endReason?: BattleEndReason;
   durationSeconds: number;
   firstHitSeconds?: number;
   player: TeamCombatMetrics;
@@ -35,17 +41,27 @@ export interface BalanceReport {
   playerWins: number;
   enemyWins: number;
   draws: number;
+  destroyedBattles: number;
+  timedBattles: number;
   playerWinRate: number;
   durationSeconds: PercentileSummary;
   firstHitSeconds: PercentileSummary;
   playerHitRate: number;
   enemyHitRate: number;
+  playerEffectiveHitRate: number;
+  enemyEffectiveHitRate: number;
   averagePlayerShots: number;
   averageEnemyShots: number;
   averagePlayerSalvos: number;
   averageEnemySalvos: number;
   averagePlayerDamage: number;
   averageEnemyDamage: number;
+  penetrationResults: {
+    penetrations: number;
+    overpenetrations: number;
+    ricochets: number;
+    shatters: number;
+  };
   firesPerBattle: number;
   floodsPerBattle: number;
   collisionsPerBattle: number;
@@ -55,6 +71,11 @@ const emptyTeamMetrics = (): TeamCombatMetrics => ({
   shots: 0,
   salvos: 0,
   hits: 0,
+  effectiveHits: 0,
+  penetrations: 0,
+  overpenetrations: 0,
+  ricochets: 0,
+  shatters: 0,
   damage: 0,
   firesStarted: 0,
   floodsStarted: 0,
@@ -90,6 +111,7 @@ export function battleStateFingerprint(state: BattleState): string {
         turretHeading: round(ship.turretHeading, 6),
         speedKnots: round(ship.speedKnots),
         hull: round(ship.hull),
+        ammoType: ship.ammoType,
         recoverableHull: round(ship.recoverableHull),
         compartments: Object.fromEntries(
           Object.entries(ship.compartments).map(([id, health]) => [id, round(health)]),
@@ -108,6 +130,7 @@ export function battleStateFingerprint(state: BattleState): string {
         id: projectile.id,
         ownerId: projectile.ownerId,
         kind: projectile.kind,
+        ammoType: projectile.ammoType ?? null,
         position: {
           x: round(projectile.position.x),
           y: round(projectile.position.y),
@@ -166,6 +189,13 @@ export function runHeadlessBattle(
       const attacker: Team = target.team === "player" ? "enemy" : "player";
       metrics[attacker].hits += 1;
       metrics[attacker].damage += impact.damage ?? 0;
+      if ((impact.damage ?? 0) > 0) metrics[attacker].effectiveHits += 1;
+      if (impact.penetrationResult === "penetration") metrics[attacker].penetrations += 1;
+      if (impact.penetrationResult === "overpenetration") {
+        metrics[attacker].overpenetrations += 1;
+      }
+      if (impact.penetrationResult === "ricochet") metrics[attacker].ricochets += 1;
+      if (impact.penetrationResult === "shatter") metrics[attacker].shatters += 1;
       if (impact.startedFire) metrics[attacker].firesStarted += 1;
       if (impact.startedFlooding) metrics[attacker].floodsStarted += 1;
       if (impact.module) metrics[attacker].moduleHits += 1;
@@ -176,6 +206,7 @@ export function runHeadlessBattle(
   return {
     seed: seed >>> 0,
     status: state.status,
+    endReason: state.endReason,
     durationSeconds: state.time,
     firstHitSeconds,
     player: metrics.player,
@@ -215,6 +246,8 @@ export function summarizeBattles(battles: readonly BattleTelemetry[]): BalanceRe
     playerWins: battles.filter((battle) => battle.status === "player-won").length,
     enemyWins: battles.filter((battle) => battle.status === "enemy-won").length,
     draws: battles.filter((battle) => battle.status === "draw").length,
+    destroyedBattles: battles.filter((battle) => battle.endReason === "destroyed").length,
+    timedBattles: battles.filter((battle) => battle.endReason === "time").length,
     playerWinRate: round(safeRate(
       battles.filter((battle) => battle.status === "player-won").length,
       runs,
@@ -226,12 +259,30 @@ export function summarizeBattles(battles: readonly BattleTelemetry[]): BalanceRe
     ),
     playerHitRate: round(safeRate(total((battle) => battle.player.hits), playerShots), 4),
     enemyHitRate: round(safeRate(total((battle) => battle.enemy.hits), enemyShots), 4),
+    playerEffectiveHitRate: round(
+      safeRate(total((battle) => battle.player.effectiveHits), playerShots),
+      4,
+    ),
+    enemyEffectiveHitRate: round(
+      safeRate(total((battle) => battle.enemy.effectiveHits), enemyShots),
+      4,
+    ),
     averagePlayerShots: round(safeRate(playerShots, runs), 2),
     averageEnemyShots: round(safeRate(enemyShots, runs), 2),
     averagePlayerSalvos: round(safeRate(total((battle) => battle.player.salvos), runs), 2),
     averageEnemySalvos: round(safeRate(total((battle) => battle.enemy.salvos), runs), 2),
     averagePlayerDamage: round(safeRate(total((battle) => battle.player.damage), runs), 2),
     averageEnemyDamage: round(safeRate(total((battle) => battle.enemy.damage), runs), 2),
+    penetrationResults: {
+      penetrations: total(
+        (battle) => battle.player.penetrations + battle.enemy.penetrations,
+      ),
+      overpenetrations: total(
+        (battle) => battle.player.overpenetrations + battle.enemy.overpenetrations,
+      ),
+      ricochets: total((battle) => battle.player.ricochets + battle.enemy.ricochets),
+      shatters: total((battle) => battle.player.shatters + battle.enemy.shatters),
+    },
     firesPerBattle: round(safeRate(fires, runs), 3),
     floodsPerBattle: round(safeRate(floods, runs), 3),
     collisionsPerBattle: round(safeRate(total((battle) => battle.collisions), runs), 3),

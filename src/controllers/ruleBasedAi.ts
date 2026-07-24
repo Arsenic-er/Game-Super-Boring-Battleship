@@ -1,5 +1,5 @@
 import { GUN, KNOT_TO_MPS } from "../sim/config";
-import type { ControlCommand, Controller, Observation, Vec3 } from "../sim/types";
+import type { AmmoType, ControlCommand, Controller, Observation, Vec3 } from "../sim/types";
 
 const wrapAngle = (angle: number): number => {
   let wrapped = angle;
@@ -29,6 +29,8 @@ export class RuleBasedAi implements Controller {
   private manoeuvreOffset = 0;
   private lastTime = 0;
   private randomSeed: number;
+  private selectedAmmo: AmmoType = "he";
+  private nextAmmoDecisionAt = 0;
 
   constructor(seed = 0xa11ce) {
     this.randomSeed = seed >>> 0;
@@ -124,6 +126,16 @@ export class RuleBasedAi implements Controller {
     const bearingToEnemy = Math.atan2(dx, dz);
     this.updateFireControl(observation, range);
 
+    if (observation.time >= this.nextAmmoDecisionAt) {
+      const relativeTargetHeading = Math.abs(wrapAngle(enemy.heading - bearingToEnemy));
+      const broadsideExposure = Math.abs(Math.sin(relativeTargetHeading));
+      this.selectedAmmo = range < 2_500
+        && broadsideExposure > 0.42
+        && broadsideExposure < 0.88
+        ? "ap" : "he";
+      this.nextAmmoDecisionAt = observation.time + 12 + this.random() * 8;
+    }
+
     if (observation.time >= this.nextManoeuvreAt) {
       this.manoeuvreOffset = (this.random() - 0.5) * 0.7;
       this.nextManoeuvreAt = observation.time + 14 + this.random() * 18;
@@ -145,6 +157,7 @@ export class RuleBasedAi implements Controller {
       throttle: damaged ? Math.min(tacticalThrottle, 0.52) : tacticalThrottle,
       rudder: clamp(headingError * 1.25, -0.82, 0.82),
       aimPoint: this.estimatedAimPoint(observation, bearingToEnemy),
+      ammoType: this.selectedAmmo,
       fire: observation.time <= this.fireWindowUntil
         && range >= GUN.minAimRange
         && range <= GUN.maxAimRange,

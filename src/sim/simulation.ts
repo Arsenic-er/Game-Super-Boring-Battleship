@@ -1,4 +1,6 @@
 import {
+  AMMUNITION,
+  ARMOR_THICKNESS_MM,
   BASE_REPAIR_PER_SECOND,
   BATTLE_DURATION_SECONDS,
   COLLISION,
@@ -20,12 +22,15 @@ import {
 } from "../ships/components";
 import type { MainGunId } from "../ships/components";
 import type {
+  AmmoType,
+  ArmorZoneId,
   BattleState,
   CompartmentId,
   ControlCommand,
   GameMode,
   ModuleId,
   ProjectileState,
+  PenetrationResult,
   ShipState,
   Team,
   Vec3,
@@ -107,6 +112,7 @@ function createShip(
     reloadRemaining: 0,
     torpedoReloadRemaining: 0,
     aimPoint: { x, y: 0, z: z + Math.cos(heading) * 1_800 },
+    ammoType: "he",
     fireIntensity: 0,
     flooding: 0,
     distanceTravelled: 0,
@@ -203,6 +209,16 @@ function moveShip(ship: ShipState, command: ControlCommand, dt: number): void {
   ship.throttle = clamp(command.throttle, -0.25, 1);
   ship.rudder = clamp(command.rudder, -1, 1);
   ship.aimPoint = copyVec(command.aimPoint);
+
+  if (command.ammoType && command.ammoType !== ship.ammoType) {
+    ship.ammoType = command.ammoType;
+    const gunDefinition = getMainGun(ship.mainGunId);
+    const gunRatio = Math.max(0.25, moduleRatio(ship, "gun"));
+    ship.reloadRemaining = Math.max(
+      ship.reloadRemaining,
+      gunDefinition.reloadSeconds * ship.performance.reloadMultiplier / gunRatio,
+    );
+  }
 
   const engineRatio = moduleRatio(ship, "engine");
   const steeringRatio = moduleRatio(ship, "steering");
@@ -386,6 +402,7 @@ function fireGun(state: BattleState, ship: ShipState): void {
       ownerId: ship.id,
       team: ship.team,
       kind: "shell",
+      ammoType: ship.ammoType,
       position: copyVec(origin),
       previousPosition: copyVec(origin),
       velocity,
@@ -397,6 +414,7 @@ function fireGun(state: BattleState, ship: ShipState): void {
       ownerId: ship.id,
       team: ship.team,
       kind: "shell",
+      ammoType: ship.ammoType,
       position: copyVec(origin),
     });
     firedShells += 1;
@@ -447,7 +465,10 @@ function fireTorpedoes(state: BattleState, ship: ShipState): void {
   ship.torpedoReloadRemaining = TORPEDO.reloadSeconds;
 }
 
-function shipLocalPoint(ship: ShipState, point: Vec3): { longitudinal: number; lateral: number } {
+function shipLocalPoint(
+  ship: Pick<ShipState, "position" | "heading">,
+  point: Vec3,
+): { longitudinal: number; lateral: number } {
   const dx = point.x - ship.position.x;
   const dz = point.z - ship.position.z;
   const forwardX = Math.sin(ship.heading);
@@ -470,25 +491,225 @@ export function collisionDamageMultiplierFor(compartment: CompartmentId): number
   return COLLISION_DAMAGE_MULTIPLIER[compartment];
 }
 
-function projectileHitPoint(projectile: ProjectileState, ship: ShipState): Vec3 | null {
-  const start = projectile.previousPosition;
-  const end = projectile.position;
-  const steps = 5;
-  for (let index = 0; index <= steps; index += 1) {
-    const t = index / steps;
-    const point = {
-      x: start.x + (end.x - start.x) * t,
-      y: start.y + (end.y - start.y) * t,
-      z: start.z + (end.z - start.z) * t,
-    };
-    if (point.y < 0 || point.y > SHIP.deckHeight + 5) continue;
-    const local = shipLocalPoint(ship, point);
-    if (
-      Math.abs(local.longitudinal) <= SHIP.length / 2
-      && Math.abs(local.lateral) <= SHIP.beam / 2 + 2
-    ) return point;
+export interface ProjectileHitContact {
+  point: Vec3;
+  localPoint: {
+    longitudinal: number;
+    lateral: number;
+    height: number;
+  };
+  surfaceNormal: Vec3;
+  armorZone: ArmorZoneId;
+  distanceFraction: number;
+}
+
+interface SlabAxis {
+  start: number;
+  delta: number;
+  minimum: number;
+  maximum: number;
+  normal: Vec3;
+  armorZone: ArmorZoneId;
+}
+
+/**
+ * Continuous line-segment versus oriented hull box intersection. This avoids
+ * tunnelling when a fast shell crosses the complete beam within one fixed tick
+ * and returns the actual entry surface for armor-angle calculations.
+ */
+export function projectileHitContact(
+  projectile: Pick<ProjectileState, "previousPosition" | "position">,
+  ship: Pick<ShipState, "position" | "heading">,
+): ProjectileHitContact | null {
+  const localStart = shipLocalPoint(ship, projectile.previousPosition);
+  const localEnd = shipLocalPoint(ship, projectile.position);
+  const startHeight = projectile.previousPosition.y - ship.position.y;
+  const endHeight = projectile.position.y - ship.position.y;
+  const forward = { x: Math.sin(ship.heading), y: 0, z: Math.cos(ship.heading) };
+  const right = { x: Math.cos(ship.heading), y: 0, z: -Math.sin(ship.heading) };
+  const axes: SlabAxis[] = [
+    {
+      start: localStart.longitudinal,
+      delta: localEnd.longitudinal - localStart.longitudinal,
+      minimum: -SHIP.length / 2,
+      maximum: SHIP.length / 2,
+      normal: forward,
+      armorZone: "end",
+    },
+    {
+      start: localStart.lateral,
+      delta: localEnd.lateral - localStart.lateral,
+      minimum: -SHIP.beam / 2 - 2,
+      maximum: SHIP.beam / 2 + 2,
+      normal: right,
+      armorZone: "side",
+    },
+    {
+      start: startHeight,
+      delta: endHeight - startHeight,
+      minimum: 0,
+      maximum: SHIP.deckHeight + 5,
+      normal: { x: 0, y: 1, z: 0 },
+      armorZone: "deck",
+    },
+  ];
+  let enter = 0;
+  let exit = 1;
+  let entryAxis: SlabAxis | undefined;
+  let entryNormalSign = 1;
+  for (const axis of axes) {
+    if (Math.abs(axis.delta) < 1e-9) {
+      if (axis.start < axis.minimum || axis.start > axis.maximum) return null;
+      continue;
+    }
+    const enteringMinimum = axis.delta > 0;
+    const near = (
+      (enteringMinimum ? axis.minimum : axis.maximum) - axis.start
+    ) / axis.delta;
+    const far = (
+      (enteringMinimum ? axis.maximum : axis.minimum) - axis.start
+    ) / axis.delta;
+    if (near > enter) {
+      enter = near;
+      entryAxis = axis;
+      entryNormalSign = enteringMinimum ? -1 : 1;
+    }
+    exit = Math.min(exit, far);
+    if (enter > exit) return null;
   }
-  return null;
+  if (enter < 0 || enter > 1 || !entryAxis) return null;
+  const point = {
+    x: projectile.previousPosition.x
+      + (projectile.position.x - projectile.previousPosition.x) * enter,
+    y: projectile.previousPosition.y
+      + (projectile.position.y - projectile.previousPosition.y) * enter,
+    z: projectile.previousPosition.z
+      + (projectile.position.z - projectile.previousPosition.z) * enter,
+  };
+  const localPoint = shipLocalPoint(ship, point);
+  return {
+    point,
+    localPoint: {
+      longitudinal: localPoint.longitudinal,
+      lateral: localPoint.lateral,
+      height: point.y - ship.position.y,
+    },
+    surfaceNormal: {
+      x: entryAxis.normal.x * entryNormalSign,
+      y: entryAxis.normal.y * entryNormalSign,
+      z: entryAxis.normal.z * entryNormalSign,
+    },
+    armorZone: entryAxis.armorZone,
+    distanceFraction: enter,
+  };
+}
+
+export interface ArmorResolution {
+  result: PenetrationResult;
+  penetrationMm: number;
+  effectiveArmorMm: number;
+  damageMultiplier: number;
+  moduleDamageMultiplier: number;
+  fireChanceMultiplier: number;
+  floodingChanceMultiplier: number;
+}
+
+export function armorThicknessFor(
+  compartment: CompartmentId,
+  armorZone: ArmorZoneId = "side",
+): number {
+  if (armorZone === "deck") return 10;
+  if (armorZone === "end") return 12;
+  return ARMOR_THICKNESS_MM[compartment];
+}
+
+export function resolveArmorInteraction(
+  ammoType: AmmoType,
+  armorThicknessMm: number,
+  impactAngleDegrees: number,
+  flightSeconds: number,
+): ArmorResolution {
+  const safeArmor = Math.max(0.1, armorThicknessMm);
+  const safeAngle = clamp(impactAngleDegrees, 0, 89.9);
+  const cosine = Math.max(0.08, Math.cos(safeAngle * Math.PI / 180));
+  const effectiveArmorMm = safeArmor / cosine;
+
+  if (ammoType === "he") {
+    const penetrationMm = AMMUNITION.he.penetrationMm;
+    const penetrated = penetrationMm >= safeArmor;
+    return {
+      result: penetrated ? "penetration" : "shatter",
+      penetrationMm,
+      effectiveArmorMm: safeArmor,
+      damageMultiplier: penetrated
+        ? AMMUNITION.he.penetrationDamageMultiplier
+        : AMMUNITION.he.shatterDamageMultiplier,
+      moduleDamageMultiplier: penetrated ? AMMUNITION.he.moduleDamageMultiplier : 0.3,
+      fireChanceMultiplier: penetrated ? 1 : 0.35,
+      floodingChanceMultiplier: penetrated ? 0.7 : 0.1,
+    };
+  }
+
+  const penetrationMm = Math.max(
+    AMMUNITION.ap.minimumPenetrationMm,
+    AMMUNITION.ap.muzzlePenetrationMm
+      - Math.max(0, flightSeconds) * AMMUNITION.ap.penetrationLossMmPerSecond,
+  );
+  if (safeAngle >= AMMUNITION.ap.ricochetDegrees) {
+    return {
+      result: "ricochet",
+      penetrationMm,
+      effectiveArmorMm,
+      damageMultiplier: 0,
+      moduleDamageMultiplier: 0,
+      fireChanceMultiplier: 0,
+      floodingChanceMultiplier: 0,
+    };
+  }
+  if (penetrationMm < effectiveArmorMm) {
+    return {
+      result: "shatter",
+      penetrationMm,
+      effectiveArmorMm,
+      damageMultiplier: 0,
+      moduleDamageMultiplier: 0,
+      fireChanceMultiplier: 0,
+      floodingChanceMultiplier: 0,
+    };
+  }
+  const overpenetrated = penetrationMm / effectiveArmorMm
+    >= AMMUNITION.ap.overpenetrationRatio;
+  return {
+    result: overpenetrated ? "overpenetration" : "penetration",
+    penetrationMm,
+    effectiveArmorMm,
+    damageMultiplier: overpenetrated
+      ? AMMUNITION.ap.overpenetrationDamageMultiplier
+      : AMMUNITION.ap.penetrationDamageMultiplier,
+    moduleDamageMultiplier: overpenetrated ? 0.16 : AMMUNITION.ap.moduleDamageMultiplier,
+    fireChanceMultiplier: overpenetrated ? 0.02 : 0.12,
+    floodingChanceMultiplier: overpenetrated ? 0.08 : 0.55,
+  };
+}
+
+export function projectileImpactAngleDegrees(
+  projectile: Pick<ProjectileState, "velocity">,
+  surfaceNormal: Pick<Vec3, "x" | "y" | "z">,
+): number {
+  const speed = Math.max(
+    0.0001,
+    Math.hypot(projectile.velocity.x, projectile.velocity.y, projectile.velocity.z),
+  );
+  const normalLength = Math.max(
+    0.0001,
+    Math.hypot(surfaceNormal.x, surfaceNormal.y, surfaceNormal.z),
+  );
+  const normalComponent = clamp(Math.abs(
+    projectile.velocity.x / speed * surfaceNormal.x / normalLength
+    + projectile.velocity.y / speed * surfaceNormal.y / normalLength
+    + projectile.velocity.z / speed * surfaceNormal.z / normalLength
+  ), 0, 1);
+  return Math.acos(normalComponent) * 180 / Math.PI;
 }
 
 function damageModule(
@@ -496,6 +717,7 @@ function damageModule(
   ship: ShipState,
   compartment: CompartmentId,
   baseDamage: number,
+  preferredModule?: ModuleId,
 ): { moduleId: ModuleId; moduleDamage: number } {
   const candidates: Record<CompartmentId, ModuleId[]> = {
     bow: ["gun", "gun", "crew"],
@@ -505,9 +727,12 @@ function damageModule(
     stern: ["steering", "engine", "crew"],
   };
   const list = candidates[compartment];
-  const moduleId = list[Math.floor(random(state) * list.length)] ?? "crew";
+  const moduleId = preferredModule
+    ?? list[Math.floor(random(state) * list.length)]
+    ?? "crew";
   const module = ship.modules[moduleId];
-  const moduleDamage = baseDamage * (0.42 + random(state) * 0.28);
+  const riskMultiplier = moduleId === "magazine" ? ship.performance.magazineRiskMultiplier : 1;
+  const moduleDamage = baseDamage * (0.42 + random(state) * 0.28) * riskMultiplier;
   module.health = Math.max(0, module.health - moduleDamage);
 
   if (moduleId === "magazine") {
@@ -516,21 +741,67 @@ function damageModule(
   return { moduleId, moduleDamage };
 }
 
-function applyHit(state: BattleState, projectile: ProjectileState, ship: ShipState, point: Vec3): void {
-  const local = shipLocalPoint(ship, point);
-  const compartment = compartmentAt(local.longitudinal);
+export function moduleForProjectileHit(
+  compartment: CompartmentId,
+  height: number,
+): ModuleId {
+  if (compartment === "bow") return height >= SHIP.deckHeight * 0.55 ? "gun" : "crew";
+  if (compartment === "bridge") return "crew";
+  if (compartment === "engineRoom") return "engine";
+  if (compartment === "magazine") return "magazine";
+  return "steering";
+}
+
+function applyHit(
+  state: BattleState,
+  projectile: ProjectileState,
+  ship: ShipState,
+  contact: ProjectileHitContact,
+): void {
+  const compartment = compartmentAt(contact.localPoint.longitudinal);
+  const armorThicknessMm = armorThicknessFor(compartment, contact.armorZone);
+  const impactAngleDegrees = projectile.kind === "torpedo"
+    ? 0 : projectileImpactAngleDegrees(projectile, contact.surfaceNormal);
+  const armor = projectile.kind === "torpedo"
+    ? {
+      result: "penetration" as const,
+      penetrationMm: 1_000,
+      effectiveArmorMm: armorThicknessMm,
+      damageMultiplier: 1,
+      moduleDamageMultiplier: 1.2,
+      fireChanceMultiplier: 0.08,
+      floodingChanceMultiplier: 2,
+    }
+    : resolveArmorInteraction(
+      projectile.ammoType ?? "he",
+      armorThicknessMm,
+      impactAngleDegrees,
+      projectile.age,
+    );
   const compartmentHealth = ship.compartments[compartment];
-  const damage = Math.min(projectile.damage, compartmentHealth + 30);
+  const damage = Math.min(
+    projectile.damage * armor.damageMultiplier,
+    compartmentHealth + 30,
+  );
   ship.compartments[compartment] = Math.max(0, compartmentHealth - damage * 0.72);
   applyHullDamage(ship, damage, 0.38);
-  const moduleHit = damageModule(state, ship, compartment, damage);
+  const moduleHit = damage > 0.01 && armor.moduleDamageMultiplier > 0
+    ? damageModule(
+      state,
+      ship,
+      compartment,
+      damage * armor.moduleDamageMultiplier,
+      moduleForProjectileHit(compartment, contact.localPoint.height),
+    )
+    : undefined;
   const fireChance = compartment === "magazine" ? 0.48
     : compartment === "engineRoom" || compartment === "bridge" ? 0.34 : 0.2;
   const floodChance = projectile.kind === "torpedo"
     ? 0.92
-    : compartment === "bow" || compartment === "stern" ? 0.42 : 0.25;
-  const startedFire = random(state) < fireChance;
-  const startedFlooding = random(state) < floodChance;
+    : compartment === "bow" || compartment === "stern" ? 0.24 : 0.11;
+  const startedFire = damage > 0 && random(state) < fireChance * armor.fireChanceMultiplier;
+  const startedFlooding = damage > 0
+    && random(state) < floodChance * armor.floodingChanceMultiplier;
   if (startedFire) ship.fireIntensity = clamp(ship.fireIntensity + 18 + random(state) * 28, 0, 100);
   if (startedFlooding) ship.flooding = clamp(
     ship.flooding + (projectile.kind === "torpedo" ? 38 : 14) + random(state) * 24,
@@ -540,14 +811,20 @@ function applyHit(state: BattleState, projectile: ProjectileState, ship: ShipSta
   state.impacts.push({
     id: state.nextEntityId++,
     kind: "hit",
-    position: copyVec(point),
+    position: copyVec(contact.point),
     targetId: ship.id,
     damage,
     compartment,
-    module: moduleHit.moduleId,
-    moduleDamage: moduleHit.moduleDamage,
+    module: moduleHit?.moduleId,
+    moduleDamage: moduleHit?.moduleDamage,
     startedFire,
     startedFlooding,
+    ammoType: projectile.ammoType,
+    penetrationResult: armor.result,
+    armorThicknessMm,
+    effectiveArmorMm: armor.effectiveArmorMm,
+    impactAngleDegrees,
+    armorZone: contact.armorZone,
   });
 }
 
@@ -690,9 +967,9 @@ function advanceProjectiles(state: BattleState, dt: number): void {
     let consumed = false;
     for (const ship of state.ships) {
       if (ship.team === projectile.team || ship.hull <= 0) continue;
-      const hitPoint = projectileHitPoint(projectile, ship);
-      if (hitPoint) {
-        applyHit(state, projectile, ship, hitPoint);
+      const contact = projectileHitContact(projectile, ship);
+      if (contact) {
+        applyHit(state, projectile, ship, contact);
         consumed = true;
         break;
       }

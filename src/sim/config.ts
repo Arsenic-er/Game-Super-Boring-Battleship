@@ -61,6 +61,33 @@ export const GUN = {
   maxAimRange: 5_000,
 } as const;
 
+export const ARMOR_THICKNESS_MM = {
+  bow: 10,
+  bridge: 6,
+  engineRoom: 16,
+  magazine: 20,
+  stern: 10,
+} as const;
+
+export const AMMUNITION = {
+  he: {
+    penetrationMm: 22,
+    penetrationDamageMultiplier: 0.82,
+    shatterDamageMultiplier: 0.08,
+    moduleDamageMultiplier: 1,
+  },
+  ap: {
+    muzzlePenetrationMm: 72,
+    minimumPenetrationMm: 42,
+    penetrationLossMmPerSecond: 5,
+    ricochetDegrees: 68,
+    overpenetrationRatio: 3.6,
+    penetrationDamageMultiplier: 0.92,
+    overpenetrationDamageMultiplier: 0.22,
+    moduleDamageMultiplier: 0.58,
+  },
+} as const;
+
 export const TURRET = {
   traverseRadiansPerSecond: 12 * Math.PI / 180,
   fireToleranceRadians: 2.5 * Math.PI / 180,
