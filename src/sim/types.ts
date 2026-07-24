@@ -17,6 +17,14 @@ export type ProjectileKind = "shell" | "torpedo";
 export type AmmoType = "he" | "ap";
 export type PenetrationResult = "penetration" | "overpenetration" | "ricochet" | "shatter";
 export type ArmorZoneId = "side" | "end" | "deck";
+export type DamageControlPriority = "balanced" | "fire" | "flood" | "module";
+
+export interface DamageControlAllocation {
+  fire: number;
+  flood: number;
+  module: number;
+  hull: number;
+}
 
 export interface ModuleState {
   health: number;
@@ -55,6 +63,10 @@ export interface ShipState {
   ammoType: AmmoType;
   fireIntensity: number;
   flooding: number;
+  damageControlPriority: DamageControlPriority;
+  damageControlAllocation: DamageControlAllocation;
+  damageControlModule?: ModuleId;
+  hullRepairActive: boolean;
   distanceTravelled: number;
   turnRateRadians: number;
   isTestTarget?: boolean;
@@ -123,6 +135,7 @@ export interface ControlCommand {
   fire: boolean;
   weaponSlot?: WeaponSlot;
   repairHull?: boolean;
+  damageControlPriority?: DamageControlPriority;
   ammoType?: AmmoType;
 }
 

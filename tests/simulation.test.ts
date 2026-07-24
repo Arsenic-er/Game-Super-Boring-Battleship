@@ -9,6 +9,7 @@ import {
   ballisticVelocity,
   collisionDamageMultiplierFor,
   createInitialState,
+  damageControlAllocationFor,
   gunMuzzleOrigin,
   gunMuzzleOrigins,
   observe,
@@ -266,6 +267,69 @@ describe("deterministic battle simulation", () => {
     expect(player.fireIntensity).toBeLessThan(60);
     expect(player.flooding).toBeLessThan(45);
     expect(player.hull).toBeLessThan(startingHull);
+  });
+
+  it("moves damage-control effort toward the selected priority", () => {
+    const fireFocused = createInitialState(25, "sea-trials");
+    const floodFocused = createInitialState(25, "sea-trials");
+    for (const state of [fireFocused, floodFocused]) {
+      const ship = state.ships[0]!;
+      ship.fireIntensity = 60;
+      ship.flooding = 60;
+      ship.modules.engine.health = 110;
+    }
+    const fireCommand = {
+      ...idle(0, 1_000),
+      damageControlPriority: "fire" as const,
+    };
+    const floodCommand = {
+      ...idle(0, 1_000),
+      damageControlPriority: "flood" as const,
+    };
+    for (let tick = 0; tick < 600; tick += 1) {
+      stepSimulation(fireFocused, new Map([["player", fireCommand]]), FIXED_STEP);
+      stepSimulation(floodFocused, new Map([["player", floodCommand]]), FIXED_STEP);
+    }
+    expect(fireFocused.ships[0]!.fireIntensity)
+      .toBeLessThan(floodFocused.ships[0]!.fireIntensity);
+    expect(floodFocused.ships[0]!.flooding)
+      .toBeLessThan(fireFocused.ships[0]!.flooding);
+  });
+
+  it("diverts finite damage-control crew when H hull repair is held", () => {
+    const state = createInitialState(26, "sea-trials");
+    const ship = state.ships[0]!;
+    ship.damageControlPriority = "fire";
+    ship.fireIntensity = 50;
+    ship.flooding = 40;
+    ship.modules.engine.health = 100;
+    ship.hull = 600;
+    ship.recoverableHull = 800;
+    const withoutHull = damageControlAllocationFor(ship, false);
+    const withHull = damageControlAllocationFor(ship, true);
+    const total = withHull.fire + withHull.flood + withHull.module + withHull.hull;
+    expect(total).toBeCloseTo(1, 8);
+    expect(withHull.hull).toBeGreaterThan(0);
+    expect(withHull.fire).toBeLessThan(withoutHull.fire);
+  });
+
+  it("repairs one physically urgent module instead of every module at once", () => {
+    const state = createInitialState(27, "sea-trials");
+    const ship = state.ships[0]!;
+    ship.modules.engine.health = 90;
+    ship.modules.steering.health = 120;
+    const steeringBefore = ship.modules.steering.health;
+    stepSimulation(
+      state,
+      new Map([["player", {
+        ...idle(0, 1_000),
+        damageControlPriority: "module",
+      }]]),
+      FIXED_STEP,
+    );
+    expect(ship.damageControlModule).toBe("engine");
+    expect(ship.modules.engine.health).toBeGreaterThan(90);
+    expect(ship.modules.steering.health).toBe(steeringBefore);
   });
 
   it("creates collision contacts and damages both physical hulls", () => {

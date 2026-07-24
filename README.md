@@ -39,7 +39,8 @@ This is an early prototype rather than a finished commercial game. Visuals, bala
 | `R` | Enter / leave aiming scope |
 | `1` / `2` / `3` | Main gun / torpedo / reserved aircraft slot |
 | `Space` | Fire selected weapon |
-| `H` | Hold to repair recoverable hull damage |
+| `4` | Cycle balanced / firefighting / flooding / module repair priority |
+| `H` | Hold to divert damage-control crew to recoverable hull damage |
 | `M` | Open / close tactical map |
 | `F3` | Developer diagnostics |
 | `Esc` | Exit scope/map or pause |
@@ -98,7 +99,7 @@ Third-party libraries and the Fusion Pixel Font remain under their respective li
 - 可见炮弹轨迹、散布、装填进度、炮管实际指向与独立火控准线。
 - HE/AP 弹药切换、装甲入射角、跳弹、碎弹、正常穿透与过度穿透。
 - 武器栏：`1` 主炮、`2` 双雷齐射、`3` 预留舰载机。
-- 船体分区、组件损伤、起火、进水、人力维修与可恢复血量。
+- 船体分区、组件损伤、起火、进水、有限人力损管与可恢复血量。
 - 舰船实体碰撞，以及依据碰撞部位计算的不同伤害。
 - 小地图、大地图、专用瞄准镜、开发者调试面板与灵敏度设置。
 - 本地舰长档案、军需抽取、组件仓库、升级与模块化船坞预览。
@@ -116,7 +117,8 @@ Third-party libraries and the Fusion Pixel Font remain under their respective li
 | `1` / `2` / `3` | 主炮 / 鱼雷 / 预留舰载机 |
 | `Q` | 切换主炮 HE / AP；换弹会重新装填 |
 | `Space` | 发射当前武器 |
-| `H` | 按住修复可恢复船体血量 |
+| `4` | 循环均衡 / 灭火 / 堵漏 / 模块优先级 |
+| `H` | 按住抽调损管人力修复可恢复舰体血量 |
 | `M` | 打开或关闭战术地图 |
 | `F3` | 开发者调试面板 |
 | `Esc` | 退出瞄准/地图或暂停 |

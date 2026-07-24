@@ -28,6 +28,11 @@ export const DAMAGE_CONTROL = {
   floodingHullDamagePerPointSecond: 0.004,
   baseFireReductionPerSecond: 0.55,
   baseFloodReductionPerSecond: 0.32,
+  passiveTreatmentMultiplier: 0.12,
+  allocatedTreatmentMultiplier: 1.8,
+  focusedTaskWeight: 4,
+  secondaryTaskWeight: 0.65,
+  hullRepairWeight: 4,
 } as const;
 
 export const HULL_REPAIR = {

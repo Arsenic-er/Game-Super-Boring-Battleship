@@ -92,7 +92,7 @@ export class GameMenus {
             <div class="mission-brief">当前本地配装会真实影响主炮、最高航速、加速、转向与装填时间。驱逐舰侧炮槽不可用。</div>
             <div class="menu-controls">
               <span><kbd>W S</kbd> 航速</span><span><kbd>A D</kbd> 转向</span><span><kbd>移动鼠标</kbd> 视角</span>
-              <span><kbd>R</kbd> 瞄准</span><span><kbd>Space</kbd> 开火</span><span><kbd>H</kbd> 抢修</span>
+              <span><kbd>R</kbd> 瞄准</span><span><kbd>Space</kbd> 开火</span><span><kbd>4</kbd> 损管优先</span><span><kbd>H</kbd> 舰体抢修</span>
               <span><kbd>M</kbd> 地图</span><span><kbd>F3</kbd> 调试</span><span><kbd>Esc</kbd> 暂停</span>
             </div>
             <div class="mode-choice">

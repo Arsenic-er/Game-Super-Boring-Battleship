@@ -1,5 +1,13 @@
 import { GUN, KNOT_TO_MPS } from "../sim/config";
-import type { AmmoType, ControlCommand, Controller, Observation, Vec3 } from "../sim/types";
+import type {
+  AmmoType,
+  ControlCommand,
+  Controller,
+  DamageControlPriority,
+  ModuleId,
+  Observation,
+  Vec3,
+} from "../sim/types";
 
 const wrapAngle = (angle: number): number => {
   let wrapped = angle;
@@ -10,6 +18,24 @@ const wrapAngle = (angle: number): number => {
 
 const clamp = (value: number, min: number, max: number): number =>
   Math.min(max, Math.max(min, value));
+
+const repairableModuleDamage = (observation: Observation): number =>
+  (Object.keys(observation.self.modules) as ModuleId[]).reduce((worst, id) => {
+    const module = observation.self.modules[id];
+    if (module.health <= 0) return worst;
+    return Math.max(worst, 1 - module.health / module.maxHealth);
+  }, 0);
+
+const damageControlPriority = (observation: Observation): DamageControlPriority => {
+  const { fireIntensity, flooding } = observation.self;
+  const moduleDamage = repairableModuleDamage(observation) * 100;
+  if (flooding >= 18 && flooding >= fireIntensity * 0.8 && flooding >= moduleDamage * 0.55) {
+    return "flood";
+  }
+  if (fireIntensity >= 18 && fireIntensity >= moduleDamage * 0.55) return "fire";
+  if (moduleDamage >= 18) return "module";
+  return "balanced";
+};
 
 /**
  * An intentionally fallible WWII optical director. It works from stale range,
@@ -152,12 +178,19 @@ export class RuleBasedAi implements Controller {
     const tacticalThrottle = range < 1_200
       ? 0.88
       : range > 2_300 ? 0.76 : 0.62;
+    const priority = damageControlPriority(observation);
+    const recoverableDamage = observation.self.recoverableHull - observation.self.hull;
+    const repairHull = priority === "balanced"
+      && recoverableDamage >= 35
+      && observation.self.hull / observation.self.maxHull < 0.86;
 
     return {
       throttle: damaged ? Math.min(tacticalThrottle, 0.52) : tacticalThrottle,
       rudder: clamp(headingError * 1.25, -0.82, 0.82),
       aimPoint: this.estimatedAimPoint(observation, bearingToEnemy),
       ammoType: this.selectedAmmo,
+      damageControlPriority: priority,
+      repairHull,
       fire: observation.time <= this.fireWindowUntil
         && range >= GUN.minAimRange
         && range <= GUN.maxAimRange,

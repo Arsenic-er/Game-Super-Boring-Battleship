@@ -6,7 +6,17 @@ import {
   turretAlignmentError,
 } from "../sim/simulation";
 import { getMainGun } from "../ships/components";
-import type { AmmoType, BattleState, CompartmentId, ImpactEvent, ModuleId, PenetrationResult, ShipState, WeaponSlot } from "../sim/types";
+import type {
+  AmmoType,
+  BattleState,
+  CompartmentId,
+  DamageControlPriority,
+  ImpactEvent,
+  ModuleId,
+  PenetrationResult,
+  ShipState,
+  WeaponSlot,
+} from "../sim/types";
 
 const moduleLabels: Record<ModuleId, string> = {
   gun: "主炮",
@@ -34,6 +44,13 @@ const penetrationLabels: Record<PenetrationResult, string> = {
   overpenetration: "过穿",
   ricochet: "跳弹",
   shatter: "未穿透",
+};
+
+const damageControlPriorityLabels: Record<DamageControlPriority, string> = {
+  balanced: "均衡调度",
+  fire: "灭火优先",
+  flood: "堵漏优先",
+  module: "模块优先",
 };
 
 const percent = (value: number, max: number): number => Math.round((value / max) * 100);
@@ -72,6 +89,8 @@ export class Hud {
   private readonly targetPanel: HTMLElement;
   private readonly telemetry: HTMLElement;
   private readonly damageState: HTMLElement;
+  private readonly damageControlPriority: HTMLElement;
+  private readonly damageControlTasks: HTMLElement;
   private readonly aimReadout: HTMLElement;
   private readonly aimMode: HTMLElement;
   private readonly gameShell: HTMLElement;
@@ -93,7 +112,6 @@ export class Hud {
   private readonly weaponButtons: HTMLButtonElement[];
   private weaponSelectHandler?: (slot: WeaponSlot) => void;
   private maxObservedSpeed = 0;
-  private previousHull?: number;
 
   constructor(
     root: HTMLElement,
@@ -120,6 +138,13 @@ export class Hud {
           <div class="health-track recoverable-health"><i id="recoverable-hull-fill"></i></div>
           <div id="repair-hint" class="repair-hint"><kbd>H</kbd> 按住持续抢修</div>
           <div id="damage-state" class="damage-state">损管正常</div>
+          <div class="damage-control">
+            <div class="damage-control-heading">
+              <span>损管人力调度</span>
+              <strong id="damage-control-priority"><kbd>4</kbd> 均衡调度</strong>
+            </div>
+            <div id="damage-control-tasks" class="damage-control-tasks"></div>
+          </div>
           <div class="metric-row weapon-status"><span id="reload-label">主炮装填</span><strong id="reload">火炮就绪 · 100%</strong></div>
           <div id="modules" class="modules"></div>
         </section>
@@ -185,7 +210,7 @@ export class Hud {
         <section class="controls panel">
           <span><kbd>W</kbd><kbd>S</kbd> 车钟</span><span><kbd>A</kbd><kbd>D</kbd> 舵</span><span><kbd>移动鼠标</kbd> 视角</span>
           <span><kbd>滚轮</kbd> 测距</span><span><kbd>R</kbd> 瞄准开关</span>
-          <span><kbd>Q</kbd> HE / AP</span><span><kbd>Space</kbd> 齐射</span><span><kbd>H</kbd> 抢修</span><span><kbd>M</kbd> 地图</span><span><kbd>F3</kbd> 调试</span>
+          <span><kbd>Q</kbd> HE / AP</span><span><kbd>Space</kbd> 齐射</span><span><kbd>4</kbd> 损管优先</span><span><kbd>H</kbd> 舰体抢修</span><span><kbd>M</kbd> 地图</span><span><kbd>F3</kbd> 调试</span>
         </section>
         <section id="result" class="result-card" hidden>
           <p class="eyebrow">战斗结束</p><h1></h1><p id="result-detail"></p>
@@ -224,6 +249,8 @@ export class Hud {
     this.targetPanel = find("#target-status");
     this.telemetry = find("#telemetry");
     this.damageState = find("#damage-state");
+    this.damageControlPriority = find("#damage-control-priority");
+    this.damageControlTasks = find("#damage-control-tasks");
     this.aimReadout = find("#aim-readout");
     this.aimMode = find("#aim-mode");
     this.gameShell = find(".game-shell");
@@ -261,7 +288,6 @@ export class Hud {
 
   resetMetrics(): void {
     this.maxObservedSpeed = 0;
-    this.previousHull = undefined;
   }
 
   setWeaponSelectHandler(handler: (slot: WeaponSlot) => void): void {
@@ -361,16 +387,51 @@ export class Hud {
     this.hullFill.style.width = `${hull}%`;
     this.recoverableHullText.textContent = `${recoverableHull}%`;
     this.recoverableHullFill.style.width = `${recoverableHull}%`;
-    const repairing = this.previousHull !== undefined && player.hull > this.previousHull + 0.001;
+    const repairing = player.hullRepairActive;
     this.repairHint.className = `repair-hint${repairing ? " active" : ""}`;
     this.repairHint.innerHTML = player.hull >= player.recoverableHull - 0.01
       ? "当前没有可恢复损伤"
-      : repairing ? "<kbd>H</kbd> 抢修进行中 · 人力决定速度" : "<kbd>H</kbd> 按住持续抢修至白条上限";
-    this.previousHull = player.hull;
+      : repairing ? "<kbd>H</kbd> 抢修进行中 · 正在抽调人力" : "<kbd>H</kbd> 按住抢修 · 会占用损管人力";
     this.damageState.textContent = player.fireIntensity < 1 && player.flooding < 1
       ? "损管正常"
       : `火势 ${Math.round(player.fireIntensity)}% · 进水 ${Math.round(player.flooding)}%`;
     this.damageState.className = `damage-state${player.fireIntensity > 35 || player.flooding > 35 ? " critical" : ""}`;
+    this.damageControlPriority.innerHTML = `<kbd>4</kbd> ${damageControlPriorityLabels[player.damageControlPriority]}`;
+    const repairModule = player.damageControlModule
+      ? ` · ${moduleLabels[player.damageControlModule]}`
+      : "";
+    const damageControlEntries = [
+      {
+        id: "fire",
+        label: "灭火",
+        allocation: player.damageControlAllocation.fire,
+        needed: player.fireIntensity > 0,
+      },
+      {
+        id: "flood",
+        label: "堵漏",
+        allocation: player.damageControlAllocation.flood,
+        needed: player.flooding > 0,
+      },
+      {
+        id: "module",
+        label: `抢修${repairModule}`,
+        allocation: player.damageControlAllocation.module,
+        needed: Boolean(player.damageControlModule),
+      },
+      {
+        id: "hull",
+        label: "舰体恢复",
+        allocation: player.damageControlAllocation.hull,
+        needed: player.hull < player.recoverableHull,
+      },
+    ] as const;
+    this.damageControlTasks.innerHTML = damageControlEntries.map((task) => {
+      const allocation = Math.round(task.allocation * 100);
+      const stateClass = allocation > 0 ? "active" : task.needed ? "waiting" : "idle";
+      const status = allocation > 0 ? `${allocation}%` : task.needed ? "待命" : "无任务";
+      return `<div class="damage-control-task ${stateClass}" data-task="${task.id}"><span>${task.label}</span><b>${status}</b><i style="--allocation:${allocation}%"></i></div>`;
+    }).join("");
     this.renderModules(player);
     for (const button of this.weaponButtons) {
       const active = button.dataset.weapon === selectedWeapon;

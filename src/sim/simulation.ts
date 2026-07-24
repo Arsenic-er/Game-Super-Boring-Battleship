@@ -27,6 +27,8 @@ import type {
   BattleState,
   CompartmentId,
   ControlCommand,
+  DamageControlAllocation,
+  DamageControlPriority,
   GameMode,
   ModuleId,
   ProjectileState,
@@ -43,6 +45,7 @@ const zeroCommand: ControlCommand = {
   aimPoint: { x: 0, y: 0, z: 1_000 },
   fire: false,
   repairHull: false,
+  damageControlPriority: "balanced",
   weaponSlot: "mainGun",
 };
 
@@ -115,6 +118,9 @@ function createShip(
     ammoType: "he",
     fireIntensity: 0,
     flooding: 0,
+    damageControlPriority: "balanced",
+    damageControlAllocation: { fire: 0, flood: 0, module: 0, hull: 0 },
+    hullRepairActive: false,
     distanceTravelled: 0,
     turnRateRadians: 0,
   };
@@ -989,20 +995,101 @@ function advanceProjectiles(state: BattleState, dt: number): void {
   state.projectiles = active;
 }
 
-function repairModules(ship: ShipState, dt: number): void {
-  const crewRatio = moduleRatio(ship, "crew");
+const moduleRepairUrgency: Record<ModuleId, number> = {
+  steering: 1.3,
+  engine: 1.25,
+  gun: 1.1,
+  crew: 1,
+  magazine: 0.8,
+};
+
+function selectModuleRepairTarget(ship: ShipState): ModuleId | undefined {
+  let selected: ModuleId | undefined;
+  let selectedScore = 0;
   for (const moduleId of Object.keys(ship.modules) as ModuleId[]) {
     const module = ship.modules[moduleId];
     if (module.health <= 0 || module.health >= module.maxHealth) continue;
-    const crewFactor = moduleId === "crew" ? 1 : 0.15 + 0.85 * crewRatio;
-    module.health = Math.min(
-      module.maxHealth,
-      module.health + BASE_REPAIR_PER_SECOND[moduleId] * crewFactor * dt,
-    );
+    const score = (1 - module.health / module.maxHealth) * moduleRepairUrgency[moduleId];
+    if (score > selectedScore) {
+      selected = moduleId;
+      selectedScore = score;
+    }
   }
+  return selected;
 }
 
-function updateDamageControl(ship: ShipState, dt: number): void {
+const priorityWeights: Record<
+  DamageControlPriority,
+  Pick<DamageControlAllocation, "fire" | "flood" | "module">
+> = {
+  balanced: { fire: 1, flood: 1, module: 1 },
+  fire: {
+    fire: DAMAGE_CONTROL.focusedTaskWeight,
+    flood: DAMAGE_CONTROL.secondaryTaskWeight,
+    module: DAMAGE_CONTROL.secondaryTaskWeight,
+  },
+  flood: {
+    fire: DAMAGE_CONTROL.secondaryTaskWeight,
+    flood: DAMAGE_CONTROL.focusedTaskWeight,
+    module: DAMAGE_CONTROL.secondaryTaskWeight,
+  },
+  module: {
+    fire: DAMAGE_CONTROL.secondaryTaskWeight,
+    flood: DAMAGE_CONTROL.secondaryTaskWeight,
+    module: DAMAGE_CONTROL.focusedTaskWeight,
+  },
+};
+
+export function damageControlAllocationFor(
+  ship: ShipState,
+  hullRepairRequested: boolean,
+): DamageControlAllocation {
+  const moduleTarget = selectModuleRepairTarget(ship);
+  const weights = priorityWeights[ship.damageControlPriority];
+  const weighted: DamageControlAllocation = {
+    fire: ship.fireIntensity > 0 ? weights.fire : 0,
+    flood: ship.flooding > 0 ? weights.flood : 0,
+    module: moduleTarget ? weights.module : 0,
+    hull: hullRepairRequested && ship.hull < ship.recoverableHull
+      ? DAMAGE_CONTROL.hullRepairWeight
+      : 0,
+  };
+  const total = weighted.fire + weighted.flood + weighted.module + weighted.hull;
+  if (total <= 0) return { fire: 0, flood: 0, module: 0, hull: 0 };
+  return {
+    fire: weighted.fire / total,
+    flood: weighted.flood / total,
+    module: weighted.module / total,
+    hull: weighted.hull / total,
+  };
+}
+
+const treatmentMultiplier = (allocation: number): number =>
+  DAMAGE_CONTROL.passiveTreatmentMultiplier
+  + allocation * DAMAGE_CONTROL.allocatedTreatmentMultiplier;
+
+function repairModule(ship: ShipState, allocation: number, dt: number): void {
+  const moduleId = selectModuleRepairTarget(ship);
+  ship.damageControlModule = moduleId;
+  if (!moduleId || allocation <= 0) return;
+  const module = ship.modules[moduleId];
+  const crewRatio = moduleRatio(ship, "crew");
+  const crewFactor = moduleId === "crew" ? 1 : 0.15 + 0.85 * crewRatio;
+  module.health = Math.min(
+    module.maxHealth,
+    module.health
+      + BASE_REPAIR_PER_SECOND[moduleId]
+      * crewFactor
+      * treatmentMultiplier(allocation)
+      * dt,
+  );
+}
+
+function updateDamageControl(
+  ship: ShipState,
+  allocation: DamageControlAllocation,
+  dt: number,
+): void {
   const crewRatio = moduleRatio(ship, "crew");
   const damageControl = 0.18 + crewRatio * 0.82;
   if (ship.fireIntensity > 0) {
@@ -1013,7 +1100,11 @@ function updateDamageControl(ship: ShipState, dt: number): void {
     );
     ship.fireIntensity = Math.max(
       0,
-      ship.fireIntensity - DAMAGE_CONTROL.baseFireReductionPerSecond * damageControl * dt,
+      ship.fireIntensity
+        - DAMAGE_CONTROL.baseFireReductionPerSecond
+        * damageControl
+        * treatmentMultiplier(allocation.fire)
+        * dt,
     );
   }
   if (ship.flooding > 0) {
@@ -1024,19 +1115,27 @@ function updateDamageControl(ship: ShipState, dt: number): void {
     );
     ship.flooding = Math.max(
       0,
-      ship.flooding - DAMAGE_CONTROL.baseFloodReductionPerSecond * damageControl * dt,
+      ship.flooding
+        - DAMAGE_CONTROL.baseFloodReductionPerSecond
+        * damageControl
+        * treatmentMultiplier(allocation.flood)
+        * dt,
     );
   }
 }
 
-function repairHull(ship: ShipState, active: boolean, dt: number): void {
-  if (!active || ship.hull <= 0 || ship.hull >= ship.recoverableHull) return;
+function repairHull(ship: ShipState, allocation: number, dt: number): void {
+  if (allocation <= 0 || ship.hull <= 0 || ship.hull >= ship.recoverableHull) return;
   const crewRatio = moduleRatio(ship, "crew");
   const crewFactor = HULL_REPAIR.minimumCrewFactor
     + (1 - HULL_REPAIR.minimumCrewFactor) * crewRatio;
   ship.hull = Math.min(
     ship.recoverableHull,
-    ship.hull + HULL_REPAIR.pointsPerSecond * crewFactor * dt,
+    ship.hull
+      + HULL_REPAIR.pointsPerSecond
+      * crewFactor
+      * (0.25 + allocation * 0.75)
+      * dt,
   );
 }
 
@@ -1085,10 +1184,17 @@ export function stepSimulation(
   for (const ship of state.ships) {
     if (ship.hull <= 0) continue;
     const command = commands.get(ship.id) ?? { ...zeroCommand, aimPoint: ship.aimPoint };
+    ship.damageControlPriority = command.damageControlPriority ?? ship.damageControlPriority;
+    const damageControlAllocation = damageControlAllocationFor(
+      ship,
+      Boolean(command.repairHull),
+    );
+    ship.damageControlAllocation = damageControlAllocation;
+    ship.hullRepairActive = damageControlAllocation.hull > 0;
     moveShip(ship, command, dt);
-    repairModules(ship, dt);
-    updateDamageControl(ship, dt);
-    repairHull(ship, Boolean(command.repairHull), dt);
+    repairModule(ship, damageControlAllocation.module, dt);
+    updateDamageControl(ship, damageControlAllocation, dt);
+    repairHull(ship, damageControlAllocation.hull, dt);
     if (command.fire) {
       if ((command.weaponSlot ?? "mainGun") === "mainGun") fireGun(state, ship);
       else if (command.weaponSlot === "torpedo") fireTorpedoes(state, ship);

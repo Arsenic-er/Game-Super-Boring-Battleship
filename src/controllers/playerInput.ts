@@ -1,5 +1,19 @@
 import { GUN } from "../sim/config";
-import type { AmmoType, ControlCommand, ShipState, Vec3, WeaponSlot } from "../sim/types";
+import type {
+  AmmoType,
+  ControlCommand,
+  DamageControlPriority,
+  ShipState,
+  Vec3,
+  WeaponSlot,
+} from "../sim/types";
+
+const DAMAGE_CONTROL_PRIORITIES: readonly DamageControlPriority[] = [
+  "balanced",
+  "fire",
+  "flood",
+  "module",
+];
 
 export interface AimProvider {
   aimPoint(ship: ShipState, range: number): Vec3;
@@ -14,6 +28,7 @@ export class PlayerInput {
   private aiming = false;
   private weaponSlot: WeaponSlot = "mainGun";
   private ammoType: AmmoType = "he";
+  private damageControlPriority: DamageControlPriority = "balanced";
 
   constructor(canvas: HTMLCanvasElement, private readonly aimProvider: AimProvider) {
     window.addEventListener("keydown", this.onKeyDown);
@@ -37,7 +52,13 @@ export class PlayerInput {
       this.ammoType = this.ammoType === "he" ? "ap" : "he";
       this.selectWeapon("mainGun");
     }
-    if (["Space", "KeyW", "KeyS", "KeyA", "KeyD", "KeyQ", "KeyR", "KeyH", "Digit1", "Digit2", "Digit3"].includes(event.code)) {
+    if (event.code === "Digit4") {
+      const index = DAMAGE_CONTROL_PRIORITIES.indexOf(this.damageControlPriority);
+      this.damageControlPriority = DAMAGE_CONTROL_PRIORITIES[
+        (index + 1) % DAMAGE_CONTROL_PRIORITIES.length
+      ] ?? "balanced";
+    }
+    if (["Space", "KeyW", "KeyS", "KeyA", "KeyD", "KeyQ", "KeyR", "KeyH", "Digit1", "Digit2", "Digit3", "Digit4"].includes(event.code)) {
       event.preventDefault();
     }
   };
@@ -64,6 +85,7 @@ export class PlayerInput {
       fire: this.pressed.has("Space"),
       weaponSlot: this.weaponSlot,
       repairHull: this.pressed.has("KeyH"),
+      damageControlPriority: this.damageControlPriority,
       ammoType: this.ammoType,
     };
   }
@@ -107,6 +129,7 @@ export class PlayerInput {
     this.pressed.clear();
     this.aiming = false;
     this.ammoType = "he";
+    this.damageControlPriority = "balanced";
     this.aimProvider.setAiming(false);
   }
 }
