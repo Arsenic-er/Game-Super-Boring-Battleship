@@ -1,8 +1,10 @@
-import { BATTLE_DURATION_SECONDS, GUN, OBJECTIVE } from "../sim/config";
+import { BATTLE_DURATION_SECONDS, GUN, OBJECTIVE, TORPEDO } from "../sim/config";
 import {
   ballisticVelocity,
   dispersionAtRange,
   isGunFireBlocked,
+  torpedoLaunchSolution,
+  torpedoThreatsFor,
   turretAlignmentError,
 } from "../sim/simulation";
 import { getMainGun } from "../ships/components";
@@ -100,6 +102,7 @@ export class Hud {
   private readonly damageControlTasks: HTMLElement;
   private readonly aimReadout: HTMLElement;
   private readonly aimMode: HTMLElement;
+  private readonly torpedoWarning: HTMLElement;
   private readonly gameShell: HTMLElement;
   private readonly gunSight: HTMLElement;
   private readonly scopeBearing: HTMLElement;
@@ -194,6 +197,7 @@ export class Hud {
           <output id="aim-readout">方位 000° · 2,200 m</output>
           <small id="aim-mode">观察模式 · R 进入瞄准</small>
         </div>
+        <div id="torpedo-warning" class="torpedo-warning" hidden>鱼雷接近</div>
         <div id="gun-sight" class="gun-sight" aria-hidden="true">
           <div class="scope-optic">
             <div class="scope-heading">
@@ -279,6 +283,7 @@ export class Hud {
     this.damageControlTasks = find("#damage-control-tasks");
     this.aimReadout = find("#aim-readout");
     this.aimMode = find("#aim-mode");
+    this.torpedoWarning = find("#torpedo-warning");
     this.gameShell = find(".game-shell");
     this.gunSight = find("#gun-sight");
     this.scopeBearing = find("#scope-bearing");
@@ -400,6 +405,12 @@ export class Hud {
   ): void {
     const player = state.ships.find((ship) => ship.team === "player");
     if (!player) return;
+    const torpedoThreats = torpedoThreatsFor(state, player.id);
+    const nearestTorpedo = torpedoThreats[0];
+    this.torpedoWarning.hidden = !nearestTorpedo;
+    this.torpedoWarning.textContent = nearestTorpedo
+      ? `鱼雷接近 · ${Math.round(nearestTorpedo.distanceMeters)} m`
+      : "";
     const seaTrials = state.mode === "sea-trials";
     const clockSeconds = seaTrials ? Math.floor(state.time) : Math.max(0, Math.ceil(BATTLE_DURATION_SECONDS - state.time));
     this.battleTime.textContent = `${Math.floor(clockSeconds / 60)}:${String(clockSeconds % 60).padStart(2, "0")}`;
@@ -497,11 +508,13 @@ export class Hud {
       button.classList.toggle("selected", active);
       button.setAttribute("aria-pressed", String(active));
       if (button.dataset.weapon === "torpedo") {
-        const readiness = Math.round(clamp(1 - player.torpedoReloadRemaining / 42, 0, 1) * 100);
+        const readiness = Math.round(
+          clamp(1 - player.torpedoReloadRemaining / TORPEDO.reloadSeconds, 0, 1) * 100,
+        );
         const small = button.querySelector("small");
         if (small) small.textContent = player.torpedoReloadRemaining > 0
           ? `装填 ${readiness}% · ${player.torpedoReloadRemaining.toFixed(1)} s`
-          : "双雷齐射 · 就绪";
+          : `${player.torpedoSpreadMode === "narrow" ? "窄扇面" : "宽扇面"} · Q 切换 · 就绪`;
       } else if (button.dataset.weapon === "mainGun") {
         const small = button.querySelector("small");
         if (small) small.textContent = `${ammoLabels[player.ammoType]} · Q 切换`;
@@ -563,6 +576,41 @@ export class Hud {
     this.scopeGun.textContent = `${ammoLabels[player.ammoType]} · ${gunDefinition.name}`;
     this.scopeReload.textContent = this.reload.textContent ?? "--";
     this.scopeReload.classList.toggle("blocked", fireBlocked);
+    const torpedoSolution = torpedoLaunchSolution(
+      player,
+      player.aimPoint,
+      player.torpedoSpreadMode,
+    );
+    if (selectedWeapon === "torpedo") {
+      const spreadLabel = player.torpedoSpreadMode === "narrow" ? "窄扇面" : "宽扇面";
+      const torpedoReloadPercent = Math.round(
+        clamp(1 - player.torpedoReloadRemaining / TORPEDO.reloadSeconds, 0, 1) * 100,
+      );
+      this.reloadLabel.textContent = `533 mm 鱼雷 · ${spreadLabel}`;
+      this.reload.textContent = player.modules.magazine.health <= 0
+        ? "发射器失效 · 0%"
+        : player.torpedoReloadRemaining > 0
+          ? `装填 ${torpedoReloadPercent}% · ${player.torpedoReloadRemaining.toFixed(1)} s`
+          : torpedoSolution.allowed
+            ? `左/右舷可发射 · 100%`
+            : "艏艉射界受阻";
+      this.flightTime.textContent = `${(aimRange / TORPEDO.speedMetersPerSecond).toFixed(1)} s`;
+      this.dispersion.textContent = `${spreadLabel} · 武装 ${TORPEDO.armingDistanceMeters} m`;
+      this.scopeGun.textContent = `533 mm 鱼雷 · ${spreadLabel}`;
+      this.scopeFlightTime.textContent = this.flightTime.textContent;
+      this.scopeDispersion.textContent = `射程 ${(TORPEDO.maximumRangeMeters / 1_000).toFixed(1)} km`;
+      this.scopeReload.textContent = this.reload.textContent;
+      this.scopeReload.classList.toggle(
+        "blocked",
+        !torpedoSolution.allowed || player.torpedoReloadRemaining > 0,
+      );
+      this.scopeBarrelMarker.style.visibility = "hidden";
+      this.aimMode.textContent = torpedoSolution.allowed
+        ? `鱼雷模式 · ${spreadLabel} · Q 切换扇面`
+        : `鱼雷模式 · 艏艉死区 · 转至侧舷`;
+    } else {
+      this.scopeBarrelMarker.style.visibility = "";
+    }
 
     if (seaTrials) {
       this.updateTelemetry(player);

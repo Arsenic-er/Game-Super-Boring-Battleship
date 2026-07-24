@@ -16,12 +16,18 @@ import { LinesMesh } from "@babylonjs/core/Meshes/linesMesh";
 import { Mesh } from "@babylonjs/core/Meshes/mesh";
 import { TransformNode } from "@babylonjs/core/Meshes/transformNode";
 import { Scene } from "@babylonjs/core/scene";
-import { OBJECTIVE } from "../sim/config";
+import { OBJECTIVE, TORPEDO } from "../sim/config";
 import {
   isProjectileVisibleToPlayer,
   isShipVisibleToPlayer,
 } from "../sim/playerPerception";
-import { gunMuzzleOrigin, predictTrajectory, turretAimPoint } from "../sim/simulation";
+import {
+  gunMuzzleOrigin,
+  predictTrajectory,
+  torpedoInterceptPoint,
+  torpedoLaunchSolution,
+  turretAimPoint,
+} from "../sim/simulation";
 import { getMainGun } from "../ships/components";
 import { createSymmetricBow } from "./shipGeometry";
 import type { AimProvider } from "../controllers/playerInput";
@@ -31,7 +37,9 @@ import type {
   PlayerTargetView,
   ShipState,
   ShotEvent,
+  TorpedoSpreadMode,
   Vec3,
+  WeaponSlot,
 } from "../sim/types";
 
 interface ShipVisual {
@@ -89,6 +97,8 @@ export class GameView implements AimProvider {
   private readonly objectiveMaterial: StandardMaterial;
   private aimArc?: LinesMesh;
   private barrelArc?: LinesMesh;
+  private readonly torpedoSpreadLines: LinesMesh[] = [];
+  private torpedoLeadLine?: LinesMesh;
   private aiming = false;
   private mouseLookSensitivity = 1;
   private lastPointerX?: number;
@@ -740,7 +750,7 @@ export class GameView implements AimProvider {
     }
   }
 
-  syncAimArc(player: ShipState): void {
+  syncAimArc(player: ShipState, weaponSlot: WeaponSlot): void {
     const origin = gunMuzzleOrigin(player);
     const muzzleVelocity = getMainGun(player.mainGunId).muzzleVelocity;
     const points = predictTrajectory(origin, player.aimPoint, 28, muzzleVelocity).map(toVector);
@@ -781,8 +791,62 @@ export class GameView implements AimProvider {
         instance: this.barrelArc,
       }, this.scene);
     }
-    this.aimArc.visibility = this.aiming ? 0.9 : 0.16;
-    this.barrelArc.visibility = this.aiming ? 1 : 0.22;
+    const visible = weaponSlot === "mainGun";
+    this.aimArc.visibility = visible ? this.aiming ? 0.9 : 0.16 : 0;
+    this.barrelArc.visibility = visible ? this.aiming ? 1 : 0.22 : 0;
+  }
+
+  private syncTorpedoAim(
+    player: ShipState,
+    target: PlayerTargetView | undefined,
+    weaponSlot: WeaponSlot,
+    spread: TorpedoSpreadMode,
+  ): void {
+    const visible = weaponSlot === "torpedo";
+    const solution = torpedoLaunchSolution(player, player.aimPoint, spread);
+    const origin = new Vector3(player.position.x, 0.45, player.position.z);
+    const lineLength = Math.min(1_450, TORPEDO.maximumRangeMeters);
+    for (const [index, direction] of solution.directions.entries()) {
+      const points = [
+        origin,
+        new Vector3(
+          player.position.x + Math.sin(direction) * lineLength,
+          0.45,
+          player.position.z + Math.cos(direction) * lineLength,
+        ),
+      ];
+      const existing = this.torpedoSpreadLines[index];
+      const line = existing
+        ? CreateLines(`torpedo-spread-${index}`, { points, instance: existing }, this.scene)
+        : CreateLines(`torpedo-spread-${index}`, { points, updatable: true }, this.scene);
+      line.color = solution.allowed
+        ? new Color3(0.22, 0.92, 0.92)
+        : new Color3(1, 0.48, 0.18);
+      line.alpha = solution.allowed ? 0.88 : 0.72;
+      line.visibility = visible ? 1 : 0;
+      if (!existing) this.torpedoSpreadLines.push(line);
+    }
+
+    const intercept = visible && target?.mode === "tracking" && target.live
+      ? torpedoInterceptPoint(player, target)
+      : undefined;
+    const leadPoints = intercept
+      ? [origin, new Vector3(intercept.x, 0.55, intercept.z)]
+      : [origin, origin.add(new Vector3(0, 0, 1))];
+    this.torpedoLeadLine = this.torpedoLeadLine
+      ? CreateDashedLines("torpedo-lead", {
+        points: leadPoints,
+        instance: this.torpedoLeadLine,
+      }, this.scene)
+      : CreateDashedLines("torpedo-lead", {
+        points: leadPoints,
+        dashSize: 10,
+        gapSize: 7,
+        dashNb: 90,
+        updatable: true,
+      }, this.scene);
+    this.torpedoLeadLine.color = new Color3(0.7, 1, 0.72);
+    this.torpedoLeadLine.visibility = intercept ? 0.9 : 0;
   }
 
   consumeShots(shots: readonly ShotEvent[]): void {
@@ -1001,7 +1065,13 @@ export class GameView implements AimProvider {
     }
   }
 
-  sync(state: BattleState, dt: number, perceivedTarget?: PlayerTargetView): void {
+  sync(
+    state: BattleState,
+    dt: number,
+    perceivedTarget?: PlayerTargetView,
+    weaponSlot: WeaponSlot = "mainGun",
+    torpedoSpread: TorpedoSpreadMode = "narrow",
+  ): void {
     this.syncShips(state, perceivedTarget);
     this.syncProjectiles(state, perceivedTarget);
     this.objectiveRing.visibility = state.mode === "battle"
@@ -1025,7 +1095,8 @@ export class GameView implements AimProvider {
         waves.position.x = player.position.x + Math.sin(drift * 0.021 + index) * 32;
         waves.position.z = player.position.z + Math.cos(drift * 0.017 + index) * 28 + drift;
       }
-      this.syncAimArc(player);
+      this.syncAimArc(player, weaponSlot);
+      this.syncTorpedoAim(player, perceivedTarget, weaponSlot, torpedoSpread);
       const aimX = player.aimPoint.x - player.position.x;
       const aimZ = player.aimPoint.z - player.position.z;
       const aimLength = Math.max(1, Math.hypot(aimX, aimZ));

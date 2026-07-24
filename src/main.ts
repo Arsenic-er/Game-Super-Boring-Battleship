@@ -200,7 +200,13 @@ view.engine.runRenderLoop(() => {
     accumulator = 0;
   }
 
-  view.sync(state, frameSeconds, perceivedTarget);
+  view.sync(
+    state,
+    frameSeconds,
+    perceivedTarget,
+    input.selectedWeapon,
+    input.selectedTorpedoSpread,
+  );
   if (state.status !== "running") {
     gameShell.classList.remove("game-active");
     view.releasePointerLock();

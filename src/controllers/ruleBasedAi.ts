@@ -1,4 +1,5 @@
-import { GUN, KNOT_TO_MPS, SENSOR } from "../sim/config";
+import { GUN, KNOT_TO_MPS, SENSOR, TORPEDO } from "../sim/config";
+import { torpedoInterceptPoint, torpedoLaunchSolution } from "../sim/simulation";
 import type {
   AmmoType,
   ControlCommand,
@@ -75,6 +76,8 @@ export class RuleBasedAi implements Controller {
   private randomSeed: number;
   private selectedAmmo: AmmoType = "he";
   private nextAmmoDecisionAt = 0;
+  private nextTorpedoAt = 12;
+  private torpedoEvasionReactionAt = Number.POSITIVE_INFINITY;
   private lastContact?: TrackEstimate;
   private lastContactSample = Number.NEGATIVE_INFINITY;
   private acquisitionSamples = 0;
@@ -278,6 +281,25 @@ export class RuleBasedAi implements Controller {
       range = Math.hypot(dx, dz);
       bearingToTarget = Math.atan2(dx, dz);
     }
+    const torpedoSpread = "narrow" as const;
+    const torpedoAim = perception.mode === "tracking" && target
+      ? torpedoInterceptPoint(observation.self, target)
+      : undefined;
+    const torpedoSolution = torpedoAim
+      ? torpedoLaunchSolution(observation.self, torpedoAim, torpedoSpread)
+      : undefined;
+    const torpedoReady = Boolean(
+      torpedoAim
+      && range >= 900
+      && range <= Math.min(2_200, TORPEDO.maximumRangeMeters)
+      && observation.self.torpedoReloadRemaining <= 0
+      && observation.self.modules.magazine.health > 0
+      && observation.time >= this.nextTorpedoAt,
+    );
+    const launchTorpedoes = Boolean(torpedoReady && torpedoSolution?.allowed);
+    if (launchTorpedoes) {
+      this.nextTorpedoAt = observation.time + 120 + this.random() * 80;
+    }
 
     if (perception.mode === "tracking" && target) {
       this.updateFireControl(observation, target, range);
@@ -298,11 +320,51 @@ export class RuleBasedAi implements Controller {
     let desiredHeading = shouldSecureObjective || !target
       ? objectiveBearing + this.manoeuvreOffset * 0.16
       : bearingToTarget + this.manoeuvreOffset;
-    if (!shouldSecureObjective && target && range < 1_200) desiredHeading += Math.PI * 0.82;
-    else if (!shouldSecureObjective && target && range < 1_900) desiredHeading += Math.PI * 0.42;
+    if (torpedoReady && target && !torpedoSolution?.allowed) {
+      const portBroadside = bearingToTarget + Math.PI / 2;
+      const starboardBroadside = bearingToTarget - Math.PI / 2;
+      desiredHeading = Math.abs(wrapAngle(portBroadside - observation.self.heading))
+        < Math.abs(wrapAngle(starboardBroadside - observation.self.heading))
+        ? portBroadside
+        : starboardBroadside;
+    }
+    if (target && range < 850) {
+      desiredHeading = bearingToTarget + Math.PI;
+    } else if (target && range < 1_300) {
+      desiredHeading = bearingToTarget + Math.PI * 0.72;
+    } else if (!torpedoReady && !shouldSecureObjective && target && range < 1_900) {
+      desiredHeading += Math.PI * 0.42;
+    }
+    const incomingTorpedo = observation.incomingTorpedoes[0];
+    if (incomingTorpedo && !Number.isFinite(this.torpedoEvasionReactionAt)) {
+      this.torpedoEvasionReactionAt = observation.time + 6 + this.random() * 6;
+    } else if (!incomingTorpedo) {
+      this.torpedoEvasionReactionAt = Number.POSITIVE_INFINITY;
+    }
+    const evadingTorpedo = incomingTorpedo
+      && observation.time >= this.torpedoEvasionReactionAt
+      ? incomingTorpedo
+      : undefined;
+    if (evadingTorpedo) {
+      const pathBearing = Math.atan2(
+        evadingTorpedo.velocity.x,
+        evadingTorpedo.velocity.z,
+      );
+      const reverseBearing = wrapAngle(pathBearing + Math.PI);
+      desiredHeading = Math.abs(wrapAngle(pathBearing - observation.self.heading))
+        < Math.abs(wrapAngle(reverseBearing - observation.self.heading))
+        ? pathBearing
+        : reverseBearing;
+    }
     const headingError = wrapAngle(desiredHeading - observation.self.heading);
     const damaged = observation.self.hull / observation.self.maxHull < 0.38;
-    const tacticalThrottle = shouldSecureObjective || !target
+    const tacticalThrottle = evadingTorpedo
+      ? 1
+      : target && range < 850
+        ? 0.35
+      : target && range < 1_300
+        ? 0.62
+      : shouldSecureObjective || !target
       ? 0.9
       : range < 1_200 ? 0.88 : range > 2_300 ? 0.76 : 0.62;
     const priority = damageControlPriority(observation);
@@ -319,17 +381,23 @@ export class RuleBasedAi implements Controller {
     return {
       throttle: damaged ? Math.min(tacticalThrottle, 0.52) : tacticalThrottle,
       rudder: clamp(headingError * 1.25, -0.82, 0.82),
-      aimPoint: target
-        ? this.estimatedAimPoint(observation, target, bearingToTarget)
+      aimPoint: launchTorpedoes && torpedoAim
+        ? torpedoAim
+        : target
+          ? this.estimatedAimPoint(observation, target, bearingToTarget)
         : fallbackAim,
+      weaponSlot: launchTorpedoes ? "torpedo" : "mainGun",
+      torpedoSpread,
       ammoType: this.selectedAmmo,
       damageControlPriority: priority,
       repairHull,
       perception: perception.telemetry,
-      fire: perception.mode === "tracking"
-        && observation.time <= this.fireWindowUntil
-        && range >= GUN.minAimRange
-        && range <= GUN.maxAimRange,
+      fire: launchTorpedoes || (
+        perception.mode === "tracking"
+          && observation.time <= this.fireWindowUntil
+          && range >= GUN.minAimRange
+          && range <= GUN.maxAimRange
+      ),
     };
   }
 }

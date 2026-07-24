@@ -13,6 +13,7 @@ export type ModuleId = "gun" | "engine" | "steering" | "magazine" | "crew";
 export type BattleStatus = "running" | "player-won" | "enemy-won" | "draw";
 export type BattleEndReason = "destroyed" | "score" | "time";
 export type WeaponSlot = "mainGun" | "torpedo" | "aircraft";
+export type TorpedoSpreadMode = "narrow" | "wide";
 export type ProjectileKind = "shell" | "torpedo";
 export type AmmoType = "he" | "ap";
 export type PenetrationResult = "penetration" | "overpenetration" | "ricochet" | "shatter";
@@ -111,6 +112,7 @@ export interface ShipState {
   gunTraverseBlocked: boolean;
   reloadRemaining: number;
   torpedoReloadRemaining: number;
+  torpedoSpreadMode: TorpedoSpreadMode;
   aimPoint: Vec3;
   ammoType: AmmoType;
   fireIntensity: number;
@@ -136,6 +138,9 @@ export interface ProjectileState {
   velocity: Vec3;
   damage: number;
   age: number;
+  distanceTravelled?: number;
+  armingDistance?: number;
+  maximumRange?: number;
 }
 
 export interface ShotEvent {
@@ -165,6 +170,23 @@ export interface ImpactEvent {
   effectiveArmorMm?: number;
   impactAngleDegrees?: number;
   armorZone?: ArmorZoneId;
+  projectileKind?: ProjectileKind;
+}
+
+export interface TorpedoThreat {
+  id: number;
+  position: Vec3;
+  velocity: Vec3;
+  distanceMeters: number;
+  armed: boolean;
+}
+
+export interface TorpedoLaunchSolution {
+  allowed: boolean;
+  bearing: number;
+  relativeBearing: number;
+  side: "port" | "starboard";
+  directions: number[];
 }
 
 export interface BattleState {
@@ -192,6 +214,7 @@ export interface ControlCommand {
   repairHull?: boolean;
   damageControlPriority?: DamageControlPriority;
   ammoType?: AmmoType;
+  torpedoSpread?: TorpedoSpreadMode;
   perception?: PerceptionTelemetry;
 }
 
@@ -199,6 +222,7 @@ export interface Observation {
   self: Readonly<ShipState>;
   contacts: readonly Readonly<SensorContact>[];
   objective: Readonly<ObjectiveObservation>;
+  incomingTorpedoes: readonly Readonly<TorpedoThreat>[];
   time: number;
 }
 

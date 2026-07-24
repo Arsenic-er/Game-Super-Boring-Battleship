@@ -22,6 +22,11 @@ export interface TeamCombatMetrics {
   firesStarted: number;
   floodsStarted: number;
   moduleHits: number;
+  torpedoesLaunched: number;
+  torpedoHits: number;
+  torpedoDamage: number;
+  shellsFired: number;
+  shellHits: number;
   perceptionSeconds: Record<PerceptionMode, number>;
   shotsWhileUntracked: number;
 }
@@ -92,6 +97,11 @@ export interface BalanceReport {
   };
   averageTrackingFraction: Record<Team, number>;
   shotsWhileUntracked: number;
+  torpedoHitRate: number;
+  averageTorpedoSalvosPerTeam: number;
+  torpedoDamageShare: number;
+  playerGunHitRate: number;
+  enemyGunHitRate: number;
 }
 
 const emptyTeamMetrics = (): TeamCombatMetrics => ({
@@ -107,6 +117,11 @@ const emptyTeamMetrics = (): TeamCombatMetrics => ({
   firesStarted: 0,
   floodsStarted: 0,
   moduleHits: 0,
+  torpedoesLaunched: 0,
+  torpedoHits: 0,
+  torpedoDamage: 0,
+  shellsFired: 0,
+  shellHits: 0,
   perceptionSeconds: {
     unaware: 0,
     acquiring: 0,
@@ -236,6 +251,8 @@ export function runHeadlessBattle(
     const teamsFiring = new Set<Team>();
     for (const shot of state.shots) {
       metrics[shot.team].shots += 1;
+      if (shot.kind === "torpedo") metrics[shot.team].torpedoesLaunched += 1;
+      else metrics[shot.team].shellsFired += 1;
       if (commands.get(shot.ownerId)?.perception?.mode !== "tracking") {
         metrics[shot.team].shotsWhileUntracked += 1;
       }
@@ -254,6 +271,12 @@ export function runHeadlessBattle(
       const attacker: Team = target.team === "player" ? "enemy" : "player";
       metrics[attacker].hits += 1;
       metrics[attacker].damage += impact.damage ?? 0;
+      if (impact.projectileKind === "torpedo") {
+        metrics[attacker].torpedoHits += 1;
+        metrics[attacker].torpedoDamage += impact.damage ?? 0;
+      } else if (impact.projectileKind === "shell") {
+        metrics[attacker].shellHits += 1;
+      }
       if ((impact.damage ?? 0) > 0) metrics[attacker].effectiveHits += 1;
       if (impact.penetrationResult === "penetration") metrics[attacker].penetrations += 1;
       if (impact.penetrationResult === "overpenetration") {
@@ -311,6 +334,16 @@ export function summarizeBattles(battles: readonly BattleTelemetry[]): BalanceRe
   const enemyShots = total((battle) => battle.enemy.shots);
   const fires = total((battle) => battle.player.firesStarted + battle.enemy.firesStarted);
   const floods = total((battle) => battle.player.floodsStarted + battle.enemy.floodsStarted);
+  const torpedoesLaunched = total(
+    (battle) => battle.player.torpedoesLaunched + battle.enemy.torpedoesLaunched,
+  );
+  const torpedoHits = total(
+    (battle) => battle.player.torpedoHits + battle.enemy.torpedoHits,
+  );
+  const torpedoDamage = total(
+    (battle) => battle.player.torpedoDamage + battle.enemy.torpedoDamage,
+  );
+  const allDamage = total((battle) => battle.player.damage + battle.enemy.damage);
 
   return {
     runs,
@@ -400,6 +433,17 @@ export function summarizeBattles(battles: readonly BattleTelemetry[]): BalanceRe
     shotsWhileUntracked: total(
       (battle) => battle.player.shotsWhileUntracked + battle.enemy.shotsWhileUntracked,
     ),
+    torpedoHitRate: round(safeRate(torpedoHits, torpedoesLaunched), 4),
+    averageTorpedoSalvosPerTeam: round(safeRate(torpedoesLaunched, runs * 2 * 2), 3),
+    torpedoDamageShare: round(safeRate(torpedoDamage, allDamage), 4),
+    playerGunHitRate: round(safeRate(
+      total((battle) => battle.player.shellHits),
+      total((battle) => battle.player.shellsFired),
+    ), 4),
+    enemyGunHitRate: round(safeRate(
+      total((battle) => battle.enemy.shellHits),
+      total((battle) => battle.enemy.shellsFired),
+    ), 4),
   };
 }
 

@@ -96,6 +96,21 @@ export const GUN = {
   maxAimRange: 5_000,
 } as const;
 
+export const TORPEDO = {
+  speedMetersPerSecond: 26,
+  reloadSeconds: 42,
+  damage: 145,
+  armingDistanceMeters: 120,
+  maximumRangeMeters: 3_500,
+  detectionRangeMeters: 500,
+  minimumLaunchAngleRadians: 38 * Math.PI / 180,
+  maximumLaunchAngleRadians: 142 * Math.PI / 180,
+  narrowSpreadRadians: 0.15 * Math.PI / 180,
+  wideSpreadRadians: 4 * Math.PI / 180,
+  tubeLongitudinalOffset: -8,
+  tubeBarrelSpacing: 1.2,
+} as const;
+
 export const ARMOR_THICKNESS_MM = {
   bow: 10,
   bridge: 6,

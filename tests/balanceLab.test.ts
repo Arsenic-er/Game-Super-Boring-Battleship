@@ -40,5 +40,10 @@ describe("headless balance lab", () => {
     expect(report.averageTrackingFraction.player).toBeGreaterThan(0);
     expect(report.averageTrackingFraction.enemy).toBeGreaterThan(0);
     expect(report.shotsWhileUntracked).toBe(0);
+    expect(report.torpedoHitRate).toBeGreaterThanOrEqual(0);
+    expect(report.torpedoHitRate).toBeLessThanOrEqual(1);
+    expect(report.averageTorpedoSalvosPerTeam).toBeGreaterThanOrEqual(0);
+    expect(report.playerGunHitRate).toBeGreaterThanOrEqual(0);
+    expect(report.playerGunHitRate).toBeLessThanOrEqual(1);
   });
 });

@@ -1,9 +1,10 @@
-import { GUN } from "../sim/config";
+import { GUN, TORPEDO } from "../sim/config";
 import type {
   AmmoType,
   ControlCommand,
   DamageControlPriority,
   ShipState,
+  TorpedoSpreadMode,
   Vec3,
   WeaponSlot,
 } from "../sim/types";
@@ -27,6 +28,8 @@ export class PlayerInput {
   private steeringSensitivity = 1;
   private aiming = false;
   private weaponSlot: WeaponSlot = "mainGun";
+  private torpedoSpread: TorpedoSpreadMode = "narrow";
+  private firePressed = false;
   private ammoType: AmmoType = "he";
   private damageControlPriority: DamageControlPriority = "balanced";
 
@@ -49,9 +52,14 @@ export class PlayerInput {
     if (event.code === "Digit2") this.selectWeapon("torpedo");
     if (event.code === "Digit3") this.selectWeapon("aircraft");
     if (event.code === "KeyQ") {
-      this.ammoType = this.ammoType === "he" ? "ap" : "he";
-      this.selectWeapon("mainGun");
+      if (this.weaponSlot === "torpedo") {
+        this.torpedoSpread = this.torpedoSpread === "narrow" ? "wide" : "narrow";
+      } else {
+        this.ammoType = this.ammoType === "he" ? "ap" : "he";
+        this.selectWeapon("mainGun");
+      }
     }
+    if (event.code === "Space") this.firePressed = true;
     if (event.code === "Digit4") {
       const index = DAMAGE_CONTROL_PRIORITIES.indexOf(this.damageControlPriority);
       this.damageControlPriority = DAMAGE_CONTROL_PRIORITIES[
@@ -69,21 +77,27 @@ export class PlayerInput {
 
   private onWheel = (event: WheelEvent): void => {
     event.preventDefault();
+    const maximumRange = this.weaponSlot === "torpedo"
+      ? TORPEDO.maximumRangeMeters
+      : GUN.maxAimRange;
     this.range = Math.max(
       GUN.minAimRange,
-      Math.min(GUN.maxAimRange, this.range + Math.sign(event.deltaY) * 150),
+      Math.min(maximumRange, this.range + Math.sign(event.deltaY) * 150),
     );
   };
 
   command(ship: ShipState): ControlCommand {
     const steeringInput = (this.pressed.has("KeyD") ? 1 : 0)
       - (this.pressed.has("KeyA") ? 1 : 0);
+    const fire = this.firePressed;
+    this.firePressed = false;
     return {
       throttle: this.throttle,
       rudder: steeringInput * this.steeringSensitivity,
       aimPoint: this.aimProvider.aimPoint(ship, this.range),
-      fire: this.pressed.has("Space"),
+      fire,
       weaponSlot: this.weaponSlot,
+      torpedoSpread: this.torpedoSpread,
       repairHull: this.pressed.has("KeyH"),
       damageControlPriority: this.damageControlPriority,
       ammoType: this.ammoType,
@@ -106,6 +120,10 @@ export class PlayerInput {
     return this.ammoType;
   }
 
+  get selectedTorpedoSpread(): TorpedoSpreadMode {
+    return this.torpedoSpread;
+  }
+
   selectWeapon(slot: WeaponSlot): void {
     this.weaponSlot = slot;
   }
@@ -113,7 +131,6 @@ export class PlayerInput {
   exitAiming(): boolean {
     if (!this.aiming) return false;
     this.aiming = false;
-    this.weaponSlot = "mainGun";
     this.pressed.delete("KeyR");
     this.aimProvider.setAiming(false);
     return true;
@@ -127,8 +144,11 @@ export class PlayerInput {
     this.throttle = 0.55;
     this.range = 2_200;
     this.pressed.clear();
+    this.firePressed = false;
     this.aiming = false;
+    this.weaponSlot = "mainGun";
     this.ammoType = "he";
+    this.torpedoSpread = "narrow";
     this.damageControlPriority = "balanced";
     this.aimProvider.setAiming(false);
   }

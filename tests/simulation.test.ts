@@ -6,6 +6,7 @@ import {
   GUN,
   OBJECTIVE,
   SENSOR,
+  TORPEDO,
 } from "../src/sim/config";
 import {
   FRONT_TURRET_TRAVERSE_LIMIT_RADIANS,
@@ -20,6 +21,9 @@ import {
   gunMuzzleOrigins,
   observe,
   stepSimulation,
+  torpedoInterceptPoint,
+  torpedoLaunchSolution,
+  torpedoThreatsFor,
   turretAimPoint,
   updateObjective,
 } from "../src/sim/simulation";
@@ -126,9 +130,10 @@ describe("deterministic battle simulation", () => {
     const state = createInitialState(96, "sea-trials");
     const player = state.ships[0]!;
     const command: ControlCommand = {
-      ...idle(player.position.x, player.position.z + 2_000),
+      ...idle(player.position.x + 2_000, player.position.z),
       fire: true,
       weaponSlot: "torpedo",
+      torpedoSpread: "narrow",
     };
     stepSimulation(state, new Map([["player", command]]), FIXED_STEP);
     const torpedoes = state.projectiles.filter((projectile) => projectile.kind === "torpedo");
@@ -137,6 +142,96 @@ describe("deterministic battle simulation", () => {
     expect(player.torpedoReloadRemaining).toBeGreaterThan(40);
     expect(torpedoes[0]?.position).not.toEqual(torpedoes[1]?.position);
     expect(torpedoes.every((torpedo) => torpedo.velocity.y === 0)).toBe(true);
+    expect(torpedoes.every((torpedo) => torpedo.armingDistance === TORPEDO.armingDistanceMeters))
+      .toBe(true);
+  });
+
+  it("blocks bow and stern torpedo fire without consuming reload", () => {
+    const state = createInitialState(961, "sea-trials");
+    const player = state.ships[0]!;
+    for (const zOffset of [2_000, -2_000]) {
+      stepSimulation(state, new Map([["player", {
+        ...idle(player.position.x, player.position.z + zOffset),
+        fire: true,
+        weaponSlot: "torpedo",
+      }]]), FIXED_STEP);
+    }
+    expect(state.projectiles).toHaveLength(0);
+    expect(player.torpedoReloadRemaining).toBe(0);
+  });
+
+  it("creates a wider angular separation in wide spread mode", () => {
+    const launch = (spread: "narrow" | "wide") => {
+      const state = createInitialState(spread === "narrow" ? 962 : 963, "sea-trials");
+      const player = state.ships[0]!;
+      stepSimulation(state, new Map([["player", {
+        ...idle(player.position.x + 2_000, player.position.z),
+        fire: true,
+        weaponSlot: "torpedo",
+        torpedoSpread: spread,
+      }]]), FIXED_STEP);
+      const bearings = state.projectiles.map((projectile) =>
+        Math.atan2(projectile.velocity.x, projectile.velocity.z));
+      return Math.abs(bearings[1]! - bearings[0]!);
+    };
+    expect(launch("wide")).toBeGreaterThan(launch("narrow") * 2);
+  });
+
+  it("does not detonate before arming distance and expires at maximum range", () => {
+    const state = createInitialState(964, "sea-trials");
+    const player = state.ships.find((ship) => ship.id === "player")!;
+    const target = state.ships.find((ship) => ship.isTestTarget)!;
+    target.position = { x: player.position.x + 80, y: 0, z: player.position.z };
+    target.previousPosition = { ...target.position };
+    const startingHull = target.hull;
+    stepSimulation(state, new Map([["player", {
+      ...idle(player.position.x + 2_000, player.position.z),
+      fire: true,
+      weaponSlot: "torpedo",
+    }]]), FIXED_STEP);
+    for (let tick = 0; tick < 240; tick += 1) {
+      stepSimulation(state, new Map(), FIXED_STEP);
+    }
+    expect(target.hull).toBe(startingHull);
+    for (const torpedo of state.projectiles) {
+      torpedo.distanceTravelled = TORPEDO.maximumRangeMeters - 0.1;
+    }
+    stepSimulation(state, new Map(), FIXED_STEP);
+    expect(state.projectiles.filter((projectile) => projectile.kind === "torpedo"))
+      .toHaveLength(0);
+  });
+
+  it("solves finite torpedo leads and exposes only nearby incoming threats", () => {
+    const state = createInitialState(965);
+    const player = state.ships.find((ship) => ship.id === "player")!;
+    const enemy = state.ships.find((ship) => ship.id === "enemy")!;
+    enemy.position = { x: player.position.x + 1_600, y: 0, z: player.position.z };
+    enemy.heading = 0;
+    enemy.speedKnots = 20;
+    const intercept = torpedoInterceptPoint(player, enemy);
+    expect(intercept).toBeDefined();
+    expect(intercept!.z).toBeGreaterThan(enemy.position.z);
+    const solution = torpedoLaunchSolution(player, intercept!, "narrow");
+    expect(solution.allowed).toBe(true);
+    expect(solution.side).toBe("starboard");
+
+    state.projectiles.push({
+      id: 99,
+      ownerId: enemy.id,
+      team: "enemy",
+      kind: "torpedo",
+      position: { x: player.position.x + TORPEDO.detectionRangeMeters - 1, y: 0, z: player.position.z },
+      previousPosition: { x: player.position.x + TORPEDO.detectionRangeMeters, y: 0, z: player.position.z },
+      velocity: { x: -TORPEDO.speedMetersPerSecond, y: 0, z: 0 },
+      damage: TORPEDO.damage,
+      age: 2,
+      distanceTravelled: 200,
+      armingDistance: TORPEDO.armingDistanceMeters,
+      maximumRange: TORPEDO.maximumRangeMeters,
+    });
+    expect(torpedoThreatsFor(state, player.id)).toHaveLength(1);
+    state.projectiles[0]!.position.x = player.position.x + TORPEDO.detectionRangeMeters + 1;
+    expect(torpedoThreatsFor(state, player.id)).toHaveLength(0);
   });
 
   it("keeps weapon slot 3 reserved without spawning a projectile", () => {
@@ -277,6 +372,43 @@ describe("deterministic battle simulation", () => {
     const unaware = ai.command(observe(state, "enemy"));
     expect(unaware.perception?.mode).toBe("unaware");
     expect(unaware.fire).toBe(false);
+  });
+
+  it("lets the AI launch only from a tracked side arc and evade a nearby torpedo", () => {
+    const state = createInitialState(179);
+    const ai = new RuleBasedAi(179);
+    const enemy = state.ships.find((ship) => ship.id === "enemy")!;
+    const player = state.ships.find((ship) => ship.id === "player")!;
+    enemy.heading = Math.PI / 2;
+    ai.command(observe(state, "enemy"));
+    state.time = SENSOR.observationIntervalSeconds + 0.1;
+    ai.command(observe(state, "enemy"));
+    state.time = 13;
+    const attack = ai.command(observe(state, "enemy"));
+    expect(attack.perception?.mode).toBe("tracking");
+    expect(attack.weaponSlot).toBe("torpedo");
+    expect(attack.fire).toBe(true);
+
+    enemy.heading = 0;
+    state.projectiles.push({
+      id: 500,
+      ownerId: player.id,
+      team: "player",
+      kind: "torpedo",
+      position: { x: enemy.position.x + 400, y: 0, z: enemy.position.z },
+      previousPosition: { x: enemy.position.x + 410, y: 0, z: enemy.position.z },
+      velocity: { x: -TORPEDO.speedMetersPerSecond, y: 0, z: 0 },
+      damage: TORPEDO.damage,
+      age: 4,
+      distanceTravelled: 300,
+      armingDistance: TORPEDO.armingDistanceMeters,
+      maximumRange: TORPEDO.maximumRangeMeters,
+    });
+    ai.command(observe(state, "enemy"));
+    state.time += 13;
+    const evade = ai.command(observe(state, "enemy"));
+    expect(evade.throttle).toBe(1);
+    expect(Math.abs(evade.rudder)).toBeGreaterThan(0.2);
   });
 
   it("keeps sea trials running without an enemy or time limit", () => {

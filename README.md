@@ -22,6 +22,7 @@ This is an early prototype rather than a finished commercial game. Visuals, bala
 - Historically paced destroyer movement, throttle and rudder control.
 - Main-gun ballistics with visible shell arcs, dispersion, reload progress and independent turret alignment.
 - Weapon slots: `1` main guns, `2` twin torpedo launch, `3` reserved aircraft slot.
+- Torpedo side arcs, narrow/wide spread, 120 m arming distance, 3.5 km maximum range, lead prediction and proximity warnings.
 - Hull compartments, module damage, fire, flooding, crew-dependent repair and recoverable health.
 - Central objective A with capture progress, contested superiority, team scores and score victory.
 - Non-omniscient AI optics with sampled noisy contacts, acquisition, target loss, search and reacquisition; firing requires a live track.
@@ -41,6 +42,7 @@ This is an early prototype rather than a finished commercial game. Visuals, bala
 | Mouse wheel | Adjust aiming range |
 | `R` | Enter / leave aiming scope |
 | `1` / `2` / `3` | Main gun / torpedo / reserved aircraft slot |
+| `Q` | Switch HE/AP for main guns; switch narrow/wide spread for torpedoes |
 | `Space` | Fire selected weapon |
 | `4` | Cycle balanced / firefighting / flooding / module repair priority |
 | `H` | Hold to divert damage-control crew to recoverable hull damage |
@@ -105,6 +107,7 @@ Third-party libraries and the Fusion Pixel Font remain under their respective li
 - 可见炮弹轨迹、散布、装填进度、炮管实际指向与独立火控准线。
 - HE/AP 弹药切换、装甲入射角、跳弹、碎弹、正常穿透与过度穿透。
 - 武器栏：`1` 主炮、`2` 双雷齐射、`3` 预留舰载机。
+- 鱼雷具有左右舷射界、窄/宽扇面、120 米武装距离、3.5 千米最大射程、提前量预测线与近距来袭警报。
 - 船体分区、组件损伤、起火、进水、有限人力损管与可恢复血量。
 - 舰船实体碰撞，以及依据碰撞部位计算的不同伤害。
 - 小地图、大地图、专用瞄准镜、开发者调试面板与灵敏度设置。
@@ -121,7 +124,7 @@ Third-party libraries and the Fusion Pixel Font remain under their respective li
 | 鼠标滚轮 | 调整瞄准距离 |
 | `R` | 进入或退出瞄准镜 |
 | `1` / `2` / `3` | 主炮 / 鱼雷 / 预留舰载机 |
-| `Q` | 切换主炮 HE / AP；换弹会重新装填 |
+| `Q` | 主炮模式切换 HE / AP；鱼雷模式切换窄 / 宽扇面 |
 | `Space` | 发射当前武器 |
 | `4` | 循环均衡 / 灭火 / 堵漏 / 模块优先级 |
 | `H` | 按住抽调损管人力修复可恢复舰体血量 |

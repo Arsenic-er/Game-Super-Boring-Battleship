@@ -1,4 +1,4 @@
-import { KNOT_TO_MPS, SENSOR } from "./config";
+import { KNOT_TO_MPS, SENSOR, TORPEDO } from "./config";
 import type {
   GameMode,
   Observation,
@@ -30,13 +30,15 @@ export function isProjectileVisibleToPlayer(
   target?: Readonly<PlayerTargetView>,
 ): boolean {
   if (projectile.team === "player") return true;
-  if (target?.live) return true;
   if (!player) return false;
   const distance = Math.hypot(
     projectile.position.x - player.position.x,
     projectile.position.z - player.position.z,
   );
-  return distance <= (projectile.kind === "torpedo" ? 450 : 1_200);
+  if (projectile.kind === "torpedo") {
+    return distance <= TORPEDO.detectionRangeMeters;
+  }
+  return Boolean(target?.live) || distance <= 1_200;
 }
 
 /**
