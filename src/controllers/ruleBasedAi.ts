@@ -64,8 +64,8 @@ export class RuleBasedAi implements Controller {
     if (manoeuvre > 0.55) this.nextEstimateAt = Math.min(this.nextEstimateAt, observation.time + 1.5);
 
     if (observation.time >= this.nextEstimateAt) {
-      const rangeErrorFraction = 0.065 + (1 - this.solutionQuality) * 0.105;
-      const bearingErrorRadians = 0.014 + (1 - this.solutionQuality) * 0.042;
+      const rangeErrorFraction = 0.095 + (1 - this.solutionQuality) * 0.155;
+      const bearingErrorRadians = 0.022 + (1 - this.solutionQuality) * 0.065;
       this.estimatedRange = clamp(
         actualRange * (1 + this.signedEstimate() * rangeErrorFraction),
         GUN.minAimRange,
@@ -84,10 +84,12 @@ export class RuleBasedAi implements Controller {
 
     if (observation.time >= this.nextSalvoAt) {
       const hesitation = this.random();
-      if (hesitation > 0.15 && this.solutionQuality > 0.04) {
+      // A poor solution should produce a ranging salvo, not permanent silence.
+      // Accuracy remains limited by stale range, bearing and lead estimates.
+      if (hesitation > 0.22) {
         this.fireWindowUntil = observation.time + 3;
       }
-      this.nextSalvoAt = observation.time + 7 + this.random() * 6;
+      this.nextSalvoAt = observation.time + 8 + this.random() * 6;
     }
   }
 
@@ -127,14 +129,20 @@ export class RuleBasedAi implements Controller {
       this.nextManoeuvreAt = observation.time + 14 + this.random() * 18;
     }
 
+    // Fight from a readable destroyer gunnery band instead of charging into a
+    // point-blank accuracy contest. The broadside offset also creates periods
+    // in which both the hull and fire-control solution can settle.
     let desiredHeading = bearingToEnemy + this.manoeuvreOffset;
-    if (range < 850) desiredHeading += Math.PI * 0.72;
-    else if (range < 1_700) desiredHeading += Math.PI * 0.34;
+    if (range < 1_200) desiredHeading += Math.PI * 0.82;
+    else if (range < 1_900) desiredHeading += Math.PI * 0.42;
     const headingError = wrapAngle(desiredHeading - observation.self.heading);
     const damaged = observation.self.hull / observation.self.maxHull < 0.38;
+    const tacticalThrottle = range < 1_200
+      ? 0.88
+      : range > 2_300 ? 0.76 : 0.62;
 
     return {
-      throttle: damaged ? 0.48 : range > 600 ? 0.72 : 0.3,
+      throttle: damaged ? Math.min(tacticalThrottle, 0.52) : tacticalThrottle,
       rudder: clamp(headingError * 1.25, -0.82, 0.82),
       aimPoint: this.estimatedAimPoint(observation, bearingToEnemy),
       fire: observation.time <= this.fireWindowUntil
