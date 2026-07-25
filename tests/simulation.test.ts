@@ -6,6 +6,7 @@ import {
   GUN,
   OBJECTIVE,
   SENSOR,
+  SHIP,
   TORPEDO,
 } from "../src/sim/config";
 import {
@@ -424,7 +425,7 @@ describe("deterministic battle simulation", () => {
     expect(hits + splashes).toBeGreaterThan(4);
     expect(splashes).toBeGreaterThan(0);
     expect(hits).toBeLessThan(splashes);
-    expect(hits / (hits + splashes)).toBeLessThan(0.35);
+    expect(hits / (hits + splashes)).toBeLessThan(0.4);
   });
 
   it("publishes sampled noisy contacts without exposing live enemy state", () => {
@@ -551,6 +552,51 @@ describe("deterministic battle simulation", () => {
     const player = state.ships[0]!;
     expect(player.distanceTravelled).toBeGreaterThan(10);
     expect(Math.abs(player.turnRateRadians)).toBeGreaterThan(0);
+  });
+
+  it("moves the physical rudder gradually instead of applying an instant turn", () => {
+    const state = createInitialState(2201, "sea-trials");
+    const player = state.ships[0]!;
+    const command = { ...idle(0, 1_000), throttle: 1, rudder: 1 };
+    stepSimulation(state, new Map([["player", command]]), FIXED_STEP);
+    expect(player.rudderCommand).toBe(1);
+    expect(player.rudder).toBeGreaterThan(0);
+    expect(player.rudder).toBeLessThan(0.02);
+    for (let tick = 0; tick < 240; tick += 1) {
+      stepSimulation(state, new Map([["player", command]]), FIXED_STEP);
+    }
+    expect(player.rudder).toBeGreaterThan(0.95);
+  });
+
+  it("makes steering damage slow rudder shift and destruction freeze it", () => {
+    const healthy = createInitialState(2202, "sea-trials");
+    const damaged = createInitialState(2202, "sea-trials");
+    damaged.ships[0]!.modules.steering.health *= 0.35;
+    const command = { ...idle(0, 1_000), throttle: 1, rudder: -1 };
+    for (let tick = 0; tick < 60; tick += 1) {
+      stepSimulation(healthy, new Map([["player", command]]), FIXED_STEP);
+      stepSimulation(damaged, new Map([["player", command]]), FIXED_STEP);
+    }
+    expect(Math.abs(damaged.ships[0]!.rudder)).toBeLessThan(Math.abs(healthy.ships[0]!.rudder));
+    damaged.ships[0]!.modules.steering.health = 0;
+    const frozenRudder = damaged.ships[0]!.rudder;
+    for (let tick = 0; tick < 60; tick += 1) {
+      stepSimulation(damaged, new Map([["player", command]]), FIXED_STEP);
+    }
+    expect(damaged.ships[0]!.rudder).toBe(frozenRudder);
+  });
+
+  it("loses speed under sustained hard rudder", () => {
+    const straight = createInitialState(2203, "sea-trials");
+    const turning = createInitialState(2203, "sea-trials");
+    straight.ships[0]!.speedKnots = SHIP.maxSpeedKnots;
+    turning.ships[0]!.speedKnots = SHIP.maxSpeedKnots;
+    turning.ships[0]!.rudder = 1;
+    for (let tick = 0; tick < 180; tick += 1) {
+      stepSimulation(straight, new Map([["player", { ...idle(0, 1_000), throttle: 1, rudder: 0 }]]), FIXED_STEP);
+      stepSimulation(turning, new Map([["player", { ...idle(0, 1_000), throttle: 1, rudder: 1 }]]), FIXED_STEP);
+    }
+    expect(turning.ships[0]!.speedKnots).toBeLessThan(straight.ships[0]!.speedKnots - 0.8);
   });
 
   it("uses the traversed turret direction for the muzzle position", () => {

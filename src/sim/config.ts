@@ -41,6 +41,8 @@ export const SHIP = {
   maxSpeedKnots: 35.5,
   accelerationKnotsPerSecond: 0.38,
   brakingKnotsPerSecond: 0.56,
+  rudderShiftPerSecond: 0.32,
+  maximumTurningSpeedLoss: 0.12,
   maxTurnRateRadians: 2.9 * Math.PI / 180,
   maxHull: 1_000,
 } as const;

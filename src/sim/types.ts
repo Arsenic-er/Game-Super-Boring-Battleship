@@ -104,6 +104,7 @@ export interface ShipState {
   turretHeading: number;
   speedKnots: number;
   throttle: number;
+  rudderCommand: number;
   rudder: number;
   hull: number;
   maxHull: number;

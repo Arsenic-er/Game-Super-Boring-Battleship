@@ -191,7 +191,7 @@ export class Hud {
           <div class="metric-row"><span>即时转向率</span><strong data-telemetry="turn-rate">0.0°/s</strong></div>
           <div class="metric-row"><span>航行距离</span><strong data-telemetry="distance">0 m</strong></div>
           <div class="metric-row"><span>航向</span><strong data-telemetry="heading">000°</strong></div>
-          <div class="metric-row"><span>舵角输入</span><strong data-telemetry="rudder">0%</strong></div>
+          <div class="metric-row"><span>舵令 / 实际舵角</span><strong data-telemetry="rudder">0% / 0%</strong></div>
           <small>无攻击 AI · 静止碰撞靶船 · 无时间限制</small>
         </section>
         <section id="feedback" class="feedback-stack" aria-live="polite"></section>
@@ -397,7 +397,7 @@ export class Hud {
       ? `${(player.distanceTravelled / 1_000).toFixed(2)} km`
       : `${Math.round(player.distanceTravelled)} m`);
     set("heading", `${String(Math.round((player.heading * 180 / Math.PI + 360) % 360)).padStart(3, "0")}°`);
-    set("rudder", `${Math.round(player.rudder * 100)}%`);
+    set("rudder", `${Math.round(player.rudderCommand * 100)}% / ${Math.round(player.rudder * 100)}%`);
   }
 
   update(

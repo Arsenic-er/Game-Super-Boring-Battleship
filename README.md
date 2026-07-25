@@ -19,7 +19,7 @@ This is an early prototype rather than a finished commercial game. Visuals, bala
 ## Current features
 
 - Ten-minute player-vs-AI battles and an unlimited sea-trials mode.
-- Historically paced destroyer movement, throttle and rudder control.
+- Historically paced destroyer movement with gradual rudder shift, steering-damage response and speed loss during hard turns.
 - Main-gun ballistics with visible shell arcs, dispersion, reload progress and independent turret alignment.
 - Weapon slots: `1` main guns, `2` twin torpedo launch, `3` reserved aircraft slot.
 - Torpedo side arcs, narrow/wide spread, arming distance, per-model maximum range, lead prediction and closest-approach warnings.
@@ -106,7 +106,7 @@ Third-party libraries and the Fusion Pixel Font remain under their respective li
 - 中央 A 区占领、区域优势、双方积分与积分胜利。
 - 非全知 AI 光学观测：目标测量有刷新间隔与误差，并包含识别、丢失、搜索和重获；没有实时跟踪时禁止开火。
 - 玩家 HUD、瞄准镜、3D 敌舰可见性和战术地图遵循相同的光学接触；失联后只保留逐渐衰减的最后已知标记。
-- 接近现实节奏的驱逐舰航速、车钟和舵机操纵。
+- 接近现实节奏的驱逐舰航速、车钟和舵机操纵；转向模块受损会减慢实际舵速，持续大舵角会损失航速。
 - 可见炮弹轨迹、散布、装填进度、炮管实际指向与独立火控准线。
 - HE/AP 弹药切换、装甲入射角、跳弹、碎弹、正常穿透与过度穿透。
 - 武器栏：`1` 主炮、`2` 双雷齐射、`3` 预留舰载机。

@@ -127,6 +127,7 @@ function createShip(
     turretHeading: heading,
     speedKnots: 12,
     throttle: 0.55,
+    rudderCommand: 0,
     rudder: 0,
     hull: SHIP.maxHull,
     maxHull: SHIP.maxHull,
@@ -275,7 +276,7 @@ export function torpedoLauncherAlignmentError(ship: ShipState): number {
 function moveShip(ship: ShipState, command: ControlCommand, dt: number): void {
   ship.previousPosition = copyVec(ship.position);
   ship.throttle = clamp(command.throttle, -0.25, 1);
-  ship.rudder = clamp(command.rudder, -1, 1);
+  ship.rudderCommand = clamp(command.rudder, -1, 1);
   ship.aimPoint = copyVec(command.aimPoint);
 
   if (command.ammoType && command.ammoType !== ship.ammoType) {
@@ -290,14 +291,26 @@ function moveShip(ship: ShipState, command: ControlCommand, dt: number): void {
 
   const engineRatio = moduleRatio(ship, "engine");
   const steeringRatio = moduleRatio(ship, "steering");
+  const rudderShiftRate = steeringRatio <= 0
+    ? 0
+    : SHIP.rudderShiftPerSecond * (0.18 + steeringRatio * 0.82);
+  ship.rudder += clamp(
+    ship.rudderCommand - ship.rudder,
+    -rudderShiftRate * dt,
+    rudderShiftRate * dt,
+  );
   const floodingSpeedFactor = 1 - clamp(ship.flooding / 100, 0, 1) * 0.32;
   const equippedMaxSpeed = SHIP.maxSpeedKnots * ship.performance.maxSpeedMultiplier;
   const effectiveMaxSpeed = equippedMaxSpeed * engineRatio * floodingSpeedFactor * Math.max(0, ship.throttle);
   const reverseTarget = ship.throttle < 0 ? equippedMaxSpeed * ship.throttle * 0.28 : effectiveMaxSpeed;
-  const targetSpeed = ship.throttle < 0 ? reverseTarget : effectiveMaxSpeed;
+  const orderedSpeed = ship.throttle < 0 ? reverseTarget : effectiveMaxSpeed;
+  const turningSpeedFactor = 1 - Math.abs(ship.rudder) * SHIP.maximumTurningSpeedLoss;
+  const targetSpeed = orderedSpeed * turningSpeedFactor;
+  const propulsionResponse = engineRatio <= 0 ? 0 : 0.2 + engineRatio * 0.8;
   const rate = (targetSpeed >= ship.speedKnots
-    ? SHIP.accelerationKnotsPerSecond
-    : SHIP.brakingKnotsPerSecond) * ship.performance.accelerationMultiplier;
+    ? SHIP.accelerationKnotsPerSecond * propulsionResponse
+    : SHIP.brakingKnotsPerSecond * (0.45 + engineRatio * 0.55))
+    * ship.performance.accelerationMultiplier;
   ship.speedKnots += clamp(targetSpeed - ship.speedKnots, -rate * dt, rate * dt);
 
   const speedRatio = clamp(Math.abs(ship.speedKnots) / equippedMaxSpeed, 0, 1);
