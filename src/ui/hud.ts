@@ -1,8 +1,9 @@
-import { BATTLE_DURATION_SECONDS, GUN, OBJECTIVE } from "../sim/config";
+import { BATTLE_DURATION_SECONDS, GUN, OBJECTIVE, TORPEDO } from "../sim/config";
 import {
   ballisticVelocity,
   dispersionAtRange,
   isGunFireBlocked,
+  torpedoLauncherAlignmentError,
   torpedoLaunchSolution,
   torpedoThreatsFor,
   turretAlignmentError,
@@ -412,7 +413,7 @@ export class Hud {
     const nearestTorpedo = torpedoThreats[0];
     this.torpedoWarning.hidden = !nearestTorpedo;
     this.torpedoWarning.textContent = nearestTorpedo
-      ? `鱼雷接近 · ${Math.round(nearestTorpedo.distanceMeters)} m`
+      ? `鱼雷接近 · ${nearestTorpedo.side === "port" ? "左舷" : "右舷"} · ${nearestTorpedo.timeToClosestApproach.toFixed(1)} s`
       : "";
     const seaTrials = state.mode === "sea-trials";
     const clockSeconds = seaTrials ? Math.floor(state.time) : Math.max(0, Math.ceil(BATTLE_DURATION_SECONDS - state.time));
@@ -511,13 +512,20 @@ export class Hud {
       button.classList.toggle("selected", active);
       button.setAttribute("aria-pressed", String(active));
       if (button.dataset.weapon === "torpedo") {
+        const tubeRatio = player.modules.torpedoTubes.health
+          / player.modules.torpedoTubes.maxHealth;
+        const reloadEta = tubeRatio > 0
+          ? player.torpedoReloadRemaining / tubeRatio
+          : Number.POSITIVE_INFINITY;
         const readiness = Math.round(
           clamp(1 - player.torpedoReloadRemaining / player.torpedoReloadDuration, 0, 1) * 100,
         );
         const small = button.querySelector("small");
         if (small) small.textContent = player.torpedoReloadRemaining > 0
-          ? `装填 ${readiness}% · ${player.torpedoReloadRemaining.toFixed(1)} s`
-          : `${player.torpedoSpreadMode === "narrow" ? "窄扇面" : "宽扇面"} · Q 切换 · 就绪`;
+          ? `装填 ${readiness}% · ${Number.isFinite(reloadEta) ? `${reloadEta.toFixed(1)} s` : "暂停"}`
+          : player.torpedoesLoaded > 0
+            ? `${player.torpedoSpreadMode === "narrow" ? "窄扇面" : "宽扇面"} · 2 发 · 备 ${player.torpedoReserveSalvos} 组`
+            : "备雷耗尽";
       } else if (button.dataset.weapon === "mainGun") {
         const small = button.querySelector("small");
         if (small) small.textContent = `${ammoLabels[player.ammoType]} · Q 切换`;
@@ -586,17 +594,41 @@ export class Hud {
     );
     if (selectedWeapon === "torpedo") {
       const spreadLabel = player.torpedoSpreadMode === "narrow" ? "窄扇面" : "宽扇面";
+      const tubeRatio = player.modules.torpedoTubes.health
+        / player.modules.torpedoTubes.maxHealth;
+      const reloadEta = tubeRatio > 0
+        ? player.torpedoReloadRemaining / tubeRatio
+        : Number.POSITIVE_INFINITY;
       const torpedoReloadPercent = Math.round(
         clamp(1 - player.torpedoReloadRemaining / player.torpedoReloadDuration, 0, 1) * 100,
       );
-      this.reloadLabel.textContent = `${torpedoDefinition.shortLabel} · ${spreadLabel}`;
+      const launcherErrorDegrees = Math.abs(torpedoLauncherAlignmentError(player)) * 180 / Math.PI;
+      const actualRelative = wrapAngle(player.torpedoLauncherHeading - player.heading);
+      const actualSide = actualRelative < 0 ? "左舷" : "右舷";
+      const recentlyRejected = player.torpedoFireRejectedAt !== undefined
+        && state.time - player.torpedoFireRejectedAt < 2.4;
+      const rejectionLabels = {
+        destroyed: "发射器已摧毁",
+        reloading: "仍在装填",
+        empty: "备雷耗尽",
+        sector: "艏艉射界受阻",
+        aligning: "发射器尚未对齐",
+      } as const;
+      this.reloadLabel.textContent = `${torpedoDefinition.shortLabel} · ${spreadLabel} · ${actualSide}`;
       this.reload.textContent = player.modules.torpedoTubes.health <= 0
         ? "发射器失效 · 0%"
         : player.torpedoReloadRemaining > 0
-          ? `装填 ${torpedoReloadPercent}% · ${player.torpedoReloadRemaining.toFixed(1)} s`
-          : torpedoSolution.allowed
-            ? `左/右舷可发射 · 100%`
-            : "艏艉射界受阻";
+          ? `装填 ${torpedoReloadPercent}% · ${Number.isFinite(reloadEta) ? `${reloadEta.toFixed(1)} s` : "发射器损坏，装填暂停"} · 备 ${player.torpedoReserveSalvos} 组`
+          : player.torpedoesLoaded <= 0
+            ? "备雷耗尽 · 0 发"
+            : !torpedoSolution.allowed
+              ? "艏艉射界受阻"
+              : launcherErrorDegrees > TORPEDO.launcherFireToleranceRadians * 180 / Math.PI
+                ? `发射器转动中 · 偏差 ${launcherErrorDegrees.toFixed(1)}°`
+                : `${actualSide}就绪 · 2 发 · 备 ${player.torpedoReserveSalvos} 组`;
+      if (recentlyRejected && player.torpedoFireRejectReason) {
+        this.reload.textContent = `${rejectionLabels[player.torpedoFireRejectReason]} · ${this.reload.textContent}`;
+      }
       this.flightTime.textContent = `${(aimRange / torpedoDefinition.speedMetersPerSecond).toFixed(1)} s`;
       this.dispersion.textContent = `${spreadLabel} · 武装 ${torpedoDefinition.armingDistanceMeters} m`;
       this.scopeGun.textContent = `${torpedoDefinition.caliberMm} mm · ${torpedoDefinition.shortLabel}`;
@@ -605,11 +637,14 @@ export class Hud {
       this.scopeReload.textContent = this.reload.textContent;
       this.scopeReload.classList.toggle(
         "blocked",
-        !torpedoSolution.allowed || player.torpedoReloadRemaining > 0,
+        !torpedoSolution.allowed
+          || launcherErrorDegrees > TORPEDO.launcherFireToleranceRadians * 180 / Math.PI
+          || player.torpedoReloadRemaining > 0
+          || player.torpedoesLoaded <= 0,
       );
       this.scopeBarrelMarker.style.visibility = "hidden";
       this.aimMode.textContent = torpedoSolution.allowed
-        ? `鱼雷模式 · ${spreadLabel} · Q 切换扇面`
+        ? `鱼雷模式 · ${actualSide} · 管架偏差 ${launcherErrorDegrees.toFixed(1)}° · Q 切换扇面`
         : `鱼雷模式 · 艏艉死区 · 转至侧舷`;
     } else {
       this.scopeBarrelMarker.style.visibility = "";

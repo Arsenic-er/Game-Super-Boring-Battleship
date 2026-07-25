@@ -208,7 +208,9 @@ export class GameMenus {
   private renderProfile(): void {
     this.credits.textContent = this.profile.credits.toLocaleString("zh-CN"); this.supplyTokens.textContent = String(this.profile.supplyTokens); this.materialSummary.textContent = `钢材 ${this.profile.materials.steel} · 零件 ${this.profile.materials.parts}`;
     this.renderStore(); this.renderDock();
-    const equipment = battleLoadout(this.profile); this.dockPreview.setMainGun(equipment.mainGunId);
+    const equipment = battleLoadout(this.profile);
+    this.dockPreview.setMainGun(equipment.mainGunId);
+    this.dockPreview.setTorpedo(equipment.torpedoId);
   }
 
   private renderStore(): void {

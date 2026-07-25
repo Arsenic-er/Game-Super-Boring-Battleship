@@ -200,10 +200,11 @@ view.engine.runRenderLoop(() => {
       perceivedTarget = state.mode === "battle"
         ? playerPerception.update(observe(state, "player"))
         : undefined;
-      view.consumeShots(state.shots.filter((shot) =>
-        shot.team === "player" || Boolean(perceivedTarget?.live)));
+      const visibleShots = state.shots.filter((shot) =>
+        shot.team === "player" || Boolean(perceivedTarget?.live));
+      view.consumeShots(visibleShots);
       view.consumeImpacts(state.impacts);
-      audio.consumeShots(state.shots);
+      audio.consumeShots(visibleShots);
       audio.consumeImpacts(state.impacts);
       hud.consumeImpacts(state.impacts);
       accumulator -= FIXED_STEP;

@@ -15,6 +15,8 @@ export type BattleStatus = "running" | "player-won" | "enemy-won" | "draw";
 export type BattleEndReason = "destroyed" | "score" | "time";
 export type WeaponSlot = "mainGun" | "torpedo" | "aircraft";
 export type TorpedoSpreadMode = "narrow" | "wide";
+export type TorpedoFireRejectReason =
+  | "destroyed" | "reloading" | "empty" | "sector" | "aligning";
 export type ProjectileKind = "shell" | "torpedo";
 export type AmmoType = "he" | "ap";
 export type PenetrationResult = "penetration" | "overpenetration" | "ricochet" | "shatter";
@@ -115,6 +117,11 @@ export interface ShipState {
   reloadRemaining: number;
   torpedoReloadRemaining: number;
   torpedoReloadDuration: number;
+  torpedoLauncherHeading: number;
+  torpedoesLoaded: number;
+  torpedoReserveSalvos: number;
+  torpedoFireRejectReason?: TorpedoFireRejectReason;
+  torpedoFireRejectedAt?: number;
   torpedoSpreadMode: TorpedoSpreadMode;
   aimPoint: Vec3;
   ammoType: AmmoType;
@@ -183,6 +190,10 @@ export interface TorpedoThreat {
   velocity: Vec3;
   distanceMeters: number;
   armed: boolean;
+  side: "port" | "starboard";
+  closingSpeedMetersPerSecond: number;
+  closestApproachMeters: number;
+  timeToClosestApproach: number;
 }
 
 export interface TorpedoLaunchSolution {

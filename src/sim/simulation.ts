@@ -140,6 +140,9 @@ function createShip(
     reloadRemaining: 0,
     torpedoReloadRemaining: 0,
     torpedoReloadDuration: getTorpedo(torpedoId).reloadSeconds,
+    torpedoLauncherHeading: wrapAngle(heading + Math.PI / 2),
+    torpedoesLoaded: 2,
+    torpedoReserveSalvos: getTorpedo(torpedoId).reserveSalvos,
     torpedoSpreadMode: "narrow",
     aimPoint: { x, y: 0, z: z + Math.cos(heading) * 1_800 },
     ammoType: "he",
@@ -247,6 +250,28 @@ export function isTurretAligned(ship: ShipState): boolean {
   return Math.abs(turretAlignmentError(ship)) <= TURRET.fireToleranceRadians;
 }
 
+function desiredTorpedoLauncherHeading(ship: ShipState): number {
+  const bearing = Math.atan2(
+    ship.aimPoint.x - ship.position.x,
+    ship.aimPoint.z - ship.position.z,
+  );
+  const relative = wrapAngle(bearing - ship.heading);
+  const currentRelative = wrapAngle(ship.torpedoLauncherHeading - ship.heading);
+  const side = Math.abs(relative) > 0.001
+    ? Math.sign(relative)
+    : Math.sign(currentRelative) || 1;
+  const safeMagnitude = clamp(
+    Math.abs(relative),
+    TORPEDO.minimumLaunchAngleRadians,
+    TORPEDO.maximumLaunchAngleRadians,
+  );
+  return wrapAngle(ship.heading + side * safeMagnitude);
+}
+
+export function torpedoLauncherAlignmentError(ship: ShipState): number {
+  return wrapAngle(desiredTorpedoLauncherHeading(ship) - ship.torpedoLauncherHeading);
+}
+
 function moveShip(ship: ShipState, command: ControlCommand, dt: number): void {
   ship.previousPosition = copyVec(ship.position);
   ship.throttle = clamp(command.throttle, -0.25, 1);
@@ -298,8 +323,23 @@ function moveShip(ship: ShipState, command: ControlCommand, dt: number): void {
   ship.turretHeading = wrapAngle(
     ship.turretHeading + clamp(alignmentError, -traverseRate * dt, traverseRate * dt),
   );
+  const tubeRatio = moduleRatio(ship, "torpedoTubes");
+  const launcherRate = tubeRatio <= 0
+    ? 0
+    : TORPEDO.launcherTraverseRadiansPerSecond * (0.25 + tubeRatio * 0.75);
+  const launcherError = torpedoLauncherAlignmentError(ship);
+  ship.torpedoLauncherHeading = wrapAngle(
+    ship.torpedoLauncherHeading
+      + clamp(launcherError, -launcherRate * dt, launcherRate * dt),
+  );
   ship.reloadRemaining = Math.max(0, ship.reloadRemaining - dt);
-  ship.torpedoReloadRemaining = Math.max(0, ship.torpedoReloadRemaining - dt);
+  if (ship.torpedoReloadRemaining > 0 && tubeRatio > 0) {
+    ship.torpedoReloadRemaining = Math.max(
+      0,
+      ship.torpedoReloadRemaining - dt * tubeRatio,
+    );
+    if (ship.torpedoReloadRemaining <= 0) ship.torpedoesLoaded = 2;
+  }
 }
 
 export function ballisticVelocity(
@@ -534,15 +574,44 @@ export function torpedoLaunchSolution(
   };
 }
 
+function rejectTorpedoFire(
+  state: BattleState,
+  ship: ShipState,
+  reason: NonNullable<ShipState["torpedoFireRejectReason"]>,
+): void {
+  ship.torpedoFireRejectReason = reason;
+  ship.torpedoFireRejectedAt = state.time;
+}
+
 function fireTorpedoes(state: BattleState, ship: ShipState): void {
-  if (ship.torpedoReloadRemaining > 0 || ship.modules.torpedoTubes.health <= 0) return;
+  if (ship.modules.torpedoTubes.health <= 0) {
+    rejectTorpedoFire(state, ship, "destroyed");
+    return;
+  }
+  if (ship.torpedoReloadRemaining > 0) {
+    rejectTorpedoFire(state, ship, "reloading");
+    return;
+  }
+  if (ship.torpedoesLoaded <= 0) {
+    rejectTorpedoFire(state, ship, "empty");
+    return;
+  }
   const torpedo = getTorpedo(ship.torpedoId);
   const solution = torpedoLaunchSolution(
     ship,
     ship.aimPoint,
     ship.torpedoSpreadMode,
   );
-  if (!solution.allowed) return;
+  if (!solution.allowed) {
+    rejectTorpedoFire(state, ship, "sector");
+    return;
+  }
+  if (Math.abs(torpedoLauncherAlignmentError(ship)) > TORPEDO.launcherFireToleranceRadians) {
+    rejectTorpedoFire(state, ship, "aligning");
+    return;
+  }
+  ship.torpedoFireRejectReason = undefined;
+  ship.torpedoFireRejectedAt = undefined;
   const shipForwardX = Math.sin(ship.heading);
   const shipForwardZ = Math.cos(ship.heading);
   const tubeCenter = {
@@ -550,7 +619,14 @@ function fireTorpedoes(state: BattleState, ship: ShipState): void {
     y: 0.35,
     z: ship.position.z + shipForwardZ * TORPEDO.tubeLongitudinalOffset,
   };
-  for (const [index, direction] of solution.directions.entries()) {
+  const halfSpread = ship.torpedoSpreadMode === "wide"
+    ? TORPEDO.wideSpreadRadians
+    : TORPEDO.narrowSpreadRadians;
+  const actualDirections = [
+    wrapAngle(ship.torpedoLauncherHeading - halfSpread),
+    wrapAngle(ship.torpedoLauncherHeading + halfSpread),
+  ];
+  for (const [index, direction] of actualDirections.entries()) {
     const forwardX = Math.sin(direction);
     const forwardZ = Math.cos(direction);
     const rightX = forwardZ;
@@ -588,9 +664,14 @@ function fireTorpedoes(state: BattleState, ship: ShipState): void {
       position: copyVec(origin),
     });
   }
-  const tubeRatio = Math.max(0.25, moduleRatio(ship, "torpedoTubes"));
-  ship.torpedoReloadDuration = torpedo.reloadSeconds / tubeRatio;
-  ship.torpedoReloadRemaining = ship.torpedoReloadDuration;
+  ship.torpedoesLoaded = 0;
+  ship.torpedoReloadDuration = torpedo.reloadSeconds;
+  if (ship.torpedoReserveSalvos > 0) {
+    ship.torpedoReserveSalvos -= 1;
+    ship.torpedoReloadRemaining = ship.torpedoReloadDuration;
+  } else {
+    ship.torpedoReloadRemaining = 0;
+  }
 }
 
 function shipLocalPoint(
@@ -1411,6 +1492,11 @@ export function torpedoThreatsFor(
 ): TorpedoThreat[] {
   const ship = state.ships.find((candidate) => candidate.id === shipId);
   if (!ship) return [];
+  const shipSpeed = ship.speedKnots * KNOT_TO_MPS;
+  const shipVelocity = {
+    x: Math.sin(ship.heading) * shipSpeed,
+    z: Math.cos(ship.heading) * shipSpeed,
+  };
   return state.projectiles
     .filter((projectile) => projectile.kind === "torpedo" && projectile.team !== ship.team)
     .filter((projectile) => Math.hypot(
@@ -1418,19 +1504,42 @@ export function torpedoThreatsFor(
       projectile.position.z - ship.position.z,
     ) <= (projectile.detectionRange ?? TORPEDO.detectionRangeMeters))
     .map((projectile) => {
+      const relativeX = projectile.position.x - ship.position.x;
+      const relativeZ = projectile.position.z - ship.position.z;
       const distanceMeters = Math.hypot(
-        projectile.position.x - ship.position.x,
-        projectile.position.z - ship.position.z,
+        relativeX,
+        relativeZ,
       );
+      const relativeVelocityX = projectile.velocity.x - shipVelocity.x;
+      const relativeVelocityZ = projectile.velocity.z - shipVelocity.z;
+      const relativeSpeedSquared = relativeVelocityX ** 2 + relativeVelocityZ ** 2;
+      const dot = relativeX * relativeVelocityX + relativeZ * relativeVelocityZ;
+      const timeToClosestApproach = relativeSpeedSquared <= 0.001
+        ? 0
+        : clamp(-dot / relativeSpeedSquared, 0, TORPEDO.threatLookaheadSeconds);
+      const closestX = relativeX + relativeVelocityX * timeToClosestApproach;
+      const closestZ = relativeZ + relativeVelocityZ * timeToClosestApproach;
+      const localLateral = relativeX * Math.cos(ship.heading)
+        - relativeZ * Math.sin(ship.heading);
       return {
         id: projectile.id,
         position: copyVec(projectile.position),
         velocity: copyVec(projectile.velocity),
         distanceMeters,
         armed: (projectile.distanceTravelled ?? 0) >= (projectile.armingDistance ?? 0),
+        side: localLateral < 0 ? "port" as const : "starboard" as const,
+        closingSpeedMetersPerSecond: distanceMeters <= 0.001 ? 0 : -dot / distanceMeters,
+        closestApproachMeters: Math.hypot(closestX, closestZ),
+        timeToClosestApproach,
       };
     })
-    .sort((left, right) => left.distanceMeters - right.distanceMeters);
+    .filter((threat) =>
+      threat.closingSpeedMetersPerSecond > 0.5
+      && threat.timeToClosestApproach > 0
+      && threat.closestApproachMeters <= TORPEDO.threatClosestApproachMeters)
+    .sort((left, right) =>
+      left.timeToClosestApproach - right.timeToClosestApproach
+      || left.distanceMeters - right.distanceMeters);
 }
 
 export function observe(state: BattleState, shipId: string) {

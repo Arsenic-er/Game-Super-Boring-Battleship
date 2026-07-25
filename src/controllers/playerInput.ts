@@ -129,6 +129,12 @@ export class PlayerInput {
 
   selectWeapon(slot: WeaponSlot): void {
     this.weaponSlot = slot;
+    if (slot === "torpedo" && this.activeShip) {
+      this.range = Math.min(
+        this.range,
+        getTorpedo(this.activeShip.torpedoId).maximumRangeMeters,
+      );
+    }
   }
 
   exitAiming(): boolean {

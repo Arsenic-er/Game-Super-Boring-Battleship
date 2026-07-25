@@ -12,6 +12,7 @@ export interface TorpedoDefinition {
   maximumRangeMeters: number;
   detectionRangeMeters: number;
   storageRiskMultiplier: number;
+  reserveSalvos: number;
 }
 
 export const TORPEDO_DEFINITIONS: Record<TorpedoId, TorpedoDefinition> = {
@@ -27,6 +28,7 @@ export const TORPEDO_DEFINITIONS: Record<TorpedoId, TorpedoDefinition> = {
     maximumRangeMeters: 3_500,
     detectionRangeMeters: 500,
     storageRiskMultiplier: 1,
+    reserveSalvos: 2,
   },
   "g7a-t1": {
     id: "g7a-t1",
@@ -40,6 +42,7 @@ export const TORPEDO_DEFINITIONS: Record<TorpedoId, TorpedoDefinition> = {
     maximumRangeMeters: 4_000,
     detectionRangeMeters: 650,
     storageRiskMultiplier: 1.04,
+    reserveSalvos: 2,
   },
   "mk-15-mod-3": {
     id: "mk-15-mod-3",
@@ -53,6 +56,7 @@ export const TORPEDO_DEFINITIONS: Record<TorpedoId, TorpedoDefinition> = {
     maximumRangeMeters: 3_800,
     detectionRangeMeters: 520,
     storageRiskMultiplier: 1.07,
+    reserveSalvos: 2,
   },
   "type-93-mod-3": {
     id: "type-93-mod-3",
@@ -66,6 +70,7 @@ export const TORPEDO_DEFINITIONS: Record<TorpedoId, TorpedoDefinition> = {
     maximumRangeMeters: 4_800,
     detectionRangeMeters: 360,
     storageRiskMultiplier: 1.12,
+    reserveSalvos: 2,
   },
 };
 

@@ -1,6 +1,10 @@
-import { GUN, KNOT_TO_MPS, SENSOR } from "../sim/config";
+import { GUN, KNOT_TO_MPS, SENSOR, TORPEDO } from "../sim/config";
 import { getTorpedo } from "../ships/torpedoes";
-import { torpedoInterceptPoint, torpedoLaunchSolution } from "../sim/simulation";
+import {
+  torpedoInterceptPoint,
+  torpedoLauncherAlignmentError,
+  torpedoLaunchSolution,
+} from "../sim/simulation";
 import type {
   AmmoType,
   ControlCommand,
@@ -295,10 +299,15 @@ export class RuleBasedAi implements Controller {
       && range >= 900
       && range <= Math.min(2_200, torpedo.maximumRangeMeters)
       && observation.self.torpedoReloadRemaining <= 0
+      && observation.self.torpedoesLoaded > 0
       && observation.self.modules.torpedoTubes.health > 0
       && observation.time >= this.nextTorpedoAt,
     );
-    const launchTorpedoes = Boolean(torpedoReady && torpedoSolution?.allowed);
+    const launcherAligned = Math.abs(torpedoLauncherAlignmentError(observation.self))
+      <= TORPEDO.launcherFireToleranceRadians;
+    const launchTorpedoes = Boolean(
+      torpedoReady && torpedoSolution?.allowed && launcherAligned,
+    );
     if (launchTorpedoes) {
       this.nextTorpedoAt = observation.time + 120 + this.random() * 80;
     }
@@ -383,7 +392,7 @@ export class RuleBasedAi implements Controller {
     return {
       throttle: damaged ? Math.min(tacticalThrottle, 0.52) : tacticalThrottle,
       rudder: clamp(headingError * 1.25, -0.82, 0.82),
-      aimPoint: launchTorpedoes && torpedoAim
+      aimPoint: torpedoReady && torpedoAim
         ? torpedoAim
         : target
           ? this.estimatedAimPoint(observation, target, bearingToTarget)

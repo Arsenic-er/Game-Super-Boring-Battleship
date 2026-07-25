@@ -21,13 +21,14 @@ import {
   gunMuzzleOrigins,
   observe,
   stepSimulation,
+  torpedoLauncherAlignmentError,
   torpedoInterceptPoint,
   torpedoLaunchSolution,
   torpedoThreatsFor,
   turretAimPoint,
   updateObjective,
 } from "../src/sim/simulation";
-import type { ControlCommand } from "../src/sim/types";
+import type { ControlCommand, ShipState } from "../src/sim/types";
 import { getTorpedo } from "../src/ships/torpedoes";
 import type { TorpedoId } from "../src/ships/torpedoes";
 
@@ -37,6 +38,10 @@ const idle = (x: number, z: number): ControlCommand => ({
   aimPoint: { x, y: 0, z },
   fire: false,
 });
+
+const alignTorpedoLauncher = (ship: ShipState, x: number, z: number): void => {
+  ship.torpedoLauncherHeading = Math.atan2(x - ship.position.x, z - ship.position.z);
+};
 
 describe("deterministic battle simulation", () => {
   it("repeats the same state for the same seed and actions", () => {
@@ -131,6 +136,7 @@ describe("deterministic battle simulation", () => {
   it("launches a two-torpedo spread from weapon slot 2 with an independent reload", () => {
     const state = createInitialState(96, "sea-trials");
     const player = state.ships[0]!;
+    alignTorpedoLauncher(player, player.position.x + 2_000, player.position.z);
     const command: ControlCommand = {
       ...idle(player.position.x + 2_000, player.position.z),
       fire: true,
@@ -162,12 +168,60 @@ describe("deterministic battle simulation", () => {
     expect(player.torpedoReloadRemaining).toBe(0);
   });
 
+  it("traverses the physical launcher before allowing a salvo", () => {
+    const state = createInitialState(9601, "sea-trials");
+    const player = state.ships[0]!;
+    const aimX = player.position.x - 2_000;
+    const command: ControlCommand = {
+      ...idle(aimX, player.position.z),
+      fire: true,
+      weaponSlot: "torpedo",
+    };
+    stepSimulation(state, new Map([["player", command]]), FIXED_STEP);
+    expect(state.projectiles).toHaveLength(0);
+    expect(player.torpedoFireRejectReason).toBe("aligning");
+
+    const traverseOnly = { ...command, fire: false };
+    for (let tick = 0; tick < 500; tick += 1) {
+      stepSimulation(state, new Map([["player", traverseOnly]]), FIXED_STEP);
+    }
+    expect(torpedoLauncherAlignmentError(player)).toBeLessThanOrEqual(TORPEDO.launcherFireToleranceRadians);
+    stepSimulation(state, new Map([["player", command]]), FIXED_STEP);
+    expect(state.projectiles.filter((projectile) => projectile.kind === "torpedo")).toHaveLength(2);
+  });
+
+  it("carries one loaded salvo and two finite reserve salvos", () => {
+    const state = createInitialState(9602, "sea-trials");
+    const player = state.ships[0]!;
+    const aimX = player.position.x + 2_000;
+    alignTorpedoLauncher(player, aimX, player.position.z);
+    const command: ControlCommand = {
+      ...idle(aimX, player.position.z),
+      fire: true,
+      weaponSlot: "torpedo",
+    };
+    for (let salvo = 0; salvo < 3; salvo += 1) {
+      stepSimulation(state, new Map([["player", command]]), FIXED_STEP);
+      if (salvo < 2) {
+        player.torpedoReloadRemaining = 0;
+        player.torpedoesLoaded = 2;
+      }
+    }
+    expect(state.projectiles.filter((projectile) => projectile.kind === "torpedo")).toHaveLength(6);
+    expect(player.torpedoesLoaded).toBe(0);
+    expect(player.torpedoReserveSalvos).toBe(0);
+    stepSimulation(state, new Map([["player", command]]), FIXED_STEP);
+    expect(state.projectiles.filter((projectile) => projectile.kind === "torpedo")).toHaveLength(6);
+    expect(player.torpedoFireRejectReason).toBe("empty");
+  });
+
   it("uses the equipped historical torpedo definition for every spawned projectile", () => {
     const ids: TorpedoId[] = ["mk-ix", "g7a-t1", "mk-15-mod-3", "type-93-mod-3"];
     for (const [index, id] of ids.entries()) {
       const state = createInitialState(970 + index, "sea-trials", undefined, undefined, id);
       const player = state.ships[0]!;
       const definition = getTorpedo(id);
+      alignTorpedoLauncher(player, player.position.x + 2_000, player.position.z);
       stepSimulation(state, new Map([["player", {
         ...idle(player.position.x + 2_000, player.position.z),
         fire: true,
@@ -190,14 +244,15 @@ describe("deterministic battle simulation", () => {
     const damaged = createInitialState(980, "sea-trials");
     const damagedPlayer = damaged.ships[0]!;
     damagedPlayer.modules.torpedoTubes.health *= 0.5;
+    alignTorpedoLauncher(damagedPlayer, damagedPlayer.position.x + 2_000, damagedPlayer.position.z);
     stepSimulation(damaged, new Map([["player", {
       ...idle(damagedPlayer.position.x + 2_000, damagedPlayer.position.z),
       fire: true,
       weaponSlot: "torpedo",
     }]]), FIXED_STEP);
     const healthyReload = getTorpedo(damagedPlayer.torpedoId).reloadSeconds;
-    expect(damagedPlayer.torpedoReloadDuration).toBeGreaterThan(healthyReload * 1.9);
-    expect(damagedPlayer.torpedoReloadDuration).toBeLessThanOrEqual(healthyReload * 2);
+    expect(damagedPlayer.torpedoReloadDuration).toBeCloseTo(healthyReload, 5);
+    expect(damagedPlayer.torpedoReloadRemaining).toBeCloseTo(healthyReload, 1);
 
     const destroyed = createInitialState(981, "sea-trials");
     const destroyedPlayer = destroyed.ships[0]!;
@@ -215,6 +270,7 @@ describe("deterministic battle simulation", () => {
     const launch = (spread: "narrow" | "wide") => {
       const state = createInitialState(spread === "narrow" ? 962 : 963, "sea-trials");
       const player = state.ships[0]!;
+      alignTorpedoLauncher(player, player.position.x + 2_000, player.position.z);
       stepSimulation(state, new Map([["player", {
         ...idle(player.position.x + 2_000, player.position.z),
         fire: true,
@@ -234,6 +290,7 @@ describe("deterministic battle simulation", () => {
     const target = state.ships.find((ship) => ship.isTestTarget)!;
     target.position = { x: player.position.x + 80, y: 0, z: player.position.z };
     target.previousPosition = { ...target.position };
+    alignTorpedoLauncher(player, player.position.x + 2_000, player.position.z);
     const startingHull = target.hull;
     stepSimulation(state, new Map([["player", {
       ...idle(player.position.x + 2_000, player.position.z),
@@ -280,7 +337,14 @@ describe("deterministic battle simulation", () => {
       armingDistance: TORPEDO.armingDistanceMeters,
       maximumRange: TORPEDO.maximumRangeMeters,
     });
-    expect(torpedoThreatsFor(state, player.id)).toHaveLength(1);
+    const threats = torpedoThreatsFor(state, player.id);
+    expect(threats).toHaveLength(1);
+    expect(threats[0]!.side).toBe("starboard");
+    expect(threats[0]!.closingSpeedMetersPerSecond).toBeGreaterThan(0);
+    expect(threats[0]!.timeToClosestApproach).toBeGreaterThan(0);
+    state.projectiles[0]!.velocity.x = TORPEDO.speedMetersPerSecond;
+    expect(torpedoThreatsFor(state, player.id)).toHaveLength(0);
+    state.projectiles[0]!.velocity.x = -TORPEDO.speedMetersPerSecond;
     state.projectiles[0]!.position.x = player.position.x + TORPEDO.detectionRangeMeters + 1;
     expect(torpedoThreatsFor(state, player.id)).toHaveLength(0);
   });
@@ -435,6 +499,9 @@ describe("deterministic battle simulation", () => {
     state.time = SENSOR.observationIntervalSeconds + 0.1;
     ai.command(observe(state, "enemy"));
     state.time = 13;
+    const preparingAttack = ai.command(observe(state, "enemy"));
+    enemy.aimPoint = { ...preparingAttack.aimPoint };
+    alignTorpedoLauncher(enemy, preparingAttack.aimPoint.x, preparingAttack.aimPoint.z);
     const attack = ai.command(observe(state, "enemy"));
     expect(attack.perception?.mode).toBe("tracking");
     expect(attack.weaponSlot).toBe("torpedo");

@@ -16,7 +16,7 @@ import { LinesMesh } from "@babylonjs/core/Meshes/linesMesh";
 import { Mesh } from "@babylonjs/core/Meshes/mesh";
 import { TransformNode } from "@babylonjs/core/Meshes/transformNode";
 import { Scene } from "@babylonjs/core/scene";
-import { OBJECTIVE } from "../sim/config";
+import { OBJECTIVE, TORPEDO } from "../sim/config";
 import {
   isProjectileVisibleToPlayer,
   isShipVisibleToPlayer,
@@ -46,6 +46,7 @@ import type {
 interface ShipVisual {
   root: TransformNode;
   turret: TransformNode;
+  torpedoLauncher: TransformNode;
   wakes: Mesh[];
   smokePuffs: Mesh[];
   fireFlames: Mesh[];
@@ -99,6 +100,7 @@ export class GameView implements AimProvider {
   private aimArc?: LinesMesh;
   private barrelArc?: LinesMesh;
   private readonly torpedoSpreadLines: LinesMesh[] = [];
+  private readonly torpedoLauncherLines: LinesMesh[] = [];
   private torpedoLeadLine?: LinesMesh;
   private aiming = false;
   private mouseLookSensitivity = 1;
@@ -463,6 +465,39 @@ export class GameView implements AimProvider {
       barrel.parent = turret;
     }
 
+    const torpedoLauncher = new TransformNode(`${ship.id}-torpedo-launcher`, this.scene);
+    torpedoLauncher.position.set(0, 6.05, -23);
+    torpedoLauncher.parent = root;
+    const torpedoDefinition = getTorpedo(ship.torpedoId);
+    const launcherBase = CreateCylinder(`${ship.id}-torpedo-launcher-base`, {
+      height: 1.35,
+      diameter: torpedoDefinition.caliberMm >= 600 ? 6.2 : 5.6,
+      tessellation: 8,
+    }, this.scene);
+    launcherBase.material = darkMaterial;
+    launcherBase.parent = torpedoLauncher;
+    const tubeDiameter = torpedoDefinition.caliberMm >= 600 ? 1.65 : 1.42;
+    const tubeSpacing = torpedoDefinition.caliberMm >= 600 ? 1.9 : 1.65;
+    for (const side of [-1, 1]) {
+      const tube = CreateCylinder(`${ship.id}-torpedo-tube-${side}`, {
+        height: 9.2,
+        diameter: tubeDiameter,
+        tessellation: 8,
+      }, this.scene);
+      tube.rotation.x = Math.PI / 2;
+      tube.position.set(side * tubeSpacing / 2, 1.35, 0.6);
+      tube.material = accentMaterial;
+      tube.parent = torpedoLauncher;
+    }
+    const launcherSight = CreateBox(`${ship.id}-torpedo-launcher-sight`, {
+      width: 0.5,
+      height: 2.2,
+      depth: 0.5,
+    }, this.scene);
+    launcherSight.position.set(0, 2.2, -1.2);
+    launcherSight.material = darkMaterial;
+    launcherSight.parent = torpedoLauncher;
+
     const wakeMaterial = this.material(`${ship.id}-wake-material`, new Color3(0.72, 0.86, 0.88));
     wakeMaterial.alpha = 0.3;
     wakeMaterial.disableLighting = true;
@@ -538,7 +573,7 @@ export class GameView implements AimProvider {
     collider.visibility = 0;
     collider.parent = root;
 
-    return { root, turret, wakes, smokePuffs, fireFlames, collider };
+    return { root, turret, torpedoLauncher, wakes, smokePuffs, fireFlames, collider };
   }
 
   aimPoint(ship: ShipState, range: number): Vec3 {
@@ -600,6 +635,10 @@ export class GameView implements AimProvider {
         ? seaMotion * 0.006 + ship.flooding * 0.0008 * (ship.team === "player" ? 1 : -1)
         : 0.08;
       visual.turret.rotation.y = wrapAngle(ship.turretHeading - ship.heading);
+      visual.torpedoLauncher.rotation.y = wrapAngle(
+        ship.torpedoLauncherHeading - ship.heading,
+      );
+      visual.torpedoLauncher.rotation.z = ship.modules.torpedoTubes.health <= 0 ? -0.16 : 0;
       const wakeStrength = Math.min(1, Math.abs(ship.speedKnots) / 18);
       for (const wake of visual.wakes) {
         wake.visibility = ship.hull > 0 ? wakeStrength * 0.75 : 0;
@@ -687,8 +726,11 @@ export class GameView implements AimProvider {
         visual = { root, shell, glow };
         this.projectileMeshes.set(projectile.id, visual);
       }
-      visual.root.position.copyFrom(nextPoint);
-      visual.root.lookAt(nextPoint.add(direction));
+      const bodyPoint = projectile.kind === "torpedo"
+        ? nextPoint.add(new Vector3(0, -0.95, 0))
+        : nextPoint;
+      visual.root.position.copyFrom(bodyPoint);
+      visual.root.lookAt(bodyPoint.add(direction));
       if (projectile.kind === "shell") {
         visual.glow.scaling.setAll(0.86 + Math.sin(projectile.age * 36) * 0.12);
       }
@@ -711,7 +753,10 @@ export class GameView implements AimProvider {
           : projectile.ammoType === "ap"
             ? new Color3(0.34, 0.75, 1)
             : new Color3(1, 0.64, 0.14);
-        core.alpha = projectile.kind === "torpedo" ? 0.74 : 0.96;
+        const wakeVisibility = projectile.kind === "torpedo"
+          ? Math.min(1, Math.max(0.28, ((projectile.detectionRange ?? 500) - 280) / 370))
+          : 1;
+        core.alpha = projectile.kind === "torpedo" ? 0.74 * wakeVisibility : 0.96;
         const plume = CreateTube(`trail-plume-${projectile.id}`, {
           path: points,
           radius: projectile.kind === "torpedo" ? 0.48 : 0.32,
@@ -727,7 +772,7 @@ export class GameView implements AimProvider {
             ? new Color3(0.03, 0.12, 0.14)
             : new Color3(0.22, 0.12, 0.03),
         );
-        plumeMaterial.alpha = 0.3;
+        plumeMaterial.alpha = projectile.kind === "torpedo" ? 0.3 * wakeVisibility : 0.3;
         plumeMaterial.disableLighting = true;
         plume.material = plumeMaterial;
         trail = { core, plume, points, capacity };
@@ -827,6 +872,32 @@ export class GameView implements AimProvider {
       line.alpha = solution.allowed ? 0.88 : 0.72;
       line.visibility = visible ? 1 : 0;
       if (!existing) this.torpedoSpreadLines.push(line);
+    }
+
+    const halfSpread = spread === "wide"
+      ? TORPEDO.wideSpreadRadians
+      : TORPEDO.narrowSpreadRadians;
+    const launcherDirections = [
+      player.torpedoLauncherHeading - halfSpread,
+      player.torpedoLauncherHeading + halfSpread,
+    ];
+    for (const [index, direction] of launcherDirections.entries()) {
+      const points = [
+        origin,
+        origin.add(new Vector3(
+          Math.sin(direction) * lineLength,
+          0,
+          Math.cos(direction) * lineLength,
+        )),
+      ];
+      const existing = this.torpedoLauncherLines[index];
+      const line = existing
+        ? CreateLines(`torpedo-launcher-line-${index}`, { points, instance: existing }, this.scene)
+        : CreateLines(`torpedo-launcher-line-${index}`, { points, updatable: true }, this.scene);
+      line.color = new Color3(0.28, 0.62, 1);
+      line.alpha = 0.9;
+      line.visibility = visible ? 1 : 0;
+      if (!existing) this.torpedoLauncherLines.push(line);
     }
 
     const intercept = visible && target?.mode === "tracking" && target.live
@@ -993,6 +1064,53 @@ export class GameView implements AimProvider {
             scaleTo: 0.3,
           });
         }
+        continue;
+      }
+
+      if (impact.projectileKind === "torpedo") {
+        const waterColumn = CreateCylinder(`torpedo-hit-column-${impact.id}`, {
+          height: 42,
+          diameterTop: 2.2,
+          diameterBottom: 13,
+          tessellation: 8,
+        }, this.scene);
+        waterColumn.position.copyFrom(point);
+        waterColumn.position.y += 18;
+        waterColumn.material = this.effectMaterial(
+          "torpedo-hit-water",
+          new Color3(0.72, 0.88, 0.9),
+          new Color3(0.05, 0.13, 0.15),
+          0.86,
+        );
+        this.effects.push({
+          mesh: waterColumn,
+          remaining: 1.35,
+          duration: 1.35,
+          velocity: new Vector3(0, 5.5, 0),
+          gravity: 7.5,
+          scaleFrom: 0.25,
+          scaleTo: 1.45,
+        });
+        const shockRing = CreateTorus(`torpedo-hit-ring-${impact.id}`, {
+          diameter: 15,
+          thickness: 1.3,
+          tessellation: 14,
+        }, this.scene);
+        shockRing.position.copyFrom(point);
+        shockRing.position.y = -0.22;
+        shockRing.material = this.effectMaterial(
+          "torpedo-hit-foam",
+          new Color3(0.78, 0.92, 0.93),
+          Color3.Black(),
+          0.64,
+        );
+        this.effects.push({
+          mesh: shockRing,
+          remaining: 1.5,
+          duration: 1.5,
+          scaleFrom: 0.2,
+          scaleTo: 3.1,
+        });
         continue;
       }
 

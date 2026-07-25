@@ -1,5 +1,7 @@
 import { COMPARTMENT_MAX_HEALTH } from "../sim/config";
+import { torpedoLauncherAlignmentError } from "../sim/simulation";
 import type { BattleState, CompartmentId, ModuleId, ShipState } from "../sim/types";
+import { getTorpedo } from "../ships/torpedoes";
 
 export type CursorStyle = "neon-arrow" | "neon-hand" | "crosshair";
 
@@ -35,6 +37,7 @@ export class DeveloperPanel {
   private readonly shipSelect: HTMLSelectElement;
   private readonly live: HTMLElement;
   private readonly perception: HTMLElement;
+  private readonly torpedoStatus: HTMLElement;
   private open = false;
 
   constructor(
@@ -50,6 +53,7 @@ export class DeveloperPanel {
       <label class="dev-select"><span>调试对象</span><select data-role="ship"></select></label>
       <div class="dev-live" data-role="live">等待状态</div>
       <div class="dev-perception" data-role="perception">感知：无遥测</div>
+      <div class="dev-perception" data-role="torpedo">鱼雷：等待状态</div>
       <section class="dev-section">
         <h3>船体与运动</h3>
         ${this.field("hull", "当前生命", 0, 1000, 1)}
@@ -88,15 +92,20 @@ export class DeveloperPanel {
         <button data-action="critical" type="button">设为重伤</button>
         <button data-action="reset" type="button">完全修复</button>
         <button data-action="sink" type="button">生命归零</button>
+        <button data-action="torpedo-reload" type="button">鱼雷立即装填</button>
+        <button data-action="torpedo-incoming" type="button">生成来袭鱼雷</button>
+        <button data-action="torpedo-clear" type="button">清除水中鱼雷</button>
       </div>`;
     parent.append(this.element);
     const shipSelect = this.element.querySelector<HTMLSelectElement>('[data-role="ship"]');
     const live = this.element.querySelector<HTMLElement>('[data-role="live"]');
     const perception = this.element.querySelector<HTMLElement>('[data-role="perception"]');
-    if (!shipSelect || !live || !perception) throw new Error("Missing developer panel controls");
+    const torpedoStatus = this.element.querySelector<HTMLElement>('[data-role="torpedo"]');
+    if (!shipSelect || !live || !perception || !torpedoStatus) throw new Error("Missing developer panel controls");
     this.shipSelect = shipSelect;
     this.live = live;
     this.perception = perception;
+    this.torpedoStatus = torpedoStatus;
     this.bindControls();
   }
 
@@ -139,6 +148,7 @@ export class DeveloperPanel {
         else if (field === "heading") {
           ship.heading = value * Math.PI / 180;
           ship.turretHeading = ship.heading;
+          ship.torpedoLauncherHeading = ship.heading + Math.PI / 2;
         }
         ship.recoverableHull = Math.max(ship.hull, ship.recoverableHull);
         this.updateOutput(input, field === "heading" ? "°" : "");
@@ -187,8 +197,36 @@ export class DeveloperPanel {
 
   private runAction(action: string): void {
     if (action === "close") return;
+    const state = this.getState();
+    if (action === "torpedo-clear") {
+      state.projectiles = state.projectiles.filter((projectile) => projectile.kind !== "torpedo");
+    } else if (action === "torpedo-incoming") {
+      const ship = this.selectedShip();
+      if (!ship) return;
+      const torpedo = getTorpedo(ship.torpedoId);
+      const origin = { x: ship.position.x + 500, y: 0.35, z: ship.position.z };
+      state.projectiles.push({
+        id: state.nextEntityId++,
+        ownerId: "developer-tools",
+        team: ship.team === "player" ? "enemy" : "player",
+        kind: "torpedo",
+        position: { ...origin },
+        previousPosition: { ...origin },
+        velocity: { x: -torpedo.speedMetersPerSecond, y: 0, z: 0 },
+        damage: torpedo.damage,
+        age: 0,
+        distanceTravelled: torpedo.armingDistanceMeters + 1,
+        armingDistance: torpedo.armingDistanceMeters,
+        maximumRange: torpedo.maximumRangeMeters,
+        detectionRange: torpedo.detectionRangeMeters,
+      });
+    } else if (action === "torpedo-reload") {
+      const ship = this.selectedShip();
+      if (!ship) return;
+      ship.torpedoesLoaded = 2;
+      ship.torpedoReloadRemaining = 0;
+    } else
     if (action === "collision") {
-      const state = this.getState();
       const player = state.ships.find((ship) => ship.id === "player");
       const target = state.ships.find((ship) => ship.isTestTarget)
         ?? state.ships.find((ship) => ship.id === "enemy");
@@ -197,12 +235,14 @@ export class DeveloperPanel {
         player.previousPosition = { ...player.position };
         player.heading = 0;
         player.turretHeading = 0;
+        player.torpedoLauncherHeading = Math.PI / 2;
         player.speedKnots = 26;
         player.throttle = 1;
         target.position = { x: 0, y: 0, z: 0 };
         target.previousPosition = { ...target.position };
         target.heading = Math.PI / 2;
         target.turretHeading = target.heading;
+        target.torpedoLauncherHeading = target.heading + Math.PI / 2;
         target.speedKnots = 0;
         target.throttle = 0;
       }
@@ -223,10 +263,14 @@ export class DeveloperPanel {
   }
 
   private resetShip(ship: ShipState): void {
+    const torpedo = getTorpedo(ship.torpedoId);
     ship.hull = ship.maxHull;
     ship.recoverableHull = ship.maxHull;
     ship.fireIntensity = 0;
     ship.flooding = 0;
+    ship.torpedoesLoaded = 2;
+    ship.torpedoReserveSalvos = torpedo.reserveSalvos;
+    ship.torpedoReloadRemaining = 0;
     for (const module of Object.values(ship.modules)) module.health = module.maxHealth;
     for (const id of Object.keys(ship.compartments) as CompartmentId[]) {
       ship.compartments[id] = COMPARTMENT_MAX_HEALTH[id];
@@ -298,6 +342,11 @@ export class DeveloperPanel {
     const ship = this.selectedShip();
     if (!ship) return;
     this.live.textContent = `速度 ${ship.speedKnots.toFixed(1)} kn · 转向率 ${(ship.turnRateRadians * 180 / Math.PI).toFixed(2)}°/s · 坐标 ${ship.position.x.toFixed(0)}, ${ship.position.z.toFixed(0)}`;
+    const tubeRatio = ship.modules.torpedoTubes.health / ship.modules.torpedoTubes.maxHealth;
+    const reloadEta = tubeRatio > 0 ? ship.torpedoReloadRemaining / tubeRatio : Number.POSITIVE_INFINITY;
+    const relativeLauncher = ((ship.torpedoLauncherHeading - ship.heading) * 180 / Math.PI + 540) % 360 - 180;
+    const alignment = torpedoLauncherAlignmentError(ship) * 180 / Math.PI;
+    this.torpedoStatus.textContent = `鱼雷 · 发射器 ${relativeLauncher >= 0 ? "右" : "左"} ${Math.abs(relativeLauncher).toFixed(1)}° · 偏差 ${alignment.toFixed(1)}° · 管内 ${ship.torpedoesLoaded}/2 · 备用 ${ship.torpedoReserveSalvos} 组 · 装填 ${Number.isFinite(reloadEta) ? `${reloadEta.toFixed(1)} s` : "已停止"}`;
     const telemetry = ship.perception;
     if (!telemetry) {
       this.perception.textContent = "感知：玩家/无 AI 遥测";

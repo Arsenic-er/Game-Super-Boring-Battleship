@@ -109,6 +109,10 @@ export const TORPEDO = {
   wideSpreadRadians: 4 * Math.PI / 180,
   tubeLongitudinalOffset: -8,
   tubeBarrelSpacing: 1.2,
+  launcherTraverseRadiansPerSecond: 24 * Math.PI / 180,
+  launcherFireToleranceRadians: 4 * Math.PI / 180,
+  threatClosestApproachMeters: 170,
+  threatLookaheadSeconds: 65,
 } as const;
 
 export const ARMOR_THICKNESS_MM = {

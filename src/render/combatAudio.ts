@@ -10,15 +10,59 @@ export class CombatAudio {
 
   consumeShots(shots: readonly ShotEvent[]): void {
     if (!this.context || this.context.state !== "running") return;
-    for (const shot of shots) this.boom(shot.team === "player" ? 0.23 : 0.1);
+    const torpedoSalvos = new Set<string>();
+    for (const shot of shots) {
+      if (shot.kind === "torpedo") {
+        if (torpedoSalvos.has(shot.ownerId)) continue;
+        torpedoSalvos.add(shot.ownerId);
+        this.torpedoLaunch(shot.team === "player" ? 0.2 : 0.08);
+      } else {
+        this.boom(shot.team === "player" ? 0.23 : 0.1);
+      }
+    }
   }
 
   consumeImpacts(impacts: readonly ImpactEvent[]): void {
     if (!this.context || this.context.state !== "running") return;
     for (const impact of impacts) {
-      if (impact.kind === "hit") this.noiseBurst(0.13, 0.19, 520);
+      if (impact.projectileKind === "torpedo") this.torpedoImpact(0.22);
+      else if (impact.kind === "hit") this.noiseBurst(0.13, 0.19, 520);
       else this.noiseBurst(0.06, 0.28, 1_600);
     }
+  }
+
+  private torpedoLaunch(volume: number): void {
+    const context = this.context;
+    if (!context) return;
+    const now = context.currentTime;
+    const hiss = context.createOscillator();
+    const gain = context.createGain();
+    hiss.type = "sawtooth";
+    hiss.frequency.setValueAtTime(180, now);
+    hiss.frequency.exponentialRampToValueAtTime(52, now + 0.32);
+    gain.gain.setValueAtTime(volume * 0.32, now);
+    gain.gain.exponentialRampToValueAtTime(0.001, now + 0.36);
+    hiss.connect(gain).connect(context.destination);
+    hiss.start(now);
+    hiss.stop(now + 0.38);
+    this.noiseBurst(volume, 0.48, 2_400);
+  }
+
+  private torpedoImpact(volume: number): void {
+    const context = this.context;
+    if (!context) return;
+    const now = context.currentTime;
+    const oscillator = context.createOscillator();
+    const gain = context.createGain();
+    oscillator.type = "sine";
+    oscillator.frequency.setValueAtTime(58, now);
+    oscillator.frequency.exponentialRampToValueAtTime(24, now + 0.72);
+    gain.gain.setValueAtTime(volume, now);
+    gain.gain.exponentialRampToValueAtTime(0.001, now + 0.75);
+    oscillator.connect(gain).connect(context.destination);
+    oscillator.start(now);
+    oscillator.stop(now + 0.78);
+    this.noiseBurst(volume * 0.62, 0.58, 760);
   }
 
   private boom(volume: number): void {

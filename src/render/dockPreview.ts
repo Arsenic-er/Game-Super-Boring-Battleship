@@ -11,6 +11,8 @@ import { TransformNode } from "@babylonjs/core/Meshes/transformNode";
 import { Scene } from "@babylonjs/core/scene";
 import { getMainGun } from "../ships/components";
 import type { MainGunId } from "../ships/components";
+import { DEFAULT_TORPEDO_ID, getTorpedo } from "../ships/torpedoes";
+import type { TorpedoId } from "../ships/torpedoes";
 import { createSymmetricBow } from "./shipGeometry";
 
 export class DockPreview {
@@ -18,6 +20,7 @@ export class DockPreview {
   private readonly scene: Scene;
   private readonly shipRoot: TransformNode;
   private turret?: TransformNode;
+  private torpedoLauncher?: TransformNode;
 
   constructor(canvas: HTMLCanvasElement) {
     this.engine = new Engine(canvas, true, { preserveDrawingBuffer: true, stencil: false }, false);
@@ -35,6 +38,7 @@ export class DockPreview {
     this.shipRoot = new TransformNode("dock-ship", this.scene);
     this.buildHull();
     this.setMainGun("mk1-single");
+    this.setTorpedo(DEFAULT_TORPEDO_ID);
     let lastRender = 0;
     this.engine.runRenderLoop(() => {
       const now = Date.now();
@@ -118,10 +122,6 @@ export class DockPreview {
     yard.position.set(0, 28, 5);
     yard.material = darkMaterial;
     yard.parent = this.shipRoot;
-    const torpedoes = CreateBox("dock-torpedoes", { width: 7.5, height: 2.8, depth: 8 }, this.scene);
-    torpedoes.position.set(0, 6.2, -18);
-    torpedoes.material = darkMaterial;
-    torpedoes.parent = this.shipRoot;
     const rearGun = CreateBox("dock-rear-gun", { width: 6.2, height: 3, depth: 6 }, this.scene);
     rearGun.position.set(0, 6, -39);
     rearGun.material = bridgeMaterial;
@@ -146,6 +146,42 @@ export class DockPreview {
       barrel.position.set(x, 0.5, definition.visual.barrelLength * 0.45);
       barrel.material = dark;
       barrel.parent = this.turret;
+    }
+  }
+
+  setTorpedo(id: TorpedoId): void {
+    this.torpedoLauncher?.dispose(false, true);
+    const definition = getTorpedo(id);
+    const dark = this.material("dock-torpedo-base-material", new Color3(0.08, 0.12, 0.13));
+    const tubeMaterial = this.material(
+      "dock-torpedo-tube-material",
+      definition.caliberMm >= 600
+        ? new Color3(0.34, 0.39, 0.34)
+        : new Color3(0.28, 0.34, 0.34),
+    );
+    this.torpedoLauncher = new TransformNode("dock-torpedo-launcher", this.scene);
+    this.torpedoLauncher.position.set(0, 5.4, -18);
+    this.torpedoLauncher.rotation.y = Math.PI / 2;
+    this.torpedoLauncher.parent = this.shipRoot;
+    const base = CreateCylinder("dock-torpedo-base", {
+      height: 1.5,
+      diameter: definition.caliberMm >= 600 ? 7.2 : 6.4,
+      tessellation: 8,
+    }, this.scene);
+    base.material = dark;
+    base.parent = this.torpedoLauncher;
+    const diameter = definition.caliberMm >= 600 ? 2.05 : 1.72;
+    const spacing = definition.caliberMm >= 600 ? 2.35 : 2.05;
+    for (const side of [-1, 1]) {
+      const tube = CreateCylinder(`dock-torpedo-tube-${side}`, {
+        height: 11,
+        diameter,
+        tessellation: 8,
+      }, this.scene);
+      tube.rotation.x = Math.PI / 2;
+      tube.position.set(side * spacing / 2, 1.55, 0.5);
+      tube.material = tubeMaterial;
+      tube.parent = this.torpedoLauncher;
     }
   }
 
