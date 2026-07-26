@@ -37,10 +37,10 @@ export const MAIN_GUNS: Record<MainGunId, MainGunDefinition> = {
     muzzleVelocity: 720,
     visual: {
       barrelCount: 1,
-      barrelLength: 17,
+      barrelLength: 8.6,
       barrelSpacing: 0,
-      mountDiameter: 6.4,
-      houseWidth: 5.4,
+      mountDiameter: 4.65,
+      houseWidth: 4.35,
     },
   },
   "mk2-twin": {
@@ -56,10 +56,10 @@ export const MAIN_GUNS: Record<MainGunId, MainGunDefinition> = {
     muzzleVelocity: 735,
     visual: {
       barrelCount: 2,
-      barrelLength: 22,
-      barrelSpacing: 3,
-      mountDiameter: 8.2,
-      houseWidth: 7.8,
+      barrelLength: 8.9,
+      barrelSpacing: 1.15,
+      mountDiameter: 5.15,
+      houseWidth: 4.9,
     },
   },
   "mk3-twin": {
@@ -73,7 +73,7 @@ export const MAIN_GUNS: Record<MainGunId, MainGunDefinition> = {
     traverseDegreesPerSecond: 9.4,
     dispersionMultiplier: 1.02,
     muzzleVelocity: 755,
-    visual: { barrelCount: 2, barrelLength: 23, barrelSpacing: 3.2, mountDiameter: 8.5, houseWidth: 8 },
+    visual: { barrelCount: 2, barrelLength: 9.15, barrelSpacing: 1.2, mountDiameter: 5.25, houseWidth: 5.05 },
   },
   "mk4-twin": {
     id: "mk4-twin",
@@ -86,7 +86,7 @@ export const MAIN_GUNS: Record<MainGunId, MainGunDefinition> = {
     traverseDegreesPerSecond: 10.2,
     dispersionMultiplier: 0.94,
     muzzleVelocity: 775,
-    visual: { barrelCount: 2, barrelLength: 24, barrelSpacing: 3.4, mountDiameter: 8.8, houseWidth: 8.3 },
+    visual: { barrelCount: 2, barrelLength: 9.4, barrelSpacing: 1.25, mountDiameter: 5.4, houseWidth: 5.2 },
   },
 };
 

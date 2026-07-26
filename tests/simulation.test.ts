@@ -605,7 +605,9 @@ describe("deterministic battle simulation", () => {
     player.heading = 0;
     player.turretHeading = Math.PI / 2;
     const origin = gunMuzzleOrigin(player);
-    expect(origin.x).toBeGreaterThan(player.position.x + 14);
+    // A WWII 127 mm destroyer barrel projects roughly eight metres from the
+    // mount; the previous 14 m threshold encoded the oversized prototype art.
+    expect(origin.x).toBeGreaterThan(player.position.x + 7);
     expect(origin.z).toBeGreaterThan(player.position.z + 30);
   });
 

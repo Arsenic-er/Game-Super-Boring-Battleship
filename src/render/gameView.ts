@@ -32,9 +32,11 @@ import { getMainGun } from "../ships/components";
 import { getTorpedo } from "../ships/torpedoes";
 import {
   createDestroyerHull,
-  createDestroyerV2Superstructure,
-  DESTROYER_V2_HARDPOINTS,
+  createDestroyerV3Superstructure,
+  createMainGunVisual,
+  createTorpedoLauncherVisual,
 } from "./shipGeometry";
+import { createPixelShipPalette } from "./shipMaterials";
 import type { AimProvider } from "../controllers/playerInput";
 import type {
   BattleState,
@@ -50,7 +52,12 @@ import type {
 interface ShipVisual {
   root: TransformNode;
   turret: TransformNode;
+  gunCradle: TransformNode;
+  gunBarrels: Mesh[];
+  gunBarrelRestZ: number[];
   torpedoLauncher: TransformNode;
+  rudder: TransformNode;
+  propellers: TransformNode[];
   wakes: Mesh[];
   smokePuffs: Mesh[];
   fireFlames: Mesh[];
@@ -313,18 +320,13 @@ export class GameView implements AimProvider {
     const root = new TransformNode(`${ship.id}-root`, this.scene);
     const ally = ship.team === "player";
     const testTarget = Boolean(ship.isTestTarget);
-    const hullMaterial = this.material(
-      `${ship.id}-hull-material`,
-      ally ? new Color3(0.16, 0.27, 0.31)
-        : testTarget ? new Color3(0.36, 0.31, 0.16) : new Color3(0.29, 0.22, 0.21),
+    const palette = createPixelShipPalette(
+      this.scene,
+      ship.id,
+      ally ? "ally" : testTarget ? "target" : "enemy",
     );
-    const deckMaterial = this.material(`${ship.id}-deck-material`, new Color3(0.3, 0.3, 0.27));
-    const darkMaterial = this.material(`${ship.id}-dark-material`, new Color3(0.1, 0.12, 0.12));
-    const accentMaterial = this.material(
-      `${ship.id}-accent-material`,
-      ally ? new Color3(0.34, 0.56, 0.59)
-        : testTarget ? new Color3(0.74, 0.59, 0.2) : new Color3(0.62, 0.3, 0.24),
-    );
+    const hullMaterial = palette.hull;
+    const deckMaterial = palette.deck;
 
     createDestroyerHull(this.scene, root, {
       name: ship.id,
@@ -334,91 +336,17 @@ export class GameView implements AimProvider {
       deckMaterial,
     });
 
-    createDestroyerV2Superstructure(this.scene, root, ship.id, {
-      deck: deckMaterial,
-      structure: deckMaterial,
-      dark: darkMaterial,
-      accent: accentMaterial,
-    });
-
-    const turret = new TransformNode(`${ship.id}-turret`, this.scene);
-    turret.position.set(
-      DESTROYER_V2_HARDPOINTS.mainGun.x,
-      DESTROYER_V2_HARDPOINTS.mainGun.y,
-      DESTROYER_V2_HARDPOINTS.mainGun.z,
-    );
-    turret.parent = root;
+    const motion = createDestroyerV3Superstructure(this.scene, root, ship.id, palette);
     const gunDefinition = getMainGun(ship.mainGunId);
-    const mount = CreateCylinder(`${ship.id}-mount`, {
-      height: gunDefinition.visual.barrelCount === 2 ? 2.9 : 2.5,
-      diameter: gunDefinition.visual.mountDiameter,
-      tessellation: 8,
-    }, this.scene);
-    mount.material = deckMaterial;
-    mount.parent = turret;
-    const gunHouse = CreateBox(`${ship.id}-gun-house`, {
-      width: gunDefinition.visual.houseWidth,
-      height: gunDefinition.visual.barrelCount === 2 ? 3.2 : 2.7,
-      depth: gunDefinition.visual.barrelCount === 2 ? 5.8 : 4.8,
-    }, this.scene);
-    gunHouse.position.set(0, 1.7, 1.2);
-    gunHouse.material = accentMaterial;
-    gunHouse.parent = turret;
-    const barrelOffsets = gunDefinition.visual.barrelCount === 2
-      ? [-gunDefinition.visual.barrelSpacing / 2, gunDefinition.visual.barrelSpacing / 2]
-      : [0];
-    for (const [barrelIndex, barrelOffset] of barrelOffsets.entries()) {
-      const barrel = CreateCylinder(`${ship.id}-barrel-${barrelIndex}`, {
-        height: gunDefinition.visual.barrelLength,
-        diameter: gunDefinition.visual.barrelCount === 2 ? 1.12 : 0.9,
-        tessellation: 6,
-      }, this.scene);
-      barrel.rotation.x = Math.PI / 2;
-      barrel.position.set(
-        barrelOffset,
-        1.45,
-        gunDefinition.visual.barrelLength * 0.48,
-      );
-      barrel.material = gunDefinition.visual.barrelCount === 2 ? accentMaterial : deckMaterial;
-      barrel.parent = turret;
-    }
-
-    const torpedoLauncher = new TransformNode(`${ship.id}-torpedo-launcher`, this.scene);
-    torpedoLauncher.position.set(
-      DESTROYER_V2_HARDPOINTS.torpedoLauncher.x,
-      DESTROYER_V2_HARDPOINTS.torpedoLauncher.y,
-      DESTROYER_V2_HARDPOINTS.torpedoLauncher.z,
-    );
-    torpedoLauncher.parent = root;
+    const gun = createMainGunVisual(this.scene, root, ship.id, gunDefinition, palette);
     const torpedoDefinition = getTorpedo(ship.torpedoId);
-    const launcherBase = CreateCylinder(`${ship.id}-torpedo-launcher-base`, {
-      height: 1.35,
-      diameter: torpedoDefinition.caliberMm >= 600 ? 6.2 : 5.6,
-      tessellation: 8,
-    }, this.scene);
-    launcherBase.material = darkMaterial;
-    launcherBase.parent = torpedoLauncher;
-    const tubeDiameter = torpedoDefinition.caliberMm >= 600 ? 1.65 : 1.42;
-    const tubeSpacing = torpedoDefinition.caliberMm >= 600 ? 1.9 : 1.65;
-    for (const side of [-1, 1]) {
-      const tube = CreateCylinder(`${ship.id}-torpedo-tube-${side}`, {
-        height: 9.2,
-        diameter: tubeDiameter,
-        tessellation: 8,
-      }, this.scene);
-      tube.rotation.x = Math.PI / 2;
-      tube.position.set(side * tubeSpacing / 2, 1.35, 0.6);
-      tube.material = accentMaterial;
-      tube.parent = torpedoLauncher;
-    }
-    const launcherSight = CreateBox(`${ship.id}-torpedo-launcher-sight`, {
-      width: 0.5,
-      height: 2.2,
-      depth: 0.5,
-    }, this.scene);
-    launcherSight.position.set(0, 2.2, -1.2);
-    launcherSight.material = darkMaterial;
-    launcherSight.parent = torpedoLauncher;
+    const torpedo = createTorpedoLauncherVisual(
+      this.scene,
+      root,
+      ship.id,
+      torpedoDefinition,
+      palette,
+    );
 
     const wakeMaterial = this.material(`${ship.id}-wake-material`, new Color3(0.72, 0.86, 0.88));
     wakeMaterial.alpha = 0.3;
@@ -495,7 +423,20 @@ export class GameView implements AimProvider {
     collider.visibility = 0;
     collider.parent = root;
 
-    return { root, turret, torpedoLauncher, wakes, smokePuffs, fireFlames, collider };
+    return {
+      root,
+      turret: gun.root,
+      gunCradle: gun.cradle,
+      gunBarrels: gun.barrels,
+      gunBarrelRestZ: gun.barrelRestZ,
+      torpedoLauncher: torpedo.root,
+      rudder: motion.rudder,
+      propellers: motion.propellers,
+      wakes,
+      smokePuffs,
+      fireFlames,
+      collider,
+    };
   }
 
   aimPoint(ship: ShipState, range: number): Vec3 {
@@ -549,22 +490,65 @@ export class GameView implements AimProvider {
       const visible = isShipVisibleToPlayer(ship, state.mode, perceivedTarget);
       visual.root.setEnabled(visible);
       if (!visible) continue;
-      const seaMotion = ship.hull > 0 ? Math.sin(state.time * 0.7 + (ship.team === "enemy" ? 1.8 : 0)) : 0;
+      const phase = ship.team === "enemy" ? 1.8 : 0;
+      const longWave = Math.sin(state.time * 0.53 + phase);
+      const shortWave = Math.sin(state.time * 0.91 + phase * 1.7);
+      const seaMotion = ship.hull > 0 ? longWave * 0.7 + shortWave * 0.3 : 0;
       const settling = ship.flooding * 0.022 + (1 - ship.hull / ship.maxHull) * 1.2;
-      visual.root.position.set(ship.position.x, ship.hull > 0 ? seaMotion * 0.16 - settling : -4, ship.position.z);
+      visual.root.position.set(ship.position.x, ship.hull > 0 ? seaMotion * 0.2 - settling : -4, ship.position.z);
       visual.root.rotation.y = ship.heading;
+      visual.root.rotation.x = ship.hull > 0
+        ? Math.sin(state.time * 0.41 + phase + 0.7) * 0.006
+        : -0.045;
       visual.root.rotation.z = ship.hull > 0
-        ? seaMotion * 0.006 + ship.flooding * 0.0008 * (ship.team === "player" ? 1 : -1)
+        ? seaMotion * 0.009
+          - ship.turnRateRadians * 1.4
+          + ship.flooding * 0.0008 * (ship.team === "player" ? 1 : -1)
         : 0.08;
       visual.turret.rotation.y = wrapAngle(ship.turretHeading - ship.heading);
+      const muzzle = gunMuzzleOrigin(ship);
+      const elevationPath = predictTrajectory(
+        muzzle,
+        turretAimPoint(ship, muzzle),
+        3,
+        getMainGun(ship.mainGunId).muzzleVelocity,
+      );
+      if (elevationPath.length >= 2) {
+        const first = elevationPath[0];
+        const second = elevationPath[1];
+        if (first && second) {
+          const rise = second.y - first.y;
+          const run = Math.hypot(second.x - first.x, second.z - first.z);
+          visual.gunCradle.rotation.x = -Math.min(0.34, Math.max(0, Math.atan2(rise, run)));
+        }
+      }
+      const recoilElapsed = ship.lastMainGunFiredAt === undefined
+        ? Number.POSITIVE_INFINITY
+        : state.time - ship.lastMainGunFiredAt;
+      const recoil = recoilElapsed < 0.065
+        ? recoilElapsed / 0.065
+        : recoilElapsed < 0.32
+          ? 1 - (recoilElapsed - 0.065) / 0.255
+          : 0;
+      for (const [index, barrel] of visual.gunBarrels.entries()) {
+        barrel.position.z = (visual.gunBarrelRestZ[index] ?? barrel.position.z)
+          - Math.max(0, recoil) * 0.82;
+      }
       visual.torpedoLauncher.rotation.y = wrapAngle(
         ship.torpedoLauncherHeading - ship.heading,
       );
       visual.torpedoLauncher.rotation.z = ship.modules.torpedoTubes.health <= 0 ? -0.16 : 0;
+      visual.rudder.rotation.y = -ship.rudder * 0.5;
+      for (const [index, propeller] of visual.propellers.entries()) {
+        propeller.rotation.z = state.time * ship.speedKnots * (index === 0 ? 0.62 : -0.62);
+      }
       const wakeStrength = Math.min(1, Math.abs(ship.speedKnots) / 18);
-      for (const wake of visual.wakes) {
+      for (const [index, wake] of visual.wakes.entries()) {
         wake.visibility = ship.hull > 0 ? wakeStrength * 0.75 : 0;
         wake.scaling.z = 0.35 + wakeStrength * 0.85;
+        wake.scaling.x = 0.72 + wakeStrength * 0.32
+          + Math.sin(state.time * 3.2 + index * 2.4) * 0.08;
+        wake.rotation.y = (index === 0 ? -1 : 1) * (0.035 + ship.rudder * 0.035);
       }
       const fireRatio = Math.min(1, ship.fireIntensity / 55);
       for (const [index, smoke] of visual.smokePuffs.entries()) {
@@ -912,11 +896,18 @@ export class GameView implements AimProvider {
         });
         continue;
       }
-      const flash = CreateSphere(`muzzle-flash-${shot.id}`, {
-        diameter: 6.5,
-        segments: 4,
+      const flash = CreateCylinder(`muzzle-flash-${shot.id}`, {
+        height: 4.8,
+        diameterTop: 0.18,
+        diameterBottom: 2.7,
+        tessellation: 6,
       }, this.scene);
       flash.position.copyFrom(toVector(shot.position));
+      flash.rotation.x = Math.PI / 2;
+      const owner = this.ships.get(shot.ownerId);
+      flash.rotation.y = owner
+        ? owner.root.rotation.y + owner.turret.rotation.y
+        : 0;
       flash.material = this.effectMaterial(
         "muzzle-core",
         new Color3(1, 0.56, 0.08),
@@ -924,13 +915,13 @@ export class GameView implements AimProvider {
       );
       this.effects.push({
         mesh: flash,
-        remaining: 0.2,
-        duration: 0.2,
-        scaleFrom: 0.25,
-        scaleTo: 1.5,
+        remaining: 0.14,
+        duration: 0.14,
+        scaleFrom: 0.4,
+        scaleTo: 1.2,
       });
       const smoke = CreateSphere(`muzzle-smoke-${shot.id}`, {
-        diameter: 3.4,
+        diameter: 2.6,
         segments: 4,
       }, this.scene);
       smoke.position.copyFrom(toVector(shot.position));
@@ -942,9 +933,9 @@ export class GameView implements AimProvider {
       );
       this.effects.push({
         mesh: smoke,
-        remaining: 0.62,
-        duration: 0.62,
-        velocity: new Vector3(0, 4.5, 0),
+        remaining: 0.72,
+        duration: 0.72,
+        velocity: new Vector3(0, 3.8, 0),
         gravity: -0.5,
         scaleFrom: 0.45,
         scaleTo: 2.4,

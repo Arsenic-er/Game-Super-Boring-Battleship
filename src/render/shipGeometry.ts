@@ -3,8 +3,10 @@ import { Mesh } from "@babylonjs/core/Meshes/mesh";
 import { VertexData } from "@babylonjs/core/Meshes/mesh.vertexData";
 import { CreateBox } from "@babylonjs/core/Meshes/Builders/boxBuilder.pure";
 import { CreateCylinder } from "@babylonjs/core/Meshes/Builders/cylinderBuilder.pure";
-import type { TransformNode } from "@babylonjs/core/Meshes/transformNode";
+import { TransformNode } from "@babylonjs/core/Meshes/transformNode";
 import type { Scene } from "@babylonjs/core/scene";
+import type { MainGunDefinition } from "../ships/components";
+import type { TorpedoDefinition } from "../ships/torpedoes";
 
 interface WedgeSpec {
   name: string;
@@ -41,25 +43,41 @@ export interface DestroyerHullSpec {
   deckMaterial: Material;
 }
 
-export interface DestroyerV2Palette {
+export interface DestroyerV3Palette {
   deck: Material;
   structure: Material;
   dark: Material;
   accent: Material;
 }
 
-export const DESTROYER_V2_HARDPOINTS = {
-  mainGun: { x: 0, y: 6.6, z: 31 },
-  torpedoLauncher: { x: 0, y: 6.05, z: -21 },
+export const DESTROYER_V3_HARDPOINTS = {
+  mainGun: { x: 0, y: 6.05, z: 30.5 },
+  torpedoLauncher: { x: 0, y: 5.45, z: -24.5 },
 } as const;
 
+export interface DestroyerV3MotionParts {
+  rudder: TransformNode;
+  propellers: TransformNode[];
+}
+
+export interface MainGunVisual {
+  root: TransformNode;
+  cradle: TransformNode;
+  barrels: Mesh[];
+  barrelRestZ: number[];
+}
+
+export interface TorpedoLauncherVisual {
+  root: TransformNode;
+}
+
 /** Shared modular WWII destroyer fittings used by both battle and dock views. */
-export function createDestroyerV2Superstructure(
+export function createDestroyerV3Superstructure(
   scene: Scene,
   parent: TransformNode,
   name: string,
-  palette: DestroyerV2Palette,
-): void {
+  palette: DestroyerV3Palette,
+): DestroyerV3MotionParts {
   const box = (
     suffix: string,
     width: number,
@@ -99,49 +117,196 @@ export function createDestroyerV2Superstructure(
     return mesh;
   };
 
-  // A compact three-step bridge gives a readable destroyer silhouette without
-  // committing the component system to one imported mesh.
-  box("bridge-lower", 8.7, 4.5, 12.5, 0, 7.55, 8, palette.structure);
-  box("bridge-middle", 7.35, 3.25, 9.2, 0, 11.2, 9.7, palette.structure);
-  box("bridge-upper", 5.8, 2.25, 6.5, 0, 13.85, 11.1, palette.accent);
-  box("bridge-window-band", 5.95, 0.68, 6.62, 0, 14.12, 11.2, palette.dark);
+  // Stepped, narrowing bridge keeps the silhouette readable without the old
+  // slab-sided block. The short layers also hide texture stretching.
+  box("bridge-lower", 7.8, 3.4, 10.8, 0, 7.25, 8.7, palette.structure);
+  box("bridge-middle", 6.7, 2.7, 8.2, 0, 10.3, 10.2, palette.structure);
+  box("bridge-upper", 5.25, 1.8, 5.6, 0, 12.55, 11.25, palette.accent);
+  box("bridge-roof", 5.85, 0.32, 6.15, 0, 13.62, 11.05, palette.dark);
   for (const x of [-2.15, -0.72, 0.72, 2.15]) {
-    box(`bridge-window-${x}`, 1.02, 0.72, 0.18, x, 14.15, 14.55, palette.dark);
+    box(`bridge-window-${x}`, 0.92, 0.58, 0.16, x, 12.72, 14.1, palette.dark);
   }
-  box("bridge-wing-port", 2.2, 0.55, 4.3, -4.45, 11.45, 10.2, palette.deck);
-  box("bridge-wing-starboard", 2.2, 0.55, 4.3, 4.45, 11.45, 10.2, palette.deck);
+  box("bridge-wing-port", 1.8, 0.42, 3.7, -4.25, 10.45, 10.5, palette.deck);
+  box("bridge-wing-starboard", 1.8, 0.42, 3.7, 4.25, 10.45, 10.5, palette.deck);
 
-  for (const [index, z] of [-7, -20].entries()) {
-    const funnel = cylinder(`funnel-${index}`, 9.2, 3.1, 4.5, 0, 10.2, z, palette.dark);
-    funnel.rotation.x = -0.1;
-    box(`funnel-cap-${index}`, 4.4, 0.55, 3.5, 0, 14.9, z - 0.45, palette.dark);
-  }
-
-  const mast = cylinder("foremast", 19, 0.48, 0.68, 0, 22, 3.5, palette.dark, 6);
-  mast.rotation.x = -0.04;
-  box("foremast-yard", 11.5, 0.38, 0.38, 0, 25.6, 3.15, palette.dark);
+  // Optical rangefinder and searchlights add recognisable WWII detail at a
+  // tiny geometry cost.
+  cylinder("rangefinder", 5.3, 0.72, 0.72, 0, 14.05, 10.8, palette.dark, 8).rotation.z = Math.PI / 2;
   for (const side of [-1, 1]) {
-    const leg = cylinder(`tripod-leg-${side}`, 13.5, 0.34, 0.48, side * 2.2, 17.5, 1.3, palette.dark, 6);
-    leg.rotation.z = side * 0.17;
+    cylinder(`searchlight-${side}`, 0.65, 1.25, 1.25, side * 3.45, 11.55, 8.1, palette.dark, 8)
+      .rotation.z = Math.PI / 2;
+  }
+
+  for (const [index, funnelSpec] of [
+    { z: -3.5, height: 8.4, top: 2.5, bottom: 3.55 },
+    { z: -12.2, height: 7.35, top: 2.2, bottom: 3.15 },
+  ].entries()) {
+    const funnel = cylinder(
+      `funnel-${index}`,
+      funnelSpec.height,
+      funnelSpec.top,
+      funnelSpec.bottom,
+      0,
+      9.65,
+      funnelSpec.z,
+      palette.dark,
+    );
+    funnel.rotation.x = -0.08;
+    box(`funnel-band-${index}`, funnelSpec.top + 1.15, 0.48, funnelSpec.top + 0.75, 0, 13.3, funnelSpec.z - 0.3, palette.accent);
+  }
+
+  const mast = cylinder("foremast", 17.2, 0.32, 0.52, 0, 20.5, 3.4, palette.dark, 6);
+  mast.rotation.x = -0.04;
+  box("foremast-yard", 9.2, 0.28, 0.28, 0, 24.1, 3.15, palette.dark);
+  box("radar-array", 5.4, 2.3, 0.24, 0, 25.7, 3.15, palette.dark);
+  for (const side of [-1, 1]) {
+    const leg = cylinder(`tripod-leg-${side}`, 11.2, 0.28, 0.4, side * 1.75, 16.7, 1.35, palette.dark, 6);
+    leg.rotation.z = side * 0.14;
   }
 
   // Foredeck breakwater, stern machinery house and ventilation trunks add
   // close-range detail while retaining a low mesh count.
   for (const side of [-1, 1]) {
-    const breakwater = box(`breakwater-${side}`, 5.4, 1.25, 0.38, side * 2.05, 6.45, 23.4, palette.structure);
+    const breakwater = box(`breakwater-${side}`, 4.6, 0.9, 0.28, side * 1.75, 6.15, 22.5, palette.structure);
     breakwater.rotation.y = side * 0.55;
   }
-  box("stern-deckhouse", 7.2, 2.8, 9.5, 0, 6.55, -34, palette.structure);
+  box("stern-deckhouse", 6.7, 2.35, 8.4, 0, 5.95, -35, palette.structure);
   for (const x of [-2.3, 2.3]) {
-    cylinder(`stern-vent-${x}`, 3.4, 1, 1.35, x, 8.8, -30.5, palette.dark, 8);
+    cylinder(`stern-vent-${x}`, 2.65, 0.72, 1.05, x, 7.65, -31.5, palette.dark, 8);
   }
 
   for (const side of [-1, 1]) {
-    const boat = cylinder(`lifeboat-${side}`, 7.8, 1.9, 1.9, side * 4.1, 6.8, -14, palette.accent, 8);
+    const boat = cylinder(`lifeboat-${side}`, 6.2, 0.7, 1.55, side * 4.05, 6.15, -17, palette.accent, 8);
     boat.rotation.x = Math.PI / 2;
-    box(`boat-rack-${side}`, 1.1, 0.45, 8.4, side * 4.1, 5.95, -14, palette.dark);
-    box(`boat-davit-${side}`, 0.42, 4.2, 0.42, side * 5, 8, -14, palette.dark);
+    box(`boat-rack-${side}`, 0.75, 0.35, 6.6, side * 4.05, 5.55, -17, palette.dark);
+    box(`boat-davit-${side}`, 0.28, 3.1, 0.28, side * 4.9, 7.05, -17, palette.dark);
   }
+
+  // Long, low-cost rails and hull accents do more for scale than more boxes.
+  for (const side of [-1, 1]) {
+    box(`fore-rail-${side}`, 0.18, 0.52, 25, side * 4.35, 5.95, 34, palette.dark);
+    box(`aft-rail-${side}`, 0.18, 0.48, 24, side * 4.45, 5.28, -36, palette.dark);
+    box(`anchor-${side}`, 0.34, 1.3, 1.1, side * 3.25, 2.9, 43.5, palette.dark);
+  }
+
+  const rudder = new TransformNode(`${name}-rudder-pivot`, scene);
+  rudder.position.set(0, -0.05, -54.2);
+  rudder.parent = parent;
+  const rudderBlade = box("rudder", 0.42, 3.7, 4.5, 0, -1.4, 1.4, palette.dark);
+  rudderBlade.parent = rudder;
+
+  const propellers = [-1, 1].map((side) => {
+    const propeller = new TransformNode(`${name}-propeller-${side}`, scene);
+    propeller.position.set(side * 2.7, 0.05, -52.4);
+    propeller.parent = parent;
+    const hub = cylinder(`propeller-hub-${side}`, 1.7, 0.62, 0.82, 0, 0, 0, palette.dark, 8);
+    hub.rotation.x = Math.PI / 2;
+    hub.parent = propeller;
+    for (let blade = 0; blade < 3; blade += 1) {
+      const fin = box(`propeller-${side}-blade-${blade}`, 0.48, 3.1, 0.2, 0, 0, 0, palette.accent);
+      fin.rotation.z = blade * Math.PI * 2 / 3;
+      fin.parent = propeller;
+    }
+    return propeller;
+  });
+
+  return { rudder, propellers };
+}
+
+export function createMainGunVisual(
+  scene: Scene,
+  parent: TransformNode,
+  name: string,
+  definition: MainGunDefinition,
+  palette: DestroyerV3Palette,
+): MainGunVisual {
+  const root = new TransformNode(`${name}-turret`, scene);
+  root.position.set(
+    DESTROYER_V3_HARDPOINTS.mainGun.x,
+    DESTROYER_V3_HARDPOINTS.mainGun.y,
+    DESTROYER_V3_HARDPOINTS.mainGun.z,
+  );
+  root.parent = parent;
+  const dual = definition.visual.barrelCount === 2;
+  const mount = CreateCylinder(`${name}-mount`, {
+    height: dual ? 1.35 : 1.15,
+    diameter: definition.visual.mountDiameter,
+    tessellation: 10,
+  }, scene);
+  mount.material = palette.deck;
+  mount.parent = root;
+  const house = CreateBox(`${name}-gun-house`, {
+    width: definition.visual.houseWidth,
+    height: dual ? 2.55 : 2.25,
+    depth: dual ? 4.7 : 4.1,
+  }, scene);
+  house.position.set(0, 1.45, 0.75);
+  house.material = palette.accent;
+  house.parent = root;
+  const cradle = new TransformNode(`${name}-gun-cradle`, scene);
+  cradle.position.set(0, 1.45, 0.75);
+  cradle.parent = root;
+  const offsets = dual
+    ? [-definition.visual.barrelSpacing / 2, definition.visual.barrelSpacing / 2]
+    : [0];
+  const barrelRestZ: number[] = [];
+  const barrels = offsets.map((offset, index) => {
+    const barrel = CreateCylinder(`${name}-barrel-${index}`, {
+      height: definition.visual.barrelLength,
+      diameter: dual ? 0.44 : 0.4,
+      tessellation: 8,
+    }, scene);
+    barrel.rotation.x = Math.PI / 2;
+    const restZ = definition.visual.barrelLength * 0.47 + 0.55;
+    barrel.position.set(offset, 0, restZ);
+    barrel.material = palette.dark;
+    barrel.parent = cradle;
+    barrelRestZ.push(restZ);
+    return barrel;
+  });
+  return { root, cradle, barrels, barrelRestZ };
+}
+
+export function createTorpedoLauncherVisual(
+  scene: Scene,
+  parent: TransformNode,
+  name: string,
+  definition: TorpedoDefinition,
+  palette: DestroyerV3Palette,
+): TorpedoLauncherVisual {
+  const root = new TransformNode(`${name}-torpedo-launcher`, scene);
+  root.position.set(
+    DESTROYER_V3_HARDPOINTS.torpedoLauncher.x,
+    DESTROYER_V3_HARDPOINTS.torpedoLauncher.y,
+    DESTROYER_V3_HARDPOINTS.torpedoLauncher.z,
+  );
+  root.parent = parent;
+  const heavy = definition.caliberMm >= 600;
+  const base = CreateCylinder(`${name}-torpedo-base`, {
+    height: 1.05,
+    diameter: heavy ? 4.9 : 4.5,
+    tessellation: 10,
+  }, scene);
+  base.material = palette.dark;
+  base.parent = root;
+  const diameter = heavy ? 0.92 : 0.82;
+  const spacing = heavy ? 1.22 : 1.08;
+  for (const side of [-1, 1]) {
+    const tube = CreateCylinder(`${name}-torpedo-tube-${side}`, {
+      height: 7.2,
+      diameter,
+      tessellation: 8,
+    }, scene);
+    tube.rotation.x = Math.PI / 2;
+    tube.position.set(side * spacing / 2, 1.05, 0.25);
+    tube.material = palette.accent;
+    tube.parent = root;
+  }
+  const sight = CreateBox(`${name}-torpedo-sight`, { width: 0.34, height: 1.45, depth: 0.34 }, scene);
+  sight.position.set(0, 1.75, -0.65);
+  sight.material = palette.dark;
+  sight.parent = root;
+  return { root };
 }
 
 /** A low-cost multi-station hull with a continuous sheer line and underwater chine. */
@@ -151,18 +316,24 @@ export function createDestroyerHull(
   spec: DestroyerHullSpec,
 ): { hull: Mesh; deck: Mesh } {
   const stations = [
-    { z: -0.5, width: 0.22, deck: 4.55, keel: 0.2 },
-    { z: -0.45, width: 0.68, deck: 4.72, keel: -0.8 },
-    { z: -0.33, width: 0.92, deck: 4.86, keel: -1.25 },
-    { z: -0.08, width: 1, deck: 4.95, keel: -1.45 },
-    { z: 0.2, width: 0.98, deck: 5.02, keel: -1.25 },
-    { z: 0.36, width: 0.83, deck: 5.16, keel: -0.72 },
-    { z: 0.45, width: 0.52, deck: 5.35, keel: -0.05 },
-    { z: 0.5, width: 0.02, deck: 5.58, keel: 0.72 },
+    { z: -0.5, width: 0.68, deck: 4.28, keel: 0.15 },
+    { z: -0.46, width: 0.78, deck: 4.34, keel: -0.72 },
+    { z: -0.39, width: 0.88, deck: 4.42, keel: -1.08 },
+    { z: -0.3, width: 0.95, deck: 4.5, keel: -1.32 },
+    { z: -0.18, width: 0.99, deck: 4.58, keel: -1.45 },
+    { z: -0.05, width: 1, deck: 4.68, keel: -1.5 },
+    { z: 0.08, width: 0.99, deck: 4.78, keel: -1.48 },
+    { z: 0.2, width: 0.95, deck: 4.94, keel: -1.34 },
+    { z: 0.3, width: 0.84, deck: 5.12, keel: -1.08 },
+    { z: 0.38, width: 0.69, deck: 5.32, keel: -0.68 },
+    { z: 0.44, width: 0.49, deck: 5.5, keel: -0.2 },
+    { z: 0.475, width: 0.27, deck: 5.7, keel: 0.22 },
+    { z: 0.5, width: 0.035, deck: 5.88, keel: 0.72 },
   ] as const;
   const hull = new Mesh(`${spec.name}-hull`, scene);
   const positions: number[] = [];
-  for (const station of stations) {
+  const uvs: number[] = [];
+  for (const [stationIndex, station] of stations.entries()) {
     const halfWidth = spec.beam * 0.5 * station.width;
     const z = spec.length * station.z;
     positions.push(
@@ -173,6 +344,9 @@ export function createDestroyerHull(
       halfWidth * 0.88, 1.15, z,
       halfWidth, station.deck, z,
     );
+    for (let edge = 0; edge < 6; edge += 1) {
+      uvs.push(edge / 5, stationIndex / (stations.length - 1));
+    }
   }
   const indices: number[] = [];
   const ringSize = 6;
@@ -195,16 +369,19 @@ export function createDestroyerHull(
   hullData.positions = positions;
   hullData.indices = indices;
   hullData.normals = normals;
+  hullData.uvs = uvs;
   hullData.applyToMesh(hull);
   hull.material = spec.hullMaterial;
   hull.parent = parent;
 
   const deck = new Mesh(`${spec.name}-deck`, scene);
   const deckPositions: number[] = [];
-  for (const station of stations) {
+  const deckUvs: number[] = [];
+  for (const [stationIndex, station] of stations.entries()) {
     const halfWidth = spec.beam * 0.5 * station.width * 0.96;
     const z = spec.length * station.z;
     deckPositions.push(-halfWidth, station.deck + 0.06, z, halfWidth, station.deck + 0.06, z);
+    deckUvs.push(0, stationIndex / (stations.length - 1), 1, stationIndex / (stations.length - 1));
   }
   const deckIndices: number[] = [];
   for (let station = 0; station < stations.length - 1; station += 1) {
@@ -218,6 +395,7 @@ export function createDestroyerHull(
   deckData.positions = deckPositions;
   deckData.indices = deckIndices;
   deckData.normals = deckNormals;
+  deckData.uvs = deckUvs;
   deckData.applyToMesh(deck);
   deck.material = spec.deckMaterial;
   deck.parent = parent;
