@@ -30,7 +30,7 @@ import {
 } from "../sim/simulation";
 import { getMainGun } from "../ships/components";
 import { getTorpedo } from "../ships/torpedoes";
-import { createSymmetricBow } from "./shipGeometry";
+import { createDestroyerHull } from "./shipGeometry";
 import type { AimProvider } from "../controllers/playerInput";
 import type {
   BattleState,
@@ -76,6 +76,11 @@ interface TimedMesh {
   scaleTo?: number;
 }
 
+interface SmokeCloudVisual {
+  root: TransformNode;
+  lobes: Mesh[];
+}
+
 const toVector = (value: Vec3): Vector3 => new Vector3(value.x, value.y, value.z);
 
 const wrapAngle = (angle: number): number => {
@@ -92,6 +97,7 @@ export class GameView implements AimProvider {
   private readonly ships = new Map<string, ShipVisual>();
   private readonly projectileMeshes = new Map<number, ProjectileVisual>();
   private readonly projectileTrails = new Map<number, ProjectileTrail>();
+  private readonly smokeCloudMeshes = new Map<number, SmokeCloudVisual>();
   private readonly effects: TimedMesh[] = [];
   private readonly sharedEffectMaterials = new Map<string, StandardMaterial>();
   private readonly waveLayers: Mesh[];
@@ -316,48 +322,13 @@ export class GameView implements AimProvider {
         : testTarget ? new Color3(0.74, 0.59, 0.2) : new Color3(0.62, 0.3, 0.24),
     );
 
-    const hull = CreateBox(`${ship.id}-hull`, {
-      width: 11,
-      height: 5.5,
-      depth: 82,
-    }, this.scene);
-    hull.position.set(0, 1.8, -3);
-    hull.material = hullMaterial;
-    hull.parent = root;
-
-    createSymmetricBow(this.scene, root, {
-      name: `${ship.id}-bow`,
-      hullRearZ: 38,
-      tipZ: 63,
-      hullHalfWidth: 5.5,
-      hullTopY: 4.55,
-      hullRearBottomY: -0.95,
-      hullTipBottomY: 0.15,
-      deckRearZ: 42,
-      deckHalfWidth: 4.8,
-      deckTopY: 5.35,
-      deckThickness: 0.7,
+    createDestroyerHull(this.scene, root, {
+      name: ship.id,
+      length: 112,
+      beam: 11,
       hullMaterial,
       deckMaterial,
     });
-
-    const stern = CreateBox(`${ship.id}-stern`, {
-      width: 8.5,
-      height: 5.2,
-      depth: 18,
-    }, this.scene);
-    stern.position.set(0, 1.65, -52);
-    stern.material = hullMaterial;
-    stern.parent = root;
-
-    const deck = CreateBox(`${ship.id}-deck`, {
-      width: 9.6,
-      height: 0.7,
-      depth: 88,
-    }, this.scene);
-    deck.position.set(0, 5, -2);
-    deck.material = deckMaterial;
-    deck.parent = root;
 
     const bridge = CreateBox(`${ship.id}-bridge`, {
       width: 7.4,
@@ -796,6 +767,49 @@ export class GameView implements AimProvider {
     }
   }
 
+  private syncSmokeClouds(state: BattleState): void {
+    const activeIds = new Set(state.smokeClouds.map((cloud) => cloud.id));
+    for (const [id, visual] of this.smokeCloudMeshes) {
+      if (activeIds.has(id)) continue;
+      visual.root.dispose(false, true);
+      this.smokeCloudMeshes.delete(id);
+    }
+    const material = this.effectMaterial(
+      "smoke-screen",
+      new Color3(0.62, 0.67, 0.66),
+      Color3.Black(),
+      0.08,
+    );
+    for (const cloud of state.smokeClouds) {
+      let visual = this.smokeCloudMeshes.get(cloud.id);
+      if (!visual) {
+        const root = new TransformNode(`smoke-screen-${cloud.id}`, this.scene);
+        root.position.set(cloud.position.x, 0, cloud.position.z);
+        const lobeSpecs = [
+          { x: -0.2, y: 8, z: 0.02, scale: 0.28 },
+          { x: 0.16, y: 10, z: -0.08, scale: 0.25 },
+          { x: 0.02, y: 7, z: 0.2, scale: 0.24 },
+        ];
+        const lobes = lobeSpecs.map((spec, index) => {
+          const lobe = CreateSphere(`smoke-screen-${cloud.id}-${index}`, {
+            diameter: 2,
+            segments: 6,
+          }, this.scene);
+          lobe.material = material;
+          lobe.parent = root;
+          lobe.position.set(cloud.radius * spec.x, spec.y, cloud.radius * spec.z);
+          lobe.scaling.set(cloud.radius * spec.scale, 8 + index * 1.7, cloud.radius * spec.scale);
+          return lobe;
+        });
+        visual = { root, lobes };
+        this.smokeCloudMeshes.set(cloud.id, visual);
+      }
+      const life = Math.max(0, (cloud.expiresAt - state.time) / Math.max(1, cloud.expiresAt - cloud.spawnedAt));
+      for (const lobe of visual.lobes) lobe.visibility = Math.min(1, life * 4);
+      visual.root.rotation.y = cloud.id * 0.71 + state.time * 0.015;
+    }
+  }
+
   syncAimArc(player: ShipState, weaponSlot: WeaponSlot): void {
     const origin = gunMuzzleOrigin(player);
     const muzzleVelocity = getMainGun(player.mainGunId).muzzleVelocity;
@@ -1194,6 +1208,7 @@ export class GameView implements AimProvider {
   ): void {
     this.syncShips(state, perceivedTarget);
     this.syncProjectiles(state, perceivedTarget);
+    this.syncSmokeClouds(state);
     this.objectiveRing.visibility = state.mode === "battle"
       ? state.objective.contested ? 0.72 + Math.sin(state.time * 7) * 0.18 : 0.72
       : 0;
@@ -1245,6 +1260,8 @@ export class GameView implements AimProvider {
     for (const effect of this.effects) effect.mesh.dispose();
     this.projectileMeshes.clear();
     this.projectileTrails.clear();
+    for (const visual of this.smokeCloudMeshes.values()) visual.root.dispose(false, true);
+    this.smokeCloudMeshes.clear();
     this.effects.length = 0;
     this.camera.alpha = -Math.PI / 2;
     this.camera.beta = 1.08;

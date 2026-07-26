@@ -13,7 +13,7 @@ import { getMainGun } from "../ships/components";
 import type { MainGunId } from "../ships/components";
 import { DEFAULT_TORPEDO_ID, getTorpedo } from "../ships/torpedoes";
 import type { TorpedoId } from "../ships/torpedoes";
-import { createSymmetricBow } from "./shipGeometry";
+import { createDestroyerHull } from "./shipGeometry";
 
 export class DockPreview {
   private readonly engine: Engine;
@@ -63,30 +63,13 @@ export class DockPreview {
     const darkMaterial = this.material("dock-dark", new Color3(0.09, 0.13, 0.14));
     const bridgeMaterial = this.material("dock-bridge", new Color3(0.35, 0.42, 0.41));
 
-    const hull = CreateBox("dock-hull-main", { width: 13, height: 7, depth: 104 }, this.scene);
-    hull.scaling.z = 1;
-    hull.position.y = 0;
-    hull.material = hullMaterial;
-    hull.parent = this.shipRoot;
-    createSymmetricBow(this.scene, this.shipRoot, {
-      name: "dock-bow",
-      hullRearZ: 52,
-      tipZ: 78,
-      hullHalfWidth: 6.5,
-      hullTopY: 3.5,
-      hullRearBottomY: -3.5,
-      hullTipBottomY: -2.2,
-      deckRearZ: 47,
-      deckHalfWidth: 6.1,
-      deckTopY: 4.5,
-      deckThickness: 0.9,
+    createDestroyerHull(this.scene, this.shipRoot, {
+      name: "dock",
+      length: 112,
+      beam: 11,
       hullMaterial,
       deckMaterial,
     });
-    const deck = CreateBox("dock-deck", { width: 12.2, height: 1, depth: 94 }, this.scene);
-    deck.position.y = 4;
-    deck.material = deckMaterial;
-    deck.parent = this.shipRoot;
 
     const bridgeLevels = [
       { width: 9.5, height: 5.2, depth: 12, y: 7, z: 10 },

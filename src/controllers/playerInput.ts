@@ -31,6 +31,7 @@ export class PlayerInput {
   private weaponSlot: WeaponSlot = "mainGun";
   private torpedoSpread: TorpedoSpreadMode = "narrow";
   private firePressed = false;
+  private smokePressed = false;
   private ammoType: AmmoType = "he";
   private damageControlPriority: DamageControlPriority = "balanced";
   private activeShip?: ShipState;
@@ -62,13 +63,14 @@ export class PlayerInput {
       }
     }
     if (event.code === "Space") this.firePressed = true;
+    if (event.code === "KeyE") this.smokePressed = true;
     if (event.code === "Digit4") {
       const index = DAMAGE_CONTROL_PRIORITIES.indexOf(this.damageControlPriority);
       this.damageControlPriority = DAMAGE_CONTROL_PRIORITIES[
         (index + 1) % DAMAGE_CONTROL_PRIORITIES.length
       ] ?? "balanced";
     }
-    if (["Space", "KeyW", "KeyS", "KeyA", "KeyD", "KeyQ", "KeyR", "KeyH", "Digit1", "Digit2", "Digit3", "Digit4"].includes(event.code)) {
+    if (["Space", "KeyW", "KeyS", "KeyA", "KeyD", "KeyE", "KeyQ", "KeyR", "KeyH", "Digit1", "Digit2", "Digit3", "Digit4"].includes(event.code)) {
       event.preventDefault();
     }
   };
@@ -94,11 +96,14 @@ export class PlayerInput {
       - (this.pressed.has("KeyA") ? 1 : 0);
     const fire = this.firePressed;
     this.firePressed = false;
+    const activateSmoke = this.smokePressed;
+    this.smokePressed = false;
     return {
       throttle: this.throttle,
       rudder: steeringInput * this.steeringSensitivity,
       aimPoint: this.aimProvider.aimPoint(ship, this.range),
       fire,
+      activateSmoke,
       weaponSlot: this.weaponSlot,
       torpedoSpread: this.torpedoSpread,
       repairHull: this.pressed.has("KeyH"),
@@ -154,6 +159,7 @@ export class PlayerInput {
     this.range = 2_200;
     this.pressed.clear();
     this.firePressed = false;
+    this.smokePressed = false;
     this.aiming = false;
     this.weaponSlot = "mainGun";
     this.ammoType = "he";

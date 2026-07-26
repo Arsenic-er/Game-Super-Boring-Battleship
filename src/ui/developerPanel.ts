@@ -1,4 +1,4 @@
-import { COMPARTMENT_MAX_HEALTH } from "../sim/config";
+import { COMPARTMENT_MAX_HEALTH, SMOKE } from "../sim/config";
 import { torpedoLauncherAlignmentError } from "../sim/simulation";
 import type { BattleState, CompartmentId, ModuleId, ShipState } from "../sim/types";
 import { getTorpedo } from "../ships/torpedoes";
@@ -95,6 +95,9 @@ export class DeveloperPanel {
         <button data-action="torpedo-reload" type="button">鱼雷立即装填</button>
         <button data-action="torpedo-incoming" type="button">生成来袭鱼雷</button>
         <button data-action="torpedo-clear" type="button">清除水中鱼雷</button>
+        <button data-action="smoke-deploy" type="button">立即施放烟幕</button>
+        <button data-action="smoke-refill" type="button">补满烟幕次数</button>
+        <button data-action="smoke-clear" type="button">清除全部烟幕</button>
       </div>`;
     parent.append(this.element);
     const shipSelect = this.element.querySelector<HTMLSelectElement>('[data-role="ship"]');
@@ -198,7 +201,21 @@ export class DeveloperPanel {
   private runAction(action: string): void {
     if (action === "close") return;
     const state = this.getState();
-    if (action === "torpedo-clear") {
+    if (action === "smoke-clear") {
+      state.smokeClouds = [];
+    } else if (action === "smoke-deploy") {
+      const ship = this.selectedShip();
+      if (!ship) return;
+      ship.smokeCharges = Math.max(1, ship.smokeCharges);
+      ship.smokeCooldownRemaining = 0;
+      ship.smokeDeploymentRemaining = SMOKE.deploymentSeconds;
+      ship.smokeNextPuffAt = state.time;
+    } else if (action === "smoke-refill") {
+      const ship = this.selectedShip();
+      if (!ship) return;
+      ship.smokeCharges = SMOKE.charges;
+      ship.smokeCooldownRemaining = 0;
+    } else if (action === "torpedo-clear") {
       state.projectiles = state.projectiles.filter((projectile) => projectile.kind !== "torpedo");
     } else if (action === "torpedo-incoming") {
       const ship = this.selectedShip();
@@ -268,6 +285,9 @@ export class DeveloperPanel {
     ship.recoverableHull = ship.maxHull;
     ship.fireIntensity = 0;
     ship.flooding = 0;
+    ship.smokeCharges = SMOKE.charges;
+    ship.smokeCooldownRemaining = 0;
+    ship.smokeDeploymentRemaining = 0;
     ship.torpedoesLoaded = 2;
     ship.torpedoReserveSalvos = torpedo.reserveSalvos;
     ship.torpedoReloadRemaining = 0;

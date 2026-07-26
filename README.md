@@ -26,6 +26,8 @@ This is an early prototype rather than a finished commercial game. Visuals, bala
 - Four historical torpedo loadouts with distinct compressed gameplay trade-offs in speed, range, damage, reload, wake visibility and onboard risk.
 - A visible traversing twin-tube launcher with alignment-gated firing, one loaded salvo plus two reserve salvos, and dynamic reload progress.
 - A separately damageable torpedo-launcher module; partial damage slows traverse and reloading, while destruction halts both.
+- A two-charge destroyer Smoke Generator that lays persistent puffs, breaks optical contact in both directions and exposes ships that fire main guns from smoke.
+- A shared multi-station 112 m destroyer hull used by both combat and dockyard views, replacing the former box hull and preparing standard component hardpoints.
 - Hull compartments, module damage, fire, flooding, crew-dependent repair and recoverable health.
 - Central objective A with capture progress, contested superiority, team scores and score victory.
 - Non-omniscient AI optics with sampled noisy contacts, acquisition, target loss, search and reacquisition; firing requires a live track.
@@ -49,6 +51,7 @@ This is an early prototype rather than a finished commercial game. Visuals, bala
 | `Space` | Fire selected weapon |
 | `4` | Cycle balanced / firefighting / flooding / module repair priority |
 | `H` | Hold to divert damage-control crew to recoverable hull damage |
+| `E` | Activate Smoke Generator |
 | `M` | Open / close tactical map |
 | `F3` | Developer diagnostics |
 | `Esc` | Exit scope/map or pause |
@@ -114,6 +117,8 @@ Third-party libraries and the Fusion Pixel Font remain under their respective li
 - 四种历史鱼雷组件拥有独立的航速、射程、装药、装填、尾迹可见性与舰上风险取舍，并从船坞配装真实继承到战斗。
 - 舰体上存在可见且真实转动的双联装鱼雷发射器；必须转到位才能发射，并携带一轮管内齐射与两轮备用齐射。
 - 鱼雷发射器成为独立可损伤模块；部分损坏同时减慢转向和装填，完全摧毁后两者都会停止。
+- 两次使用机会的驱逐舰烟幕发生器：连续形成固定烟团、双向阻断光学接触，烟中主炮开火会重新暴露。
+- 战斗与船坞共用同一套 112 米多截面舰体，替换原来的方盒船体，并为后续标准化组件挂点做准备。
 - 船体分区、组件损伤、起火、进水、有限人力损管与可恢复血量。
 - 舰船实体碰撞，以及依据碰撞部位计算的不同伤害。
 - 小地图、大地图、专用瞄准镜、开发者调试面板与灵敏度设置。
@@ -134,6 +139,7 @@ Third-party libraries and the Fusion Pixel Font remain under their respective li
 | `Space` | 发射当前武器 |
 | `4` | 循环均衡 / 灭火 / 堵漏 / 模块优先级 |
 | `H` | 按住抽调损管人力修复可恢复舰体血量 |
+| `E` | 启动烟幕发生器 |
 | `M` | 打开或关闭战术地图 |
 | `F3` | 开发者调试面板 |
 | `Esc` | 退出瞄准/地图或暂停 |

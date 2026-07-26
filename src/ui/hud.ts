@@ -1,8 +1,9 @@
-import { BATTLE_DURATION_SECONDS, GUN, OBJECTIVE, TORPEDO } from "../sim/config";
+import { BATTLE_DURATION_SECONDS, GUN, OBJECTIVE, SMOKE, TORPEDO } from "../sim/config";
 import {
   ballisticVelocity,
   dispersionAtRange,
   isGunFireBlocked,
+  isPointInSmoke,
   torpedoLauncherAlignmentError,
   torpedoLaunchSolution,
   torpedoThreatsFor,
@@ -101,6 +102,7 @@ export class Hud {
   private readonly targetPanel: HTMLElement;
   private readonly telemetry: HTMLElement;
   private readonly damageState: HTMLElement;
+  private readonly smokeStatus: HTMLElement;
   private readonly damageControlPriority: HTMLElement;
   private readonly damageControlTasks: HTMLElement;
   private readonly aimReadout: HTMLElement;
@@ -164,6 +166,7 @@ export class Hud {
           <div class="health-track recoverable-health"><i id="recoverable-hull-fill"></i></div>
           <div id="repair-hint" class="repair-hint"><kbd>H</kbd> 按住持续抢修</div>
           <div id="damage-state" class="damage-state">损管正常</div>
+          <div id="smoke-status" class="damage-state"><kbd>E</kbd> 烟幕就绪 · 2 次</div>
           <div class="damage-control">
             <div class="damage-control-heading">
               <span>损管人力调度</span>
@@ -237,7 +240,7 @@ export class Hud {
         <section class="controls panel">
           <span><kbd>W</kbd><kbd>S</kbd> 车钟</span><span><kbd>A</kbd><kbd>D</kbd> 舵</span><span><kbd>移动鼠标</kbd> 视角</span>
           <span><kbd>滚轮</kbd> 测距</span><span><kbd>R</kbd> 瞄准开关</span>
-          <span><kbd>Q</kbd> HE / AP</span><span><kbd>Space</kbd> 齐射</span><span><kbd>4</kbd> 损管优先</span><span><kbd>H</kbd> 舰体抢修</span><span><kbd>M</kbd> 地图</span><span><kbd>F3</kbd> 调试</span>
+          <span><kbd>Q</kbd> HE / AP</span><span><kbd>Space</kbd> 齐射</span><span><kbd>E</kbd> 烟幕</span><span><kbd>4</kbd> 损管优先</span><span><kbd>H</kbd> 舰体抢修</span><span><kbd>M</kbd> 地图</span><span><kbd>F3</kbd> 调试</span>
         </section>
         <section id="result" class="result-card" hidden>
           <p class="eyebrow">战斗结束</p><h1></h1><p id="result-detail"></p>
@@ -282,6 +285,7 @@ export class Hud {
     this.targetPanel = find("#target-status");
     this.telemetry = find("#telemetry");
     this.damageState = find("#damage-state");
+    this.smokeStatus = find("#smoke-status");
     this.damageControlPriority = find("#damage-control-priority");
     this.damageControlTasks = find("#damage-control-tasks");
     this.aimReadout = find("#aim-readout");
@@ -470,6 +474,18 @@ export class Hud {
       ? "损管正常"
       : `火势 ${Math.round(player.fireIntensity)}% · 进水 ${Math.round(player.flooding)}%`;
     this.damageState.className = `damage-state${player.fireIntensity > 35 || player.flooding > 35 ? " critical" : ""}`;
+    const smokeCovered = isPointInSmoke(state, player.position);
+    const smokeCooldownPercent = Math.round(
+      clamp(1 - player.smokeCooldownRemaining / SMOKE.cooldownSeconds, 0, 1) * 100,
+    );
+    this.smokeStatus.innerHTML = player.smokeDeploymentRemaining > 0
+      ? `<kbd>E</kbd> 正在施放烟幕 · ${player.smokeDeploymentRemaining.toFixed(1)} s`
+      : player.smokeCooldownRemaining > 0
+        ? `<kbd>E</kbd> 烟幕冷却 ${smokeCooldownPercent}% · ${player.smokeCooldownRemaining.toFixed(0)} s · 剩 ${player.smokeCharges}`
+        : player.smokeCharges > 0
+          ? `<kbd>E</kbd> 烟幕就绪 · ${player.smokeCharges} 次${smokeCovered ? " · 舰体已隐蔽" : ""}`
+          : `<kbd>E</kbd> 烟幕耗尽${smokeCovered ? " · 舰体已隐蔽" : ""}`;
+    this.smokeStatus.className = `damage-state${smokeCovered ? " active" : ""}`;
     this.damageControlPriority.innerHTML = `<kbd>4</kbd> ${damageControlPriorityLabels[player.damageControlPriority]}`;
     const repairModule = player.damageControlModule
       ? ` · ${moduleLabels[player.damageControlModule]}`

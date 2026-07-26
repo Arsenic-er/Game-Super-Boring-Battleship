@@ -189,6 +189,20 @@ export function battleStateFingerprint(state: BattleState): string {
         torpedoReserveSalvos: ship.torpedoReserveSalvos,
         fireIntensity: round(ship.fireIntensity),
         flooding: round(ship.flooding),
+        smokeCharges: ship.smokeCharges,
+        smokeCooldownRemaining: round(ship.smokeCooldownRemaining),
+        smokeDeploymentRemaining: round(ship.smokeDeploymentRemaining),
+      })),
+    smokeClouds: [...state.smokeClouds]
+      .sort((left, right) => left.id - right.id)
+      .map((cloud) => ({
+        id: cloud.id,
+        ownerId: cloud.ownerId,
+        position: {
+          x: round(cloud.position.x),
+          z: round(cloud.position.z),
+        },
+        expiresAt: round(cloud.expiresAt),
       })),
     projectiles: [...state.projectiles]
       .sort((left, right) => left.id - right.id)

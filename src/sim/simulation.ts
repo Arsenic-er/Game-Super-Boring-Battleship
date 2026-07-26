@@ -17,6 +17,7 @@ import {
   SENSOR,
   TURRET,
   TORPEDO,
+  SMOKE,
 } from "./config";
 import {
   DEFAULT_MAIN_GUN_ID,
@@ -149,6 +150,10 @@ function createShip(
     ammoType: "he",
     fireIntensity: 0,
     flooding: 0,
+    smokeCharges: SMOKE.charges,
+    smokeCooldownRemaining: 0,
+    smokeDeploymentRemaining: 0,
+    smokeNextPuffAt: 0,
     damageControlPriority: "balanced",
     damageControlAllocation: { fire: 0, flood: 0, module: 0, hull: 0 },
     hullRepairActive: false,
@@ -193,6 +198,7 @@ export function createInitialState(
     projectiles: [],
     shots: [],
     impacts: [],
+    smokeClouds: [],
     nextEntityId: 1,
     randomSeed: seed >>> 0,
     collisionCooldowns: {},
@@ -516,8 +522,84 @@ function fireGun(state: BattleState, ship: ShipState): void {
     firedShells += 1;
   }
   if (firedShells === 0) return;
+  ship.lastMainGunFiredAt = state.time;
   const gunRatio = Math.max(0.25, moduleRatio(ship, "gun"));
   ship.reloadRemaining = gunDefinition.reloadSeconds * ship.performance.reloadMultiplier / gunRatio;
+}
+
+function deploySmokePuff(state: BattleState, ship: ShipState): void {
+  state.smokeClouds.push({
+    id: state.nextEntityId++,
+    ownerId: ship.id,
+    ownerTeam: ship.team,
+    position: copyVec(ship.position),
+    radius: SMOKE.puffRadiusMeters,
+    spawnedAt: state.time,
+    expiresAt: state.time + SMOKE.puffLifetimeSeconds,
+  });
+  if (state.smokeClouds.length > SMOKE.maximumClouds) {
+    state.smokeClouds.splice(0, state.smokeClouds.length - SMOKE.maximumClouds);
+  }
+}
+
+function updateSmokeGenerator(
+  state: BattleState,
+  ship: ShipState,
+  activate: boolean,
+  dt: number,
+): void {
+  ship.smokeCooldownRemaining = Math.max(0, ship.smokeCooldownRemaining - dt);
+  if (
+    activate
+    && ship.smokeCharges > 0
+    && ship.smokeCooldownRemaining <= 0
+    && ship.smokeDeploymentRemaining <= 0
+  ) {
+    ship.smokeCharges -= 1;
+    ship.smokeDeploymentRemaining = SMOKE.deploymentSeconds;
+    ship.smokeCooldownRemaining = SMOKE.cooldownSeconds;
+    ship.smokeNextPuffAt = state.time;
+  }
+  if (ship.smokeDeploymentRemaining <= 0) return;
+  while (state.time + 0.0001 >= ship.smokeNextPuffAt && ship.smokeDeploymentRemaining > 0) {
+    deploySmokePuff(state, ship);
+    ship.smokeNextPuffAt += SMOKE.puffIntervalSeconds;
+  }
+  ship.smokeDeploymentRemaining = Math.max(0, ship.smokeDeploymentRemaining - dt);
+}
+
+export function isPointInSmoke(
+  state: Readonly<BattleState>,
+  point: Readonly<Vec3>,
+): boolean {
+  return state.smokeClouds.some((cloud) =>
+    cloud.expiresAt > state.time
+    && Math.hypot(point.x - cloud.position.x, point.z - cloud.position.z) <= cloud.radius);
+}
+
+function segmentIntersectsSmoke(
+  from: Readonly<Vec3>,
+  to: Readonly<Vec3>,
+  cloud: Readonly<BattleState["smokeClouds"][number]>,
+): boolean {
+  const dx = to.x - from.x;
+  const dz = to.z - from.z;
+  const lengthSquared = dx * dx + dz * dz;
+  const projection = lengthSquared <= 0.001
+    ? 0
+    : clamp(((cloud.position.x - from.x) * dx + (cloud.position.z - from.z) * dz) / lengthSquared, 0, 1);
+  const closestX = from.x + dx * projection;
+  const closestZ = from.z + dz * projection;
+  return Math.hypot(cloud.position.x - closestX, cloud.position.z - closestZ) <= cloud.radius;
+}
+
+export function isLineObscuredBySmoke(
+  state: Readonly<BattleState>,
+  from: Readonly<Vec3>,
+  to: Readonly<Vec3>,
+): boolean {
+  return state.smokeClouds.some((cloud) =>
+    cloud.expiresAt > state.time && segmentIntersectsSmoke(from, to, cloud));
 }
 
 export function torpedoInterceptPoint(
@@ -1586,6 +1668,23 @@ export function observe(state: BattleState, shipId: string) {
     const dx = target.position.x - self.position.x;
     const dz = target.position.z - self.position.z;
     const actualRange = Math.hypot(dx, dz);
+    const smokeBlocked = isLineObscuredBySmoke(state, self.position, target.position);
+    const targetInSmoke = isPointInSmoke(state, target.position);
+    const recentlyFiredMainGun = target.lastMainGunFiredAt !== undefined
+      && state.time - target.lastMainGunFiredAt <= SMOKE.firingBloomSeconds;
+    const smokeFiringReveal = targetInSmoke
+      && recentlyFiredMainGun
+      && actualRange <= SMOKE.firingDetectionMeters;
+    if (smokeBlocked && actualRange > SMOKE.guaranteedDetectionMeters) {
+      const separateSmokeWall = state.smokeClouds.some((cloud) =>
+        cloud.expiresAt > state.time
+        && segmentIntersectsSmoke(self.position, target.position, cloud)
+        && Math.hypot(
+          target.position.x - cloud.position.x,
+          target.position.z - cloud.position.z,
+        ) > cloud.radius);
+      if (!smokeFiringReveal || separateSmokeWall) continue;
+    }
     const detectionRange = SENSOR.maximumDetectionMeters
       + target.fireIntensity / 100 * SENSOR.burningDetectionBonusMeters
       + clamp(Math.abs(target.speedKnots) / SHIP.maxSpeedKnots, 0, 1)
@@ -1599,7 +1698,7 @@ export function observe(state: BattleState, shipId: string) {
     const detectionChance = 1 - rangeFactor * 0.72;
     if (
       actualRange > detectionRange
-      || (actualRange > SENSOR.guaranteedDetectionMeters
+      || (!smokeFiringReveal && actualRange > SENSOR.guaranteedDetectionMeters
         && sensorUnit(sampleSeed ^ stringSeed(target.id) ^ 0x91e10da5) > detectionChance)
     ) {
       continue;
@@ -1679,6 +1778,7 @@ export function stepSimulation(
   state.shots = [];
   state.impacts = [];
   state.time += dt;
+  state.smokeClouds = state.smokeClouds.filter((cloud) => cloud.expiresAt > state.time);
   for (const ship of state.ships) {
     if (ship.hull <= 0) continue;
     const command = commands.get(ship.id) ?? { ...zeroCommand, aimPoint: ship.aimPoint };
@@ -1699,6 +1799,7 @@ export function stepSimulation(
     ship.damageControlAllocation = damageControlAllocation;
     ship.hullRepairActive = damageControlAllocation.hull > 0;
     moveShip(ship, command, dt);
+    updateSmokeGenerator(state, ship, Boolean(command.activateSmoke), dt);
     repairModule(ship, damageControlAllocation.module, dt);
     updateDamageControl(ship, damageControlAllocation, dt);
     repairHull(ship, damageControlAllocation.hull, dt);

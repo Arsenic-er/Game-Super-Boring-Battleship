@@ -128,6 +128,11 @@ export interface ShipState {
   ammoType: AmmoType;
   fireIntensity: number;
   flooding: number;
+  smokeCharges: number;
+  smokeCooldownRemaining: number;
+  smokeDeploymentRemaining: number;
+  smokeNextPuffAt: number;
+  lastMainGunFiredAt?: number;
   damageControlPriority: DamageControlPriority;
   damageControlAllocation: DamageControlAllocation;
   damageControlModule?: ModuleId;
@@ -136,6 +141,16 @@ export interface ShipState {
   distanceTravelled: number;
   turnRateRadians: number;
   isTestTarget?: boolean;
+}
+
+export interface SmokeCloudState {
+  id: number;
+  ownerId: string;
+  ownerTeam: Team;
+  position: Vec3;
+  radius: number;
+  spawnedAt: number;
+  expiresAt: number;
 }
 
 export interface ProjectileState {
@@ -215,6 +230,7 @@ export interface BattleState {
   projectiles: ProjectileState[];
   shots: ShotEvent[];
   impacts: ImpactEvent[];
+  smokeClouds: SmokeCloudState[];
   nextEntityId: number;
   randomSeed: number;
   collisionCooldowns: Record<string, number>;
@@ -231,6 +247,7 @@ export interface ControlCommand {
   damageControlPriority?: DamageControlPriority;
   ammoType?: AmmoType;
   torpedoSpread?: TorpedoSpreadMode;
+  activateSmoke?: boolean;
   perception?: PerceptionTelemetry;
 }
 

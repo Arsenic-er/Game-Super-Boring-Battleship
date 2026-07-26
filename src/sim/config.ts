@@ -47,6 +47,19 @@ export const SHIP = {
   maxHull: 1_000,
 } as const;
 
+export const SMOKE = {
+  charges: 2,
+  deploymentSeconds: 18,
+  puffIntervalSeconds: 2,
+  puffLifetimeSeconds: 65,
+  puffRadiusMeters: 110,
+  cooldownSeconds: 120,
+  guaranteedDetectionMeters: 650,
+  firingDetectionMeters: 2_300,
+  firingBloomSeconds: 12,
+  maximumClouds: 40,
+} as const;
+
 export const COMPARTMENT_MAX_HEALTH = {
   bow: 190,
   bridge: 150,

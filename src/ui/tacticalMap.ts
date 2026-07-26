@@ -133,6 +133,26 @@ function drawObjective(
   context.restore();
 }
 
+function drawSmoke(
+  context: CanvasRenderingContext2D,
+  state: BattleState,
+  project: (x: number, z: number) => MapPoint,
+  scale: number,
+): void {
+  context.save();
+  context.fillStyle = "rgba(172, 190, 188, .16)";
+  context.strokeStyle = "rgba(205, 220, 216, .34)";
+  context.lineWidth = 1;
+  for (const cloud of state.smokeClouds) {
+    const point = project(cloud.position.x, cloud.position.z);
+    context.beginPath();
+    context.arc(point.x, point.y, cloud.radius * scale, 0, Math.PI * 2);
+    context.fill();
+    context.stroke();
+  }
+  context.restore();
+}
+
 export class TacticalMap {
   private readonly minimap: HTMLCanvasElement;
   private readonly largeMap: HTMLCanvasElement;
@@ -266,6 +286,19 @@ export class TacticalMap {
       center.x,
       center.y,
     );
+    drawSmoke(
+      context,
+      state,
+      (x, z) => worldToHeadingUpMap(
+        x - player.position.x,
+        z - player.position.z,
+        player.heading,
+        scale,
+        center.x,
+        center.y,
+      ),
+      scale,
+    );
     drawObjective(context, state, objectivePoint, state.objective.radius * scale);
     const playerPoint = worldToHeadingUpMap(
       0,
@@ -323,6 +356,12 @@ export class TacticalMap {
       center.y - halfExtent * scale,
       halfExtent * 2 * scale,
       halfExtent * 2 * scale,
+    );
+    drawSmoke(
+      context,
+      state,
+      (x, z) => ({ x: center.x + x * scale, y: center.y - z * scale }),
+      scale,
     );
     drawObjective(
       context,

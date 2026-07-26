@@ -1,4 +1,4 @@
-import { GUN, KNOT_TO_MPS, SENSOR, TORPEDO } from "../sim/config";
+import { GUN, KNOT_TO_MPS, SENSOR, SMOKE, TORPEDO } from "../sim/config";
 import { getTorpedo } from "../ships/torpedoes";
 import {
   torpedoInterceptPoint,
@@ -82,6 +82,7 @@ export class RuleBasedAi implements Controller {
   private selectedAmmo: AmmoType = "he";
   private nextAmmoDecisionAt = 0;
   private nextTorpedoAt = 12;
+  private nextSmokeAt = 10;
   private torpedoEvasionReactionAt = Number.POSITIVE_INFINITY;
   private lastContact?: TrackEstimate;
   private lastContactSample = Number.NEGATIVE_INFINITY;
@@ -388,6 +389,19 @@ export class RuleBasedAi implements Controller {
       y: 3,
       z: observation.self.position.z + Math.cos(desiredHeading) * 1_000,
     };
+    const smokeNeeded = observation.self.smokeCharges > 0
+      && observation.self.smokeCooldownRemaining <= 0
+      && observation.self.smokeDeploymentRemaining <= 0
+      && (observation.contacts.length > 0 || observation.incomingTorpedoes.length > 0)
+      && (
+        observation.self.hull / observation.self.maxHull < 0.55
+        || observation.self.fireIntensity >= 25
+        || observation.self.flooding >= 25
+        || observation.incomingTorpedoes.length > 0
+      );
+    const activateSmoke = smokeNeeded && observation.time >= this.nextSmokeAt;
+    if (activateSmoke) this.nextSmokeAt = observation.time + SMOKE.cooldownSeconds + 12;
+    const suppressMainGun = activateSmoke || observation.self.smokeDeploymentRemaining > 0;
 
     return {
       throttle: damaged ? Math.min(tacticalThrottle, 0.52) : tacticalThrottle,
@@ -403,7 +417,10 @@ export class RuleBasedAi implements Controller {
       damageControlPriority: priority,
       repairHull,
       perception: perception.telemetry,
+      activateSmoke,
       fire: launchTorpedoes || (
+        !suppressMainGun
+          &&
         perception.mode === "tracking"
           && observation.time <= this.fireWindowUntil
           && range >= GUN.minAimRange
