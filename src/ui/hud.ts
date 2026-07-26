@@ -642,6 +642,8 @@ export class Hud {
       const launcherErrorDegrees = Math.abs(torpedoLauncherAlignmentError(player)) * 180 / Math.PI;
       const actualRelative = wrapAngle(player.torpedoLauncherHeading - player.heading);
       const actualSide = actualRelative < 0 ? "左舷" : "右舷";
+      const actualSectorAllowed = Math.abs(actualRelative) >= TORPEDO.minimumLaunchAngleRadians
+        && Math.abs(actualRelative) <= TORPEDO.maximumLaunchAngleRadians;
       const recentlyRejected = player.torpedoFireRejectedAt !== undefined
         && state.time - player.torpedoFireRejectedAt < 2.4;
       const rejectionLabels = {
@@ -660,8 +662,10 @@ export class Hud {
             ? "备雷耗尽 · 0 发"
             : !torpedoSolution.allowed
               ? "艏艉射界受阻"
-              : launcherErrorDegrees > TORPEDO.launcherFireToleranceRadians * 180 / Math.PI
-                ? `发射器转动中 · 偏差 ${launcherErrorDegrees.toFixed(1)}°`
+              : !actualSectorAllowed
+                ? "管架当前方向受舰体遮挡"
+                : launcherErrorDegrees > TORPEDO.launcherFireToleranceRadians * 180 / Math.PI
+                  ? `管架转动中 · 可按当前方向发射 · 偏差 ${launcherErrorDegrees.toFixed(1)}°`
                 : `${actualSide}就绪 · 2 发 · 备 ${player.torpedoReserveSalvos} 组`;
       if (recentlyRejected && player.torpedoFireRejectReason) {
         this.reload.textContent = `${rejectionLabels[player.torpedoFireRejectReason]} · ${this.reload.textContent}`;
@@ -675,7 +679,7 @@ export class Hud {
       this.scopeReload.classList.toggle(
         "blocked",
         !torpedoSolution.allowed
-          || launcherErrorDegrees > TORPEDO.launcherFireToleranceRadians * 180 / Math.PI
+          || !actualSectorAllowed
           || player.torpedoReloadRemaining > 0
           || player.torpedoesLoaded <= 0,
       );

@@ -169,7 +169,7 @@ describe("deterministic battle simulation", () => {
     expect(player.torpedoReloadRemaining).toBe(0);
   });
 
-  it("traverses the physical launcher before allowing a salvo", () => {
+  it("fires along the physical launcher direction before target alignment", () => {
     const state = createInitialState(9601, "sea-trials");
     const player = state.ships[0]!;
     const aimX = player.position.x - 2_000;
@@ -179,16 +179,31 @@ describe("deterministic battle simulation", () => {
       weaponSlot: "torpedo",
     };
     stepSimulation(state, new Map([["player", command]]), FIXED_STEP);
-    expect(state.projectiles).toHaveLength(0);
-    expect(player.torpedoFireRejectReason).toBe("aligning");
+    const torpedoes = state.projectiles.filter((projectile) => projectile.kind === "torpedo");
+    expect(torpedoes).toHaveLength(2);
+    expect(player.torpedoFireRejectReason).toBeUndefined();
+    expect(Math.abs(torpedoLauncherAlignmentError(player)))
+      .toBeGreaterThan(TORPEDO.launcherFireToleranceRadians);
+    const meanDirection = Math.atan2(
+      torpedoes.reduce((sum, projectile) => sum + projectile.velocity.x, 0),
+      torpedoes.reduce((sum, projectile) => sum + projectile.velocity.z, 0),
+    );
+    expect(meanDirection).toBeCloseTo(player.torpedoLauncherHeading, 5);
+  });
 
-    const traverseOnly = { ...command, fire: false };
-    for (let tick = 0; tick < 500; tick += 1) {
-      stepSimulation(state, new Map([["player", traverseOnly]]), FIXED_STEP);
-    }
-    expect(torpedoLauncherAlignmentError(player)).toBeLessThanOrEqual(TORPEDO.launcherFireToleranceRadians);
-    stepSimulation(state, new Map([["player", command]]), FIXED_STEP);
-    expect(state.projectiles.filter((projectile) => projectile.kind === "torpedo")).toHaveLength(2);
+  it("blocks a salvo when the physical launcher still crosses the hull", () => {
+    const state = createInitialState(96011, "sea-trials");
+    const player = state.ships[0]!;
+    player.torpedoLauncherHeading = player.heading;
+    stepSimulation(state, new Map([["player", {
+      ...idle(player.position.x + 2_000, player.position.z),
+      fire: true,
+      weaponSlot: "torpedo",
+    }]]), FIXED_STEP);
+    expect(state.projectiles).toHaveLength(0);
+    expect(player.torpedoFireRejectReason).toBe("sector");
+    expect(player.torpedoReloadRemaining).toBe(0);
+    expect(player.torpedoesLoaded).toBe(2);
   });
 
   it("carries one loaded salvo and two finite reserve salvos", () => {

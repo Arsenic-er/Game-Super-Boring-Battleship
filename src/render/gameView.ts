@@ -39,7 +39,13 @@ import {
   createTorpedoLauncherVisual,
 } from "./shipGeometry";
 import { createPixelShipPalette } from "./shipMaterials";
-import { createPixelOceanSurface, createPixelSkyMaterial } from "./environmentMaterials";
+import {
+  applyWaterAtmosphere,
+  createDeepWaterMaterial,
+  createPixelOceanSurface,
+  createPixelSkyMaterial,
+  WATER_RENDER,
+} from "./environmentMaterials";
 import { createPixelVfxMaterial } from "./vfxMaterials";
 import type { PixelVfxKind } from "./vfxMaterials";
 import type { AimProvider } from "../controllers/playerInput";
@@ -88,6 +94,7 @@ interface TimedMesh {
   duration: number;
   velocity?: Vector3;
   gravity?: number;
+  spin?: Vector3;
   scaleFrom?: number;
   scaleTo?: number;
   poolKey?: string;
@@ -111,6 +118,8 @@ export class GameView implements AimProvider {
   readonly engine: Engine;
   readonly scene: Scene;
   private readonly camera: ArcRotateCamera;
+  private readonly ambientLight: HemisphericLight;
+  private readonly sunLight: DirectionalLight;
   private readonly ships = new Map<string, ShipVisual>();
   private readonly projectileMeshes = new Map<number, ProjectileVisual>();
   private readonly projectileTrails = new Map<number, ProjectileTrail>();
@@ -120,6 +129,7 @@ export class GameView implements AimProvider {
   private readonly sharedEffectMaterials = new Map<string, StandardMaterial>();
   private readonly sharedVfxMaterials = new Map<PixelVfxKind, StandardMaterial>();
   private readonly oceanTexture: Texture;
+  private readonly oceanBumpTexture: Texture;
   private readonly waveLayers: Mesh[];
   private readonly objectiveRing: Mesh;
   private readonly objectiveMaterial: StandardMaterial;
@@ -133,6 +143,7 @@ export class GameView implements AimProvider {
   private lastPointerX?: number;
   private lastPointerY?: number;
   private debugColliders = false;
+  private underwaterView = false;
   private quality: "low" | "medium" = "low";
 
   constructor(private readonly canvas: HTMLCanvasElement) {
@@ -149,19 +160,31 @@ export class GameView implements AimProvider {
     this.scene.fogEnd = 4_700;
     this.scene.fogColor = new Color3(0.36, 0.56, 0.66);
 
-    const ambient = new HemisphericLight("ambient", new Vector3(0, 1, 0), this.scene);
-    ambient.intensity = 0.78;
-    ambient.groundColor = new Color3(0.07, 0.13, 0.16);
-    const sun = new DirectionalLight("sun", new Vector3(-0.4, -1, 0.25), this.scene);
-    sun.intensity = 0.65;
+    this.ambientLight = new HemisphericLight("ambient", new Vector3(0, 1, 0), this.scene);
+    this.ambientLight.intensity = 0.78;
+    this.ambientLight.groundColor = new Color3(0.07, 0.13, 0.16);
+    this.sunLight = new DirectionalLight("sun", new Vector3(-0.4, -1, 0.25), this.scene);
+    this.sunLight.intensity = 0.65;
 
     const ocean = CreateGround("ocean", { width: 12_000, height: 12_000, subdivisions: 2 }, this.scene);
     const oceanSurface = createPixelOceanSurface(this.scene);
     this.oceanTexture = oceanSurface.texture;
+    this.oceanBumpTexture = oceanSurface.bumpTexture;
     ocean.material = oceanSurface.material;
-    ocean.position.y = -0.8;
+    ocean.position.y = WATER_RENDER.surfaceY;
     ocean.isPickable = false;
+    ocean.alphaIndex = 0;
     ocean.freezeWorldMatrix();
+
+    const deepWater = CreateGround("deep-water", {
+      width: 12_000,
+      height: 12_000,
+      subdivisions: 1,
+    }, this.scene);
+    deepWater.position.y = WATER_RENDER.deepWaterY;
+    deepWater.material = createDeepWaterMaterial(this.scene);
+    deepWater.isPickable = false;
+    deepWater.freezeWorldMatrix();
 
     this.objectiveRing = CreateTorus("objective-zone-a", {
       diameter: OBJECTIVE.radiusMeters * 2,
@@ -297,6 +320,43 @@ export class GameView implements AimProvider {
     return material;
   }
 
+  private smokeVolumeMaterial(): StandardMaterial {
+    const existing = this.sharedEffectMaterials.get("smoke-volume");
+    if (existing) return existing;
+    const material = new StandardMaterial("smoke-volume-material", this.scene);
+    material.diffuseColor = new Color3(0.16, 0.18, 0.18);
+    material.emissiveColor = new Color3(0.018, 0.022, 0.022);
+    material.specularColor = Color3.Black();
+    material.alpha = 0.38;
+    material.backFaceCulling = true;
+    material.disableDepthWrite = true;
+    this.sharedEffectMaterials.set("smoke-volume", material);
+    return material;
+  }
+
+  private createSmokeVolume(name: string, diameter: number): Mesh {
+    const mesh = CreateSphere(name, { diameter, segments: 5 }, this.scene);
+    mesh.material = this.smokeVolumeMaterial();
+    mesh.isPickable = false;
+    mesh.alphaIndex = 12;
+    return mesh;
+  }
+
+  private pooledSmokeVolume(poolKey: string, diameter: number): Mesh {
+    const pool = this.effectPools.get(poolKey) ?? [];
+    if (!this.effectPools.has(poolKey)) this.effectPools.set(poolKey, pool);
+    let mesh = pool.find((candidate) => !candidate.isEnabled());
+    if (!mesh) {
+      mesh = this.createSmokeVolume(`pooled-${poolKey}-${pool.length}`, diameter);
+      pool.push(mesh);
+    }
+    mesh.setEnabled(true);
+    mesh.visibility = 1;
+    mesh.scaling.setAll(1);
+    mesh.rotation.setAll(0);
+    return mesh;
+  }
+
   private pooledBillboard(
     poolKey: string,
     width: number,
@@ -358,6 +418,7 @@ export class GameView implements AimProvider {
     merged.name = name;
     merged.material = material;
     merged.isPickable = false;
+    merged.alphaIndex = 2;
     return merged;
   }
 
@@ -409,16 +470,12 @@ export class GameView implements AimProvider {
       return wake;
     });
 
-    const smokeMaterial = this.pixelVfxMaterial("smoke");
-    const smokePuffs = Array.from({ length: 3 }, (_, index) => {
-      const puff = CreatePlane(`${ship.id}-damage-smoke-${index}`, {
-        width: 8 + index * 1.6,
-        height: 10 + index * 2.2,
-      }, this.scene);
-      puff.billboardMode = Mesh.BILLBOARDMODE_ALL;
-      puff.isPickable = false;
-      puff.position.set((index - 1) * 1.2, 13 + index * 4.5, -5 + index * 1.8);
-      puff.material = smokeMaterial;
+    const smokePuffs = Array.from({ length: 4 }, (_, index) => {
+      const puff = this.createSmokeVolume(
+        `${ship.id}-damage-smoke-${index}`,
+        6.2 + index * 1.25,
+      );
+      puff.position.set((index - 1.5) * 1.15, 12.5 + index * 3.9, -6 + index * 2.4);
       puff.visibility = 0;
       puff.parent = root;
       return puff;
@@ -593,9 +650,18 @@ export class GameView implements AimProvider {
       for (const [index, smoke] of visual.smokePuffs.entries()) {
         const drift = Math.sin(state.time * (0.65 + index * 0.08) + index * 1.9);
         smoke.visibility = ship.hull > 0 ? fireRatio * (0.42 + index * 0.12) : 0;
-        smoke.scaling.setAll(0.45 + fireRatio * (0.72 + index * 0.24));
-        smoke.position.x = (index - 1) * 1.2 + drift * (0.7 + index * 0.35);
-        smoke.position.y = 13 + index * 4.5 + Math.sin(state.time * 1.1 + index) * 1.1;
+        const smokeScale = 0.4 + fireRatio * (0.68 + index * 0.18);
+        smoke.scaling.set(
+          smokeScale * (1.05 + index * 0.06),
+          smokeScale * (0.78 + index * 0.05),
+          smokeScale * (0.9 + (index % 2) * 0.12),
+        );
+        smoke.position.x = (index - 1.5) * 1.15 + drift * (0.7 + index * 0.28);
+        smoke.position.y = 12.5 + index * 3.9 + Math.sin(state.time * 1.1 + index) * 1.1;
+        smoke.position.z = -6 + index * 2.4 + Math.cos(state.time * 0.47 + index) * 0.8;
+        smoke.rotation.x = state.time * (0.08 + index * 0.013);
+        smoke.rotation.y = state.time * (0.11 + index * 0.017);
+        smoke.rotation.z = state.time * (0.06 + index * 0.009);
       }
       for (const [index, flame] of visual.fireFlames.entries()) {
         const flicker = 0.78 + Math.sin(state.time * (8.5 + index) + index * 2.2) * 0.18;
@@ -747,35 +813,43 @@ export class GameView implements AimProvider {
       visual.root.dispose(false, true);
       this.smokeCloudMeshes.delete(id);
     }
-    const material = this.pixelVfxMaterial("smoke");
     for (const cloud of state.smokeClouds) {
       let visual = this.smokeCloudMeshes.get(cloud.id);
       if (!visual) {
         const root = new TransformNode(`smoke-screen-${cloud.id}`, this.scene);
         root.position.set(cloud.position.x, 0, cloud.position.z);
-        const lobeSpecs = [
-          { x: -0.2, y: 8, z: 0.02, scale: 0.28 },
-          { x: 0.16, y: 10, z: -0.08, scale: 0.25 },
-          { x: 0.02, y: 7, z: 0.2, scale: 0.24 },
-        ];
+        const lobeSpecs = this.quality === "low"
+          ? [
+            { x: -0.15, y: 9, z: -0.06, sx: 0.3, sy: 0.18, sz: 0.24 },
+            { x: 0.17, y: 11, z: 0.12, sx: 0.27, sy: 0.21, sz: 0.3 },
+          ]
+          : [
+            { x: -0.22, y: 8, z: -0.08, sx: 0.25, sy: 0.17, sz: 0.22 },
+            { x: 0.18, y: 10, z: -0.12, sx: 0.24, sy: 0.2, sz: 0.27 },
+            { x: -0.02, y: 7, z: 0.22, sx: 0.28, sy: 0.16, sz: 0.23 },
+            { x: 0.04, y: 13, z: 0.08, sx: 0.2, sy: 0.22, sz: 0.2 },
+          ];
         const lobes = lobeSpecs.map((spec, index) => {
-          const lobe = CreatePlane(`smoke-screen-${cloud.id}-${index}`, {
-            width: 2,
-            height: 2,
-          }, this.scene);
-          lobe.billboardMode = Mesh.BILLBOARDMODE_ALL;
-          lobe.isPickable = false;
-          lobe.material = material;
+          const lobe = this.createSmokeVolume(`smoke-screen-${cloud.id}-${index}`, 2);
           lobe.parent = root;
           lobe.position.set(cloud.radius * spec.x, spec.y, cloud.radius * spec.z);
-          lobe.scaling.set(cloud.radius * spec.scale, 8 + index * 1.7, 1);
+          lobe.scaling.set(
+            cloud.radius * spec.sx,
+            cloud.radius * spec.sy,
+            cloud.radius * spec.sz,
+          );
+          lobe.rotation.set(index * 0.73, index * 1.17, index * 0.41);
           return lobe;
         });
         visual = { root, lobes };
         this.smokeCloudMeshes.set(cloud.id, visual);
       }
       const life = Math.max(0, (cloud.expiresAt - state.time) / Math.max(1, cloud.expiresAt - cloud.spawnedAt));
-      for (const lobe of visual.lobes) lobe.visibility = Math.min(0.72, life * 2.8);
+      for (const [index, lobe] of visual.lobes.entries()) {
+        lobe.visibility = Math.min(0.68, life * 2.5);
+        lobe.rotation.y += 0.0015 * (index + 1);
+        lobe.rotation.z += 0.0007 * (index + 1);
+      }
       visual.root.rotation.y = cloud.id * 0.71 + state.time * 0.015;
     }
   }
@@ -946,20 +1020,16 @@ export class GameView implements AimProvider {
         scaleFrom: 0.4,
         scaleTo: 1.2,
       });
-      const smoke = this.pooledBillboard(
-        "muzzle-smoke",
-        5.5,
-        5.5,
-        this.pixelVfxMaterial("smoke"),
-      );
+      const smoke = this.pooledSmokeVolume("muzzle-smoke-3d", 3.6);
       smoke.position.copyFrom(toVector(shot.position));
       this.effects.push({
         mesh: smoke,
-        poolKey: "muzzle-smoke",
+        poolKey: "muzzle-smoke-3d",
         remaining: 0.72,
         duration: 0.72,
         velocity: new Vector3(0, 3.8, 0),
         gravity: -0.5,
+        spin: new Vector3(0.52, 0.78, 0.34),
         scaleFrom: 0.45,
         scaleTo: 2.4,
       });
@@ -1143,6 +1213,7 @@ export class GameView implements AimProvider {
         effect.mesh.position.addInPlace(effect.velocity.scale(dt));
         effect.velocity.y -= (effect.gravity ?? 0) * dt;
       }
+      if (effect.spin) effect.mesh.rotation.addInPlace(effect.spin.scale(dt));
       const scaleFrom = effect.scaleFrom ?? 0.5;
       const scaleTo = effect.scaleTo ?? 2.3;
       effect.mesh.scaling.setAll(scaleFrom + (scaleTo - scaleFrom) * progress);
@@ -1164,6 +1235,8 @@ export class GameView implements AimProvider {
     const steppedTime = Math.floor(state.time * 6) / 6;
     this.oceanTexture.uOffset = steppedTime * 0.0018;
     this.oceanTexture.vOffset = steppedTime * -0.00115;
+    this.oceanBumpTexture.uOffset = steppedTime * 0.0021;
+    this.oceanBumpTexture.vOffset = steppedTime * -0.00135;
     this.syncShips(state, perceivedTarget);
     this.syncProjectiles(state, perceivedTarget);
     this.syncSmokeClouds(state);
@@ -1206,7 +1279,20 @@ export class GameView implements AimProvider {
       this.camera.radius += (targetRadius - this.camera.radius) * 0.14;
       this.camera.fov += ((this.aiming ? 0.44 : 0.8) - this.camera.fov) * 0.14;
     }
+    this.syncWaterAtmosphere();
     this.updateEffects(dt);
+  }
+
+  private syncWaterAtmosphere(): void {
+    const transitionY = this.underwaterView
+      ? WATER_RENDER.surfaceY + 0.15
+      : WATER_RENDER.surfaceY - 0.15;
+    const underwater = this.camera.globalPosition.y < transitionY;
+    if (underwater === this.underwaterView) return;
+    this.underwaterView = underwater;
+    applyWaterAtmosphere(this.scene, underwater);
+    this.ambientLight.intensity = underwater ? 0.35 : 0.78;
+    this.sunLight.intensity = underwater ? 0.15 : 0.65;
   }
 
   resetTransient(): void {

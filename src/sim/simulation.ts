@@ -746,8 +746,16 @@ function fireTorpedoes(state: BattleState, ship: ShipState): void {
     rejectTorpedoFire(state, ship, "sector");
     return;
   }
-  if (Math.abs(torpedoLauncherAlignmentError(ship)) > TORPEDO.launcherFireToleranceRadians) {
-    rejectTorpedoFire(state, ship, "aligning");
+  const actualRelativeHeading = Math.abs(wrapAngle(
+    ship.torpedoLauncherHeading - ship.heading,
+  ));
+  if (
+    actualRelativeHeading < TORPEDO.minimumLaunchAngleRadians
+    || actualRelativeHeading > TORPEDO.maximumLaunchAngleRadians
+  ) {
+    // The player may fire before the launcher reaches the requested bearing, but
+    // never allow a physical tube direction that would pass through the hull.
+    rejectTorpedoFire(state, ship, "sector");
     return;
   }
   ship.torpedoFireRejectReason = undefined;
