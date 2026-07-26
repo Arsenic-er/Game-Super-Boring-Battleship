@@ -173,6 +173,7 @@ export function battleStateFingerprint(state: BattleState): string {
         speedKnots: round(ship.speedKnots),
         hull: round(ship.hull),
         ammoType: ship.ammoType,
+        pendingAmmoType: ship.pendingAmmoType ?? null,
         torpedoId: ship.torpedoId,
         recoverableHull: round(ship.recoverableHull),
         compartments: Object.fromEntries(
@@ -231,9 +232,18 @@ export function runHeadlessBattle(
   maximumSeconds = 10 * 60,
 ): BattleTelemetry {
   const state = createInitialState(seed, "battle");
+  const firstControllerSeed = (seed ^ 0x51f15e) >>> 0;
+  const secondControllerSeed = (seed ^ 0xa11ce) >>> 0;
+  // Alternate controller seeds between map spawns so a persistent personality
+  // advantage is not misreported as a hull, ammo or objective imbalance.
+  const swapControllerSeeds = (seed & 1) === 0;
   const controllers = {
-    player: new RuleBasedAi((seed ^ 0x51f15e) >>> 0),
-    enemy: new RuleBasedAi((seed ^ 0xa11ce) >>> 0),
+    player: new RuleBasedAi(
+      swapControllerSeeds ? secondControllerSeed : firstControllerSeed,
+    ),
+    enemy: new RuleBasedAi(
+      swapControllerSeeds ? firstControllerSeed : secondControllerSeed,
+    ),
   };
   const metrics: Record<Team, TeamCombatMetrics> = {
     player: emptyTeamMetrics(),

@@ -412,6 +412,9 @@ export class Hud {
   ): void {
     const player = state.ships.find((ship) => ship.team === "player");
     if (!player) return;
+    const shellSelection = player.pendingAmmoType
+      ? `${ammoLabels[player.ammoType]} → ${ammoLabels[player.pendingAmmoType]}`
+      : ammoLabels[player.ammoType];
     const torpedoDefinition = getTorpedo(player.torpedoId);
     const torpedoThreats = torpedoThreatsFor(state, player.id);
     const nearestTorpedo = torpedoThreats[0];
@@ -544,7 +547,9 @@ export class Hud {
             : "备雷耗尽";
       } else if (button.dataset.weapon === "mainGun") {
         const small = button.querySelector("small");
-        if (small) small.textContent = `${ammoLabels[player.ammoType]} · Q 切换`;
+        if (small) small.textContent = player.pendingAmmoType
+          ? `${shellSelection} · 正在切换`
+          : `${shellSelection} · Q 切换`;
       }
     }
 
@@ -552,7 +557,9 @@ export class Hud {
     const relativeBearing = wrapAngle(aimBearing - player.heading) * 180 / Math.PI;
     this.aimReadout.textContent = `相对方位 ${relativeBearing >= 0 ? "+" : ""}${relativeBearing.toFixed(1)}° · ${Math.round(aimRange).toLocaleString("zh-CN")} m`;
     const gunDefinition = getMainGun(player.mainGunId);
-    this.reloadLabel.textContent = `${ammoLabels[player.ammoType]} · ${gunDefinition.shortLabel}`;
+    this.reloadLabel.textContent = player.pendingAmmoType
+      ? `已装 ${ammoLabels[player.ammoType]} · 待装 ${ammoLabels[player.pendingAmmoType]}`
+      : `${ammoLabels[player.ammoType]} 已装填 · ${gunDefinition.shortLabel}`;
     const velocity = ballisticVelocity(
       { x: 0, y: GUN.muzzleHeight, z: 0 },
       { x: 0, y: 1.5, z: aimRange },
@@ -576,7 +583,7 @@ export class Hud {
     this.reload.textContent = player.modules.gun.health <= 0
       ? "已摧毁 · 0%"
       : player.reloadRemaining > 0
-        ? `装填 ${reloadPercent}% · ${player.reloadRemaining.toFixed(1)} s${fireBlocked ? " · 射界受阻" : ""}`
+        ? `装填 ${reloadPercent}% · ${player.reloadRemaining.toFixed(1)} s${player.pendingAmmoType ? ` · 切换至 ${ammoLabels[player.pendingAmmoType]}` : ""}${fireBlocked ? " · 射界受阻" : ""}`
         : fireBlocked
           ? "射界受阻 · 禁止开火"
           : `火炮就绪 · 100%${traverseError > 2.5 ? ` · 炮管差 ${traverseError.toFixed(1)}°` : ""}`;
@@ -600,7 +607,7 @@ export class Hud {
         : `最后已知 ${Math.round(perceivedRange / 100) * 100} m`;
     this.scopeFlightTime.textContent = this.flightTime.textContent ?? "--";
     this.scopeDispersion.textContent = `纵±${Math.round(spread.longitudinal)} 横±${Math.round(spread.lateral)} m`;
-    this.scopeGun.textContent = `${ammoLabels[player.ammoType]} · ${gunDefinition.name}`;
+    this.scopeGun.textContent = `${shellSelection} · ${gunDefinition.name}`;
     this.scopeReload.textContent = this.reload.textContent ?? "--";
     this.scopeReload.classList.toggle("blocked", fireBlocked);
     const torpedoSolution = torpedoLaunchSolution(

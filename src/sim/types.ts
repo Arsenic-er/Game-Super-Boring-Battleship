@@ -125,7 +125,10 @@ export interface ShipState {
   torpedoFireRejectedAt?: number;
   torpedoSpreadMode: TorpedoSpreadMode;
   aimPoint: Vec3;
+  /** Shell currently inside the gun breech and used by the next salvo. */
   ammoType: AmmoType;
+  /** Player/AI selection waiting for the current reload cycle to finish. */
+  pendingAmmoType?: AmmoType;
   fireIntensity: number;
   flooding: number;
   smokeCharges: number;

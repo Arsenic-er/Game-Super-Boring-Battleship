@@ -288,6 +288,9 @@ export class DeveloperPanel {
     ship.smokeCharges = SMOKE.charges;
     ship.smokeCooldownRemaining = 0;
     ship.smokeDeploymentRemaining = 0;
+    ship.ammoType = "he";
+    ship.pendingAmmoType = undefined;
+    ship.reloadRemaining = 0;
     ship.torpedoesLoaded = 2;
     ship.torpedoReserveSalvos = torpedo.reserveSalvos;
     ship.torpedoReloadRemaining = 0;

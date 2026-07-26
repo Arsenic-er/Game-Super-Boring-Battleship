@@ -285,8 +285,14 @@ function moveShip(ship: ShipState, command: ControlCommand, dt: number): void {
   ship.rudderCommand = clamp(command.rudder, -1, 1);
   ship.aimPoint = copyVec(command.aimPoint);
 
-  if (command.ammoType && command.ammoType !== ship.ammoType) {
-    ship.ammoType = command.ammoType;
+  if (command.ammoType === ship.ammoType && ship.pendingAmmoType) {
+    ship.pendingAmmoType = undefined;
+  } else if (
+    command.ammoType
+    && command.ammoType !== ship.ammoType
+    && command.ammoType !== ship.pendingAmmoType
+  ) {
+    ship.pendingAmmoType = command.ammoType;
     const gunDefinition = getMainGun(ship.mainGunId);
     const gunRatio = Math.max(0.25, moduleRatio(ship, "gun"));
     ship.reloadRemaining = Math.max(
@@ -352,6 +358,10 @@ function moveShip(ship: ShipState, command: ControlCommand, dt: number): void {
       + clamp(launcherError, -launcherRate * dt, launcherRate * dt),
   );
   ship.reloadRemaining = Math.max(0, ship.reloadRemaining - dt);
+  if (ship.reloadRemaining <= 0 && ship.pendingAmmoType) {
+    ship.ammoType = ship.pendingAmmoType;
+    ship.pendingAmmoType = undefined;
+  }
   if (ship.torpedoReloadRemaining > 0 && tubeRatio > 0) {
     ship.torpedoReloadRemaining = Math.max(
       0,
@@ -932,11 +942,11 @@ export function resolveArmorInteraction(
   armorThicknessMm: number,
   impactAngleDegrees: number,
   flightSeconds: number,
+  internalPathMeters = Number.POSITIVE_INFINITY,
+  ricochetRoll = 0.5,
 ): ArmorResolution {
   const safeArmor = Math.max(0.1, armorThicknessMm);
   const safeAngle = clamp(impactAngleDegrees, 0, 89.9);
-  const cosine = Math.max(0.08, Math.cos(safeAngle * Math.PI / 180));
-  const effectiveArmorMm = safeArmor / cosine;
 
   if (ammoType === "he") {
     const penetrationMm = AMMUNITION.he.penetrationMm;
@@ -948,9 +958,12 @@ export function resolveArmorInteraction(
       damageMultiplier: penetrated
         ? AMMUNITION.he.penetrationDamageMultiplier
         : AMMUNITION.he.shatterDamageMultiplier,
-      moduleDamageMultiplier: penetrated ? AMMUNITION.he.moduleDamageMultiplier : 0.3,
-      fireChanceMultiplier: penetrated ? 1 : 0.35,
-      floodingChanceMultiplier: penetrated ? 0.7 : 0.1,
+      moduleDamageMultiplier: penetrated
+        ? AMMUNITION.he.moduleDamageMultiplier
+        : AMMUNITION.he.shatterModuleDamageMultiplier,
+      fireChanceMultiplier: AMMUNITION.he.baseFireChanceMultiplier
+        * (penetrated ? 1 : 0.55),
+      floodingChanceMultiplier: 0,
     };
   }
 
@@ -959,7 +972,17 @@ export function resolveArmorInteraction(
     AMMUNITION.ap.muzzlePenetrationMm
       - Math.max(0, flightSeconds) * AMMUNITION.ap.penetrationLossMmPerSecond,
   );
-  if (safeAngle >= AMMUNITION.ap.ricochetDegrees) {
+  const overmatched = safeArmor <= AMMUNITION.ap.overmatchArmorMm;
+  const ricochetChance = safeAngle <= AMMUNITION.ap.ricochetStartDegrees
+    ? 0
+    : safeAngle >= AMMUNITION.ap.ricochetGuaranteedDegrees
+      ? 1
+      : (safeAngle - AMMUNITION.ap.ricochetStartDegrees)
+        / (AMMUNITION.ap.ricochetGuaranteedDegrees - AMMUNITION.ap.ricochetStartDegrees);
+  const normalizedAngle = Math.max(0, safeAngle - AMMUNITION.ap.normalizationDegrees);
+  const cosine = Math.max(0.08, Math.cos(normalizedAngle * Math.PI / 180));
+  const effectiveArmorMm = safeArmor / cosine;
+  if (!overmatched && ricochetRoll < ricochetChance) {
     return {
       result: "ricochet",
       penetrationMm,
@@ -981,8 +1004,8 @@ export function resolveArmorInteraction(
       floodingChanceMultiplier: 0,
     };
   }
-  const overpenetrated = penetrationMm / effectiveArmorMm
-    >= AMMUNITION.ap.overpenetrationRatio;
+  const overpenetrated = safeArmor < AMMUNITION.ap.fuseArmingArmorMm
+    || internalPathMeters < AMMUNITION.ap.fuseTravelMeters;
   return {
     result: overpenetrated ? "overpenetration" : "penetration",
     penetrationMm,
@@ -991,8 +1014,8 @@ export function resolveArmorInteraction(
       ? AMMUNITION.ap.overpenetrationDamageMultiplier
       : AMMUNITION.ap.penetrationDamageMultiplier,
     moduleDamageMultiplier: overpenetrated ? 0.16 : AMMUNITION.ap.moduleDamageMultiplier,
-    fireChanceMultiplier: overpenetrated ? 0.02 : 0.12,
-    floodingChanceMultiplier: overpenetrated ? 0.08 : 0.55,
+    fireChanceMultiplier: 0,
+    floodingChanceMultiplier: 0,
   };
 }
 
@@ -1064,6 +1087,40 @@ export function moduleForProjectileHit(
   return "steering";
 }
 
+function projectileInternalPathMeters(
+  projectile: ProjectileState,
+  contact: ProjectileHitContact,
+): number {
+  const speed = Math.max(
+    0.0001,
+    Math.hypot(projectile.velocity.x, projectile.velocity.y, projectile.velocity.z),
+  );
+  const normalLength = Math.max(
+    0.0001,
+    Math.hypot(contact.surfaceNormal.x, contact.surfaceNormal.y, contact.surfaceNormal.z),
+  );
+  const normalComponent = Math.max(0.2, Math.abs(
+    projectile.velocity.x / speed * contact.surfaceNormal.x / normalLength
+      + projectile.velocity.y / speed * contact.surfaceNormal.y / normalLength
+      + projectile.velocity.z / speed * contact.surfaceNormal.z / normalLength,
+  ));
+  const directPath = contact.armorZone === "side"
+    ? SHIP.beam
+    : contact.armorZone === "end"
+      ? SHIP.length * 0.42
+      : SHIP.deckHeight * 0.62;
+  return directPath / normalComponent;
+}
+
+export function compartmentSaturationMultiplier(
+  compartmentHealth: number,
+  compartmentMaxHealth: number,
+): number {
+  if (compartmentHealth <= 0) return 0.1;
+  if (compartmentHealth <= compartmentMaxHealth * 0.5) return 0.5;
+  return 1;
+}
+
 function applyHit(
   state: BattleState,
   projectile: ProjectileState,
@@ -1089,31 +1146,41 @@ function applyHit(
       armorThicknessMm,
       impactAngleDegrees,
       projectile.age,
+      projectileInternalPathMeters(projectile, contact),
+      random(state),
     );
   const compartmentHealth = ship.compartments[compartment];
+  const saturationMultiplier = projectile.kind === "shell"
+    && armor.result !== "overpenetration"
+    ? compartmentSaturationMultiplier(
+      compartmentHealth,
+      COMPARTMENT_MAX_HEALTH[compartment],
+    )
+    : 1;
   const damage = Math.min(
-    projectile.damage * armor.damageMultiplier,
+    projectile.damage * armor.damageMultiplier * saturationMultiplier,
     compartmentHealth + 30,
   );
   ship.compartments[compartment] = Math.max(0, compartmentHealth - damage * 0.72);
   applyHullDamage(ship, damage, 0.38);
-  const moduleHit = damage > 0.01 && armor.moduleDamageMultiplier > 0
+  const moduleBaseDamage = projectile.damage * 0.33 * armor.moduleDamageMultiplier;
+  const moduleHit = moduleBaseDamage > 0.01
     ? damageModule(
       state,
       ship,
       compartment,
-      damage * armor.moduleDamageMultiplier,
+      moduleBaseDamage,
       moduleForProjectileHit(compartment, contact.localPoint.height),
     )
     : undefined;
   const fireChance = compartment === "magazine" ? 0.48
     : compartment === "engineRoom" || compartment === "bridge" ? 0.34 : 0.2;
-  const floodChance = projectile.kind === "torpedo"
-    ? 0.55
-    : compartment === "bow" || compartment === "stern" ? 0.24 : 0.11;
-  const startedFire = damage > 0 && random(state) < fireChance * armor.fireChanceMultiplier;
-  const startedFlooding = damage > 0
-    && random(state) < floodChance * armor.floodingChanceMultiplier;
+  const startedFire = armor.fireChanceMultiplier > 0
+    && (projectile.kind === "torpedo" || projectile.ammoType === "he")
+    && random(state) < fireChance * armor.fireChanceMultiplier;
+  const startedFlooding = projectile.kind === "torpedo"
+    && damage > 0
+    && random(state) < 0.55 * armor.floodingChanceMultiplier;
   if (startedFire) ship.fireIntensity = clamp(ship.fireIntensity + 18 + random(state) * 28, 0, 100);
   if (startedFlooding) ship.flooding = clamp(
     ship.flooding + (projectile.kind === "torpedo" ? 38 : 14) + random(state) * 24,

@@ -140,19 +140,25 @@ export const ARMOR_THICKNESS_MM = {
 
 export const AMMUNITION = {
   he: {
-    penetrationMm: 22,
-    penetrationDamageMultiplier: 0.82,
-    shatterDamageMultiplier: 0.08,
+    penetrationMm: 21,
+    penetrationDamageMultiplier: 0.33,
+    shatterDamageMultiplier: 0,
     moduleDamageMultiplier: 1,
+    shatterModuleDamageMultiplier: 0.22,
+    baseFireChanceMultiplier: 0.22,
   },
   ap: {
     muzzlePenetrationMm: 72,
     minimumPenetrationMm: 42,
     penetrationLossMmPerSecond: 5,
-    ricochetDegrees: 68,
-    overpenetrationRatio: 3.6,
-    penetrationDamageMultiplier: 0.92,
-    overpenetrationDamageMultiplier: 0.22,
+    ricochetStartDegrees: 45,
+    ricochetGuaranteedDegrees: 60,
+    normalizationDegrees: 10,
+    overmatchArmorMm: 8.9,
+    fuseArmingArmorMm: 8,
+    fuseTravelMeters: 8.5,
+    penetrationDamageMultiplier: 0.33,
+    overpenetrationDamageMultiplier: 0.1,
     moduleDamageMultiplier: 0.58,
   },
 } as const;

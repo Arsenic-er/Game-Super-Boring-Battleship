@@ -21,6 +21,7 @@ This is an early prototype rather than a finished commercial game. Visuals, bala
 - Ten-minute player-vs-AI battles and an unlimited sea-trials mode.
 - Historically paced destroyer movement with gradual rudder shift, steering-damage response and speed loss during hard turns.
 - Main-gun ballistics with visible shell arcs, dispersion, reload progress and independent turret alignment.
+- Staged HE/AP loading with 21 mm HE penetration, probabilistic AP ricochet, fuse-based overpenetration and compartment saturation.
 - Weapon slots: `1` main guns, `2` twin torpedo launch, `3` reserved aircraft slot.
 - Torpedo side arcs, narrow/wide spread, arming distance, per-model maximum range, lead prediction and closest-approach warnings.
 - Four historical torpedo loadouts with distinct compressed gameplay trade-offs in speed, range, damage, reload, wake visibility and onboard risk.
@@ -112,6 +113,7 @@ Third-party libraries and the Fusion Pixel Font remain under their respective li
 - 接近现实节奏的驱逐舰航速、车钟和舵机操纵；转向模块受损会减慢实际舵速，持续大舵角会损失航速。
 - 可见炮弹轨迹、散布、装填进度、炮管实际指向与独立火控准线。
 - HE/AP 弹药切换、装甲入射角、跳弹、碎弹、正常穿透与过度穿透。
+- 弹种切换区分“当前已装填”和“待装填”；HE 固定穿深、AP 概率跳弹/引信过穿以及舱段饱和共同决定伤害。
 - 武器栏：`1` 主炮、`2` 双雷齐射、`3` 预留舰载机。
 - 鱼雷具有左右舷射界、窄/宽扇面、武装距离、型号独立最大射程、提前量预测线与最近通过距离警报。
 - 四种历史鱼雷组件拥有独立的航速、射程、装药、装填、尾迹可见性与舰上风险取舍，并从船坞配装真实继承到战斗。

@@ -28,6 +28,25 @@ const wrapAngle = (angle: number): number => {
 const clamp = (value: number, min: number, max: number): number =>
   Math.min(max, Math.max(min, value));
 
+/**
+ * Uses AP against a close, exposed broadside and HE against angled or distant
+ * destroyers. Separate enter/exit thresholds prevent repeated shell swapping.
+ */
+export function recommendedAmmoForTarget(
+  rangeMeters: number,
+  bearingFromShooter: number,
+  targetHeading: number,
+  currentAmmo: AmmoType,
+): AmmoType {
+  const broadsideExposure = Math.abs(Math.sin(
+    wrapAngle(targetHeading - bearingFromShooter),
+  ));
+  if (currentAmmo === "ap") {
+    return rangeMeters <= 3_000 && broadsideExposure >= 0.55 ? "ap" : "he";
+  }
+  return rangeMeters <= 2_600 && broadsideExposure >= 0.72 ? "ap" : "he";
+}
+
 const repairableModuleDamage = (observation: Observation): number =>
   (Object.keys(observation.self.modules) as ModuleId[]).reduce((worst, id) => {
     const module = observation.self.modules[id];
@@ -316,13 +335,13 @@ export class RuleBasedAi implements Controller {
     if (perception.mode === "tracking" && target) {
       this.updateFireControl(observation, target, range);
       if (observation.time >= this.nextAmmoDecisionAt) {
-        const relativeTargetHeading = Math.abs(wrapAngle(target.heading - bearingToTarget));
-        const broadsideExposure = Math.abs(Math.sin(relativeTargetHeading));
-        this.selectedAmmo = range < 2_500
-          && broadsideExposure > 0.42
-          && broadsideExposure < 0.88
-          ? "ap" : "he";
-        this.nextAmmoDecisionAt = observation.time + 12 + this.random() * 8;
+        this.selectedAmmo = recommendedAmmoForTarget(
+          range,
+          bearingToTarget,
+          target.heading,
+          this.selectedAmmo,
+        );
+        this.nextAmmoDecisionAt = observation.time + 18 + this.random() * 8;
       }
     } else {
       this.fireWindowUntil = 0;
