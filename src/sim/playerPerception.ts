@@ -1,4 +1,4 @@
-import { KNOT_TO_MPS, SENSOR, TORPEDO } from "./config";
+import { KNOT_TO_MPS, SENSOR } from "./config";
 import type {
   GameMode,
   Observation,
@@ -8,6 +8,7 @@ import type {
   ShipState,
   Vec3,
 } from "./types";
+import { effectiveTorpedoDetectionRange } from "./detection";
 
 const clamp = (value: number, min: number, max: number): number =>
   Math.min(max, Math.max(min, value));
@@ -36,7 +37,7 @@ export function isProjectileVisibleToPlayer(
     projectile.position.z - player.position.z,
   );
   if (projectile.kind === "torpedo") {
-    return distance <= (projectile.detectionRange ?? TORPEDO.detectionRangeMeters);
+    return distance <= effectiveTorpedoDetectionRange(player, projectile);
   }
   return Boolean(target?.live) || distance <= 1_200;
 }

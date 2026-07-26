@@ -60,6 +60,14 @@ export const SMOKE = {
   maximumClouds: 40,
 } as const;
 
+export const HYDRO = {
+  charges: 2,
+  activeSeconds: 70,
+  cooldownSeconds: 130,
+  shipDetectionMeters: 2_000,
+  torpedoDetectionMeters: 1_400,
+} as const;
+
 export const COMPARTMENT_MAX_HEALTH = {
   bow: 190,
   bridge: 150,

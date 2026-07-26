@@ -193,6 +193,9 @@ export function battleStateFingerprint(state: BattleState): string {
         smokeCharges: ship.smokeCharges,
         smokeCooldownRemaining: round(ship.smokeCooldownRemaining),
         smokeDeploymentRemaining: round(ship.smokeDeploymentRemaining),
+        hydroCharges: ship.hydroCharges,
+        hydroCooldownRemaining: round(ship.hydroCooldownRemaining),
+        hydroActiveRemaining: round(ship.hydroActiveRemaining),
       })),
     smokeClouds: [...state.smokeClouds]
       .sort((left, right) => left.id - right.id)

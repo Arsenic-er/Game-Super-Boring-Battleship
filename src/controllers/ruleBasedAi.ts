@@ -1,4 +1,4 @@
-import { GUN, KNOT_TO_MPS, SENSOR, SMOKE, TORPEDO } from "../sim/config";
+import { GUN, HYDRO, KNOT_TO_MPS, SENSOR, SMOKE, TORPEDO } from "../sim/config";
 import { getTorpedo } from "../ships/torpedoes";
 import {
   torpedoInterceptPoint,
@@ -102,6 +102,7 @@ export class RuleBasedAi implements Controller {
   private nextAmmoDecisionAt = 0;
   private nextTorpedoAt = 12;
   private nextSmokeAt = 10;
+  private nextHydroAt = 15;
   private torpedoEvasionReactionAt = Number.POSITIVE_INFINITY;
   private lastContact?: TrackEstimate;
   private lastContactSample = Number.NEGATIVE_INFINITY;
@@ -420,6 +421,23 @@ export class RuleBasedAi implements Controller {
       );
     const activateSmoke = smokeNeeded && observation.time >= this.nextSmokeAt;
     if (activateSmoke) this.nextSmokeAt = observation.time + SMOKE.cooldownSeconds + 12;
+    const hydroThreat = observation.incomingTorpedoes.length > 0
+      || (
+        (perception.mode === "lost" || perception.mode === "searching")
+        && Boolean(target)
+        && range <= HYDRO.shipDetectionMeters + 250
+      );
+    const activateHydro = hydroThreat
+      && observation.self.hydroCharges > 0
+      && observation.self.hydroCooldownRemaining <= 0
+      && observation.self.hydroActiveRemaining <= 0
+      && observation.time >= this.nextHydroAt;
+    if (activateHydro) {
+      this.nextHydroAt = observation.time
+        + HYDRO.activeSeconds
+        + HYDRO.cooldownSeconds
+        + 5;
+    }
     const suppressMainGun = activateSmoke || observation.self.smokeDeploymentRemaining > 0;
 
     return {
@@ -437,6 +455,7 @@ export class RuleBasedAi implements Controller {
       repairHull,
       perception: perception.telemetry,
       activateSmoke,
+      activateHydro,
       fire: launchTorpedoes || (
         !suppressMainGun
           &&

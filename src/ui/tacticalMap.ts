@@ -1,4 +1,6 @@
 import type { BattleState, PlayerTargetView, ShipState } from "../sim/types";
+import { HYDRO } from "../sim/config";
+import { isProjectileVisibleToPlayer } from "../sim/playerPerception";
 
 export interface MapPoint {
   x: number;
@@ -149,6 +151,59 @@ function drawSmoke(
     context.arc(point.x, point.y, cloud.radius * scale, 0, Math.PI * 2);
     context.fill();
     context.stroke();
+  }
+  context.restore();
+}
+
+function drawHydroRange(
+  context: CanvasRenderingContext2D,
+  player: ShipState,
+  point: MapPoint,
+  scale: number,
+): void {
+  if (player.hydroActiveRemaining <= 0) return;
+  context.save();
+  context.strokeStyle = "rgba(84, 220, 232, .7)";
+  context.fillStyle = "rgba(84, 220, 232, .035)";
+  context.lineWidth = 1.35;
+  context.setLineDash([5, 4]);
+  context.beginPath();
+  context.arc(point.x, point.y, HYDRO.shipDetectionMeters * scale, 0, Math.PI * 2);
+  context.fill();
+  context.stroke();
+  context.restore();
+}
+
+function drawDetectedTorpedoes(
+  context: CanvasRenderingContext2D,
+  state: BattleState,
+  player: ShipState,
+  project: (x: number, z: number) => MapPoint,
+  headingOffset = 0,
+): void {
+  context.save();
+  context.fillStyle = "#74e9f0";
+  context.strokeStyle = "rgba(216, 255, 255, .92)";
+  context.lineWidth = 1;
+  for (const projectile of state.projectiles) {
+    if (
+      projectile.kind !== "torpedo"
+      || projectile.team === player.team
+      || !isProjectileVisibleToPlayer(projectile, player)
+    ) continue;
+    const point = project(projectile.position.x, projectile.position.z);
+    const heading = Math.atan2(projectile.velocity.x, projectile.velocity.z) - headingOffset;
+    context.save();
+    context.translate(point.x, point.y);
+    context.rotate(heading);
+    context.beginPath();
+    context.moveTo(0, -5);
+    context.lineTo(3.5, 4);
+    context.lineTo(-3.5, 4);
+    context.closePath();
+    context.fill();
+    context.stroke();
+    context.restore();
   }
   context.restore();
 }
@@ -308,7 +363,22 @@ export class TacticalMap {
       center.x,
       center.y,
     );
+    drawHydroRange(context, player, playerPoint, scale);
     drawShip(context, player, playerPoint, 0, true);
+    drawDetectedTorpedoes(
+      context,
+      state,
+      player,
+      (x, z) => worldToHeadingUpMap(
+        x - player.position.x,
+        z - player.position.z,
+        player.heading,
+        scale,
+        center.x,
+        center.y,
+      ),
+      player.heading,
+    );
     if (target) {
       const point = worldToHeadingUpMap(
         target.position.x - player.position.x,
@@ -378,7 +448,14 @@ export class TacticalMap {
         x: center.x + player.position.x * scale,
         y: center.y - player.position.z * scale,
       };
+      drawHydroRange(context, player, point, scale);
       drawShip(context, player, point, player.heading, true);
+      drawDetectedTorpedoes(
+        context,
+        state,
+        player,
+        (x, z) => ({ x: center.x + x * scale, y: center.y - z * scale }),
+      );
       context.fillStyle = "#b7ebce";
       context.fillText("本舰", point.x + 10, point.y - 8);
     }

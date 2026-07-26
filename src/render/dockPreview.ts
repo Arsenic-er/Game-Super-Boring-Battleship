@@ -13,7 +13,11 @@ import { getMainGun } from "../ships/components";
 import type { MainGunId } from "../ships/components";
 import { DEFAULT_TORPEDO_ID, getTorpedo } from "../ships/torpedoes";
 import type { TorpedoId } from "../ships/torpedoes";
-import { createDestroyerHull } from "./shipGeometry";
+import {
+  createDestroyerHull,
+  createDestroyerV2Superstructure,
+  DESTROYER_V2_HARDPOINTS,
+} from "./shipGeometry";
 
 export class DockPreview {
   private readonly engine: Engine;
@@ -71,44 +75,12 @@ export class DockPreview {
       deckMaterial,
     });
 
-    const bridgeLevels = [
-      { width: 9.5, height: 5.2, depth: 12, y: 7, z: 10 },
-      { width: 8.2, height: 4, depth: 9, y: 11.2, z: 12 },
-      { width: 6.8, height: 3, depth: 7, y: 14.6, z: 13 },
-    ];
-    for (const [index, spec] of bridgeLevels.entries()) {
-      const level = CreateBox(`dock-bridge-${index}`, spec, this.scene);
-      level.position.set(0, spec.y, spec.z);
-      level.material = bridgeMaterial;
-      level.parent = this.shipRoot;
-    }
-    for (const side of [-1, 1]) {
-      for (let index = 0; index < 3; index += 1) {
-        const window = CreateBox(`dock-window-${side}-${index}`, { width: 1.25, height: 0.65, depth: 0.25 }, this.scene);
-        window.position.set(side * (index - 1) * 2.1, 15, 16.6);
-        window.material = darkMaterial;
-        window.parent = this.shipRoot;
-      }
-    }
-    for (const z of [-8, -24]) {
-      const funnel = CreateCylinder(`dock-funnel-${z}`, { height: 11, diameterTop: 4.2, diameterBottom: 5.6, tessellation: 8 }, this.scene);
-      funnel.position.set(0, 10, z);
-      funnel.material = darkMaterial;
-      funnel.parent = this.shipRoot;
-    }
-    const mast = CreateCylinder("dock-mast", { height: 28, diameter: 0.65, tessellation: 6 }, this.scene);
-    mast.position.set(0, 23, 5);
-    mast.material = darkMaterial;
-    mast.parent = this.shipRoot;
-    const yard = CreateCylinder("dock-yard", { height: 15, diameter: 0.45, tessellation: 6 }, this.scene);
-    yard.rotation.z = Math.PI / 2;
-    yard.position.set(0, 28, 5);
-    yard.material = darkMaterial;
-    yard.parent = this.shipRoot;
-    const rearGun = CreateBox("dock-rear-gun", { width: 6.2, height: 3, depth: 6 }, this.scene);
-    rearGun.position.set(0, 6, -39);
-    rearGun.material = bridgeMaterial;
-    rearGun.parent = this.shipRoot;
+    createDestroyerV2Superstructure(this.scene, this.shipRoot, "dock", {
+      deck: deckMaterial,
+      structure: bridgeMaterial,
+      dark: darkMaterial,
+      accent: bridgeMaterial,
+    });
   }
 
   setMainGun(id: MainGunId): void {
@@ -117,7 +89,11 @@ export class DockPreview {
     const material = this.material("dock-gun-material", new Color3(0.42, 0.46, 0.42));
     const dark = this.material("dock-barrel-material", new Color3(0.1, 0.14, 0.14));
     this.turret = new TransformNode("dock-turret", this.scene);
-    this.turret.position.set(0, 6, 37);
+    this.turret.position.set(
+      DESTROYER_V2_HARDPOINTS.mainGun.x,
+      DESTROYER_V2_HARDPOINTS.mainGun.y,
+      DESTROYER_V2_HARDPOINTS.mainGun.z,
+    );
     this.turret.parent = this.shipRoot;
     const house = CreateBox("dock-gun-house", { width: definition.visual.houseWidth, height: 4, depth: 7 }, this.scene);
     house.material = material;
@@ -143,7 +119,11 @@ export class DockPreview {
         : new Color3(0.28, 0.34, 0.34),
     );
     this.torpedoLauncher = new TransformNode("dock-torpedo-launcher", this.scene);
-    this.torpedoLauncher.position.set(0, 5.4, -18);
+    this.torpedoLauncher.position.set(
+      DESTROYER_V2_HARDPOINTS.torpedoLauncher.x,
+      DESTROYER_V2_HARDPOINTS.torpedoLauncher.y,
+      DESTROYER_V2_HARDPOINTS.torpedoLauncher.z,
+    );
     this.torpedoLauncher.rotation.y = Math.PI / 2;
     this.torpedoLauncher.parent = this.shipRoot;
     const base = CreateCylinder("dock-torpedo-base", {

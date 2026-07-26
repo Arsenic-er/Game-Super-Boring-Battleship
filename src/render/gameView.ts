@@ -30,7 +30,11 @@ import {
 } from "../sim/simulation";
 import { getMainGun } from "../ships/components";
 import { getTorpedo } from "../ships/torpedoes";
-import { createDestroyerHull } from "./shipGeometry";
+import {
+  createDestroyerHull,
+  createDestroyerV2Superstructure,
+  DESTROYER_V2_HARDPOINTS,
+} from "./shipGeometry";
 import type { AimProvider } from "../controllers/playerInput";
 import type {
   BattleState,
@@ -330,76 +334,19 @@ export class GameView implements AimProvider {
       deckMaterial,
     });
 
-    const bridge = CreateBox(`${ship.id}-bridge`, {
-      width: 7.4,
-      height: 5.2,
-      depth: 13,
-    }, this.scene);
-    bridge.position.set(0, 7.9, 7);
-    bridge.material = deckMaterial;
-    bridge.parent = root;
-
-    const bridgeTop = CreateBox(`${ship.id}-bridge-top`, {
-      width: 6,
-      height: 2.3,
-      depth: 7.5,
-    }, this.scene);
-    bridgeTop.position.set(0, 11.5, 8.5);
-    bridgeTop.material = accentMaterial;
-    bridgeTop.parent = root;
-
-    const windows = CreateBox(`${ship.id}-bridge-windows`, {
-      width: 6.15,
-      height: 0.85,
-      depth: 5.6,
-    }, this.scene);
-    windows.position.set(0, 11.7, 10.1);
-    windows.material = darkMaterial;
-    windows.parent = root;
-
-    const funnel = CreateCylinder(`${ship.id}-funnel`, {
-      height: 9,
-      diameterTop: 3.2,
-      diameterBottom: 4.3,
-      tessellation: 8,
-    }, this.scene);
-    funnel.position.set(0, 10, -8);
-    funnel.rotation.x = -0.08;
-    funnel.material = darkMaterial;
-    funnel.parent = root;
-
-    const mast = CreateCylinder(`${ship.id}-mast`, {
-      height: 16,
-      diameter: 0.55,
-      tessellation: 6,
-    }, this.scene);
-    mast.position.set(0, 18, 4);
-    mast.material = darkMaterial;
-    mast.parent = root;
-
-    const yard = CreateBox(`${ship.id}-yard`, {
-      width: 10,
-      height: 0.35,
-      depth: 0.35,
-    }, this.scene);
-    yard.position.set(0, 20, 4);
-    yard.material = darkMaterial;
-    yard.parent = root;
-
-    for (const side of [-1, 1]) {
-      const boat = CreateCylinder(`${ship.id}-boat-${side}`, {
-        height: 8,
-        diameter: 2.1,
-        tessellation: 8,
-      }, this.scene);
-      boat.rotation.x = Math.PI / 2;
-      boat.position.set(side * 4.5, 6.2, -18);
-      boat.material = accentMaterial;
-      boat.parent = root;
-    }
+    createDestroyerV2Superstructure(this.scene, root, ship.id, {
+      deck: deckMaterial,
+      structure: deckMaterial,
+      dark: darkMaterial,
+      accent: accentMaterial,
+    });
 
     const turret = new TransformNode(`${ship.id}-turret`, this.scene);
-    turret.position.set(0, 6.6, 31);
+    turret.position.set(
+      DESTROYER_V2_HARDPOINTS.mainGun.x,
+      DESTROYER_V2_HARDPOINTS.mainGun.y,
+      DESTROYER_V2_HARDPOINTS.mainGun.z,
+    );
     turret.parent = root;
     const gunDefinition = getMainGun(ship.mainGunId);
     const mount = CreateCylinder(`${ship.id}-mount`, {
@@ -437,7 +384,11 @@ export class GameView implements AimProvider {
     }
 
     const torpedoLauncher = new TransformNode(`${ship.id}-torpedo-launcher`, this.scene);
-    torpedoLauncher.position.set(0, 6.05, -23);
+    torpedoLauncher.position.set(
+      DESTROYER_V2_HARDPOINTS.torpedoLauncher.x,
+      DESTROYER_V2_HARDPOINTS.torpedoLauncher.y,
+      DESTROYER_V2_HARDPOINTS.torpedoLauncher.z,
+    );
     torpedoLauncher.parent = root;
     const torpedoDefinition = getTorpedo(ship.torpedoId);
     const launcherBase = CreateCylinder(`${ship.id}-torpedo-launcher-base`, {

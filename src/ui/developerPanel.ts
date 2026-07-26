@@ -1,4 +1,4 @@
-import { COMPARTMENT_MAX_HEALTH, SMOKE } from "../sim/config";
+import { COMPARTMENT_MAX_HEALTH, HYDRO, SMOKE } from "../sim/config";
 import { torpedoLauncherAlignmentError } from "../sim/simulation";
 import type { BattleState, CompartmentId, ModuleId, ShipState } from "../sim/types";
 import { getTorpedo } from "../ships/torpedoes";
@@ -98,6 +98,9 @@ export class DeveloperPanel {
         <button data-action="smoke-deploy" type="button">立即施放烟幕</button>
         <button data-action="smoke-refill" type="button">补满烟幕次数</button>
         <button data-action="smoke-clear" type="button">清除全部烟幕</button>
+        <button data-action="hydro-activate" type="button">立即启动水听</button>
+        <button data-action="hydro-refill" type="button">补满水听次数</button>
+        <button data-action="hydro-stop" type="button">结束水听</button>
       </div>`;
     parent.append(this.element);
     const shipSelect = this.element.querySelector<HTMLSelectElement>('[data-role="ship"]');
@@ -215,6 +218,24 @@ export class DeveloperPanel {
       if (!ship) return;
       ship.smokeCharges = SMOKE.charges;
       ship.smokeCooldownRemaining = 0;
+    } else if (action === "hydro-activate") {
+      const ship = this.selectedShip();
+      if (!ship) return;
+      ship.hydroCharges = Math.max(1, ship.hydroCharges);
+      ship.hydroCooldownRemaining = 0;
+      ship.hydroActiveRemaining = HYDRO.activeSeconds;
+      delete state.sensorSnapshots[ship.id];
+    } else if (action === "hydro-refill") {
+      const ship = this.selectedShip();
+      if (!ship) return;
+      ship.hydroCharges = HYDRO.charges;
+      ship.hydroCooldownRemaining = 0;
+    } else if (action === "hydro-stop") {
+      const ship = this.selectedShip();
+      if (!ship) return;
+      ship.hydroActiveRemaining = 0;
+      ship.hydroCooldownRemaining = HYDRO.cooldownSeconds;
+      delete state.sensorSnapshots[ship.id];
     } else if (action === "torpedo-clear") {
       state.projectiles = state.projectiles.filter((projectile) => projectile.kind !== "torpedo");
     } else if (action === "torpedo-incoming") {
@@ -288,6 +309,9 @@ export class DeveloperPanel {
     ship.smokeCharges = SMOKE.charges;
     ship.smokeCooldownRemaining = 0;
     ship.smokeDeploymentRemaining = 0;
+    ship.hydroCharges = HYDRO.charges;
+    ship.hydroCooldownRemaining = 0;
+    ship.hydroActiveRemaining = 0;
     ship.ammoType = "he";
     ship.pendingAmmoType = undefined;
     ship.reloadRemaining = 0;
@@ -364,7 +388,7 @@ export class DeveloperPanel {
     if (!this.open) return;
     const ship = this.selectedShip();
     if (!ship) return;
-    this.live.textContent = `速度 ${ship.speedKnots.toFixed(1)} kn · 转向率 ${(ship.turnRateRadians * 180 / Math.PI).toFixed(2)}°/s · 坐标 ${ship.position.x.toFixed(0)}, ${ship.position.z.toFixed(0)}`;
+    this.live.textContent = `速度 ${ship.speedKnots.toFixed(1)} kn · 转向率 ${(ship.turnRateRadians * 180 / Math.PI).toFixed(2)}°/s · 坐标 ${ship.position.x.toFixed(0)}, ${ship.position.z.toFixed(0)} · 水听 ${ship.hydroActiveRemaining > 0 ? `启用 ${ship.hydroActiveRemaining.toFixed(1)}s` : ship.hydroCooldownRemaining > 0 ? `冷却 ${ship.hydroCooldownRemaining.toFixed(0)}s` : `就绪 ${ship.hydroCharges}`}`;
     const tubeRatio = ship.modules.torpedoTubes.health / ship.modules.torpedoTubes.maxHealth;
     const reloadEta = tubeRatio > 0 ? ship.torpedoReloadRemaining / tubeRatio : Number.POSITIVE_INFINITY;
     const relativeLauncher = ((ship.torpedoLauncherHeading - ship.heading) * 180 / Math.PI + 540) % 360 - 180;

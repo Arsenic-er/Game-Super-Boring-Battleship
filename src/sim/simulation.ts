@@ -10,6 +10,7 @@ import {
   FIXED_STEP,
   GUN,
   HULL_REPAIR,
+  HYDRO,
   KNOT_TO_MPS,
   MODULE_MAX_HEALTH,
   OBJECTIVE,
@@ -27,6 +28,7 @@ import {
 import type { MainGunId } from "../ships/components";
 import { DEFAULT_TORPEDO_ID, getTorpedo } from "../ships/torpedoes";
 import type { TorpedoId } from "../ships/torpedoes";
+import { effectiveTorpedoDetectionRange } from "./detection";
 import type {
   AmmoType,
   ArmorZoneId,
@@ -154,6 +156,9 @@ function createShip(
     smokeCooldownRemaining: 0,
     smokeDeploymentRemaining: 0,
     smokeNextPuffAt: 0,
+    hydroCharges: HYDRO.charges,
+    hydroCooldownRemaining: 0,
+    hydroActiveRemaining: 0,
     damageControlPriority: "balanced",
     damageControlAllocation: { fire: 0, flood: 0, module: 0, hull: 0 },
     hullRepairActive: false,
@@ -576,6 +581,36 @@ function updateSmokeGenerator(
     ship.smokeNextPuffAt += SMOKE.puffIntervalSeconds;
   }
   ship.smokeDeploymentRemaining = Math.max(0, ship.smokeDeploymentRemaining - dt);
+}
+
+function updateHydroacousticSearch(
+  state: BattleState,
+  ship: ShipState,
+  activate: boolean,
+  dt: number,
+): void {
+  const wasActive = ship.hydroActiveRemaining > 0;
+  let activated = false;
+  if (
+    activate
+    && ship.hydroCharges > 0
+    && ship.hydroCooldownRemaining <= 0
+    && ship.hydroActiveRemaining <= 0
+  ) {
+    ship.hydroCharges -= 1;
+    ship.hydroActiveRemaining = HYDRO.activeSeconds;
+    activated = true;
+  } else if (ship.hydroActiveRemaining <= 0) {
+    ship.hydroCooldownRemaining = Math.max(0, ship.hydroCooldownRemaining - dt);
+  }
+  if (ship.hydroActiveRemaining > 0) {
+    ship.hydroActiveRemaining = Math.max(0, ship.hydroActiveRemaining - dt);
+    if (wasActive && ship.hydroActiveRemaining <= 0) {
+      ship.hydroCooldownRemaining = HYDRO.cooldownSeconds;
+    }
+  }
+  const isActive = ship.hydroActiveRemaining > 0;
+  if (wasActive !== isActive || activated) delete state.sensorSnapshots[ship.id];
 }
 
 export function isPointInSmoke(
@@ -1664,7 +1699,7 @@ export function torpedoThreatsFor(
     .filter((projectile) => Math.hypot(
       projectile.position.x - ship.position.x,
       projectile.position.z - ship.position.z,
-    ) <= (projectile.detectionRange ?? TORPEDO.detectionRangeMeters))
+    ) <= effectiveTorpedoDetectionRange(ship, projectile))
     .map((projectile) => {
       const relativeX = projectile.position.x - ship.position.x;
       const relativeZ = projectile.position.z - ship.position.z;
@@ -1718,8 +1753,9 @@ export function observe(state: BattleState, shipId: string) {
     scores: { ...state.objective.scores },
   };
   const sampleIndex = Math.floor(state.time / SENSOR.observationIntervalSeconds);
+  const hydroActive = self.hydroActiveRemaining > 0;
   const cached = state.sensorSnapshots[shipId];
-  if (cached?.sampleIndex === sampleIndex) {
+  if (cached?.sampleIndex === sampleIndex && cached.hydroActive === hydroActive) {
     return {
       self,
       contacts: cached.contacts,
@@ -1735,6 +1771,7 @@ export function observe(state: BattleState, shipId: string) {
     const dx = target.position.x - self.position.x;
     const dz = target.position.z - self.position.z;
     const actualRange = Math.hypot(dx, dz);
+    const hydroDetected = hydroActive && actualRange <= HYDRO.shipDetectionMeters;
     const smokeBlocked = isLineObscuredBySmoke(state, self.position, target.position);
     const targetInSmoke = isPointInSmoke(state, target.position);
     const recentlyFiredMainGun = target.lastMainGunFiredAt !== undefined
@@ -1742,7 +1779,7 @@ export function observe(state: BattleState, shipId: string) {
     const smokeFiringReveal = targetInSmoke
       && recentlyFiredMainGun
       && actualRange <= SMOKE.firingDetectionMeters;
-    if (smokeBlocked && actualRange > SMOKE.guaranteedDetectionMeters) {
+    if (!hydroDetected && smokeBlocked && actualRange > SMOKE.guaranteedDetectionMeters) {
       const separateSmokeWall = state.smokeClouds.some((cloud) =>
         cloud.expiresAt > state.time
         && segmentIntersectsSmoke(self.position, target.position, cloud)
@@ -1756,7 +1793,7 @@ export function observe(state: BattleState, shipId: string) {
       + target.fireIntensity / 100 * SENSOR.burningDetectionBonusMeters
       + clamp(Math.abs(target.speedKnots) / SHIP.maxSpeedKnots, 0, 1)
         * SENSOR.highSpeedDetectionBonusMeters;
-    const rangeFactor = clamp(
+    const rangeFactor = hydroDetected ? 0 : clamp(
       (actualRange - SENSOR.guaranteedDetectionMeters)
         / Math.max(1, detectionRange - SENSOR.guaranteedDetectionMeters),
       0,
@@ -1764,13 +1801,14 @@ export function observe(state: BattleState, shipId: string) {
     );
     const detectionChance = 1 - rangeFactor * 0.72;
     if (
-      actualRange > detectionRange
+      (!hydroDetected && actualRange > detectionRange)
       || (!smokeFiringReveal && actualRange > SENSOR.guaranteedDetectionMeters
+        && !hydroDetected
         && sensorUnit(sampleSeed ^ stringSeed(target.id) ^ 0x91e10da5) > detectionChance)
     ) {
       continue;
     }
-    const confidence = clamp(
+    const confidence = hydroDetected ? 0.98 : clamp(
       0.94 - rangeFactor * 0.52 + target.fireIntensity / 100 * 0.08,
       0.3,
       0.98,
@@ -1826,7 +1864,7 @@ export function observe(state: BattleState, shipId: string) {
       ),
     });
   }
-  state.sensorSnapshots[shipId] = { sampleIndex, contacts };
+  state.sensorSnapshots[shipId] = { sampleIndex, hydroActive, contacts };
   return {
     self,
     contacts,
@@ -1867,6 +1905,7 @@ export function stepSimulation(
     ship.hullRepairActive = damageControlAllocation.hull > 0;
     moveShip(ship, command, dt);
     updateSmokeGenerator(state, ship, Boolean(command.activateSmoke), dt);
+    updateHydroacousticSearch(state, ship, Boolean(command.activateHydro), dt);
     repairModule(ship, damageControlAllocation.module, dt);
     updateDamageControl(ship, damageControlAllocation, dt);
     repairHull(ship, damageControlAllocation.hull, dt);

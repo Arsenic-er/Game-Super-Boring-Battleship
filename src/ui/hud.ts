@@ -1,4 +1,4 @@
-import { BATTLE_DURATION_SECONDS, GUN, OBJECTIVE, SMOKE, TORPEDO } from "../sim/config";
+import { BATTLE_DURATION_SECONDS, GUN, HYDRO, OBJECTIVE, SMOKE, TORPEDO } from "../sim/config";
 import {
   ballisticVelocity,
   dispersionAtRange,
@@ -103,6 +103,7 @@ export class Hud {
   private readonly telemetry: HTMLElement;
   private readonly damageState: HTMLElement;
   private readonly smokeStatus: HTMLElement;
+  private readonly hydroStatus: HTMLElement;
   private readonly damageControlPriority: HTMLElement;
   private readonly damageControlTasks: HTMLElement;
   private readonly aimReadout: HTMLElement;
@@ -167,6 +168,7 @@ export class Hud {
           <div id="repair-hint" class="repair-hint"><kbd>H</kbd> 按住持续抢修</div>
           <div id="damage-state" class="damage-state">损管正常</div>
           <div id="smoke-status" class="damage-state"><kbd>E</kbd> 烟幕就绪 · 2 次</div>
+          <div id="hydro-status" class="damage-state"><kbd>F</kbd> 水听就绪 · 2 次</div>
           <div class="damage-control">
             <div class="damage-control-heading">
               <span>损管人力调度</span>
@@ -240,7 +242,7 @@ export class Hud {
         <section class="controls panel">
           <span><kbd>W</kbd><kbd>S</kbd> 车钟</span><span><kbd>A</kbd><kbd>D</kbd> 舵</span><span><kbd>移动鼠标</kbd> 视角</span>
           <span><kbd>滚轮</kbd> 测距</span><span><kbd>R</kbd> 瞄准开关</span>
-          <span><kbd>Q</kbd> HE / AP</span><span><kbd>Space</kbd> 齐射</span><span><kbd>E</kbd> 烟幕</span><span><kbd>4</kbd> 损管优先</span><span><kbd>H</kbd> 舰体抢修</span><span><kbd>M</kbd> 地图</span><span><kbd>F3</kbd> 调试</span>
+          <span><kbd>Q</kbd> HE / AP</span><span><kbd>Space</kbd> 齐射</span><span><kbd>E</kbd> 烟幕</span><span><kbd>F</kbd> 水听</span><span><kbd>4</kbd> 损管优先</span><span><kbd>H</kbd> 舰体抢修</span><span><kbd>M</kbd> 地图</span><span><kbd>F3</kbd> 调试</span>
         </section>
         <section id="result" class="result-card" hidden>
           <p class="eyebrow">战斗结束</p><h1></h1><p id="result-detail"></p>
@@ -286,6 +288,7 @@ export class Hud {
     this.telemetry = find("#telemetry");
     this.damageState = find("#damage-state");
     this.smokeStatus = find("#smoke-status");
+    this.hydroStatus = find("#hydro-status");
     this.damageControlPriority = find("#damage-control-priority");
     this.damageControlTasks = find("#damage-control-tasks");
     this.aimReadout = find("#aim-readout");
@@ -489,6 +492,17 @@ export class Hud {
           ? `<kbd>E</kbd> 烟幕就绪 · ${player.smokeCharges} 次${smokeCovered ? " · 舰体已隐蔽" : ""}`
           : `<kbd>E</kbd> 烟幕耗尽${smokeCovered ? " · 舰体已隐蔽" : ""}`;
     this.smokeStatus.className = `damage-state${smokeCovered ? " active" : ""}`;
+    const hydroCooldownPercent = Math.round(
+      clamp(1 - player.hydroCooldownRemaining / HYDRO.cooldownSeconds, 0, 1) * 100,
+    );
+    this.hydroStatus.innerHTML = player.hydroActiveRemaining > 0
+      ? `<kbd>F</kbd> 水听搜索中 · ${player.hydroActiveRemaining.toFixed(1)} s · 舰 ${HYDRO.shipDetectionMeters / 1_000} km / 雷 ${HYDRO.torpedoDetectionMeters / 1_000} km`
+      : player.hydroCooldownRemaining > 0
+        ? `<kbd>F</kbd> 水听冷却 ${hydroCooldownPercent}% · ${player.hydroCooldownRemaining.toFixed(0)} s · 剩 ${player.hydroCharges}`
+        : player.hydroCharges > 0
+          ? `<kbd>F</kbd> 水听就绪 · ${player.hydroCharges} 次`
+          : `<kbd>F</kbd> 水听耗尽`;
+    this.hydroStatus.className = `damage-state${player.hydroActiveRemaining > 0 ? " active" : ""}`;
     this.damageControlPriority.innerHTML = `<kbd>4</kbd> ${damageControlPriorityLabels[player.damageControlPriority]}`;
     const repairModule = player.damageControlModule
       ? ` · ${moduleLabels[player.damageControlModule]}`

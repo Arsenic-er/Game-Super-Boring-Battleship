@@ -1,6 +1,8 @@
 import type { Material } from "@babylonjs/core/Materials/material";
 import { Mesh } from "@babylonjs/core/Meshes/mesh";
 import { VertexData } from "@babylonjs/core/Meshes/mesh.vertexData";
+import { CreateBox } from "@babylonjs/core/Meshes/Builders/boxBuilder.pure";
+import { CreateCylinder } from "@babylonjs/core/Meshes/Builders/cylinderBuilder.pure";
 import type { TransformNode } from "@babylonjs/core/Meshes/transformNode";
 import type { Scene } from "@babylonjs/core/scene";
 
@@ -37,6 +39,109 @@ export interface DestroyerHullSpec {
   beam: number;
   hullMaterial: Material;
   deckMaterial: Material;
+}
+
+export interface DestroyerV2Palette {
+  deck: Material;
+  structure: Material;
+  dark: Material;
+  accent: Material;
+}
+
+export const DESTROYER_V2_HARDPOINTS = {
+  mainGun: { x: 0, y: 6.6, z: 31 },
+  torpedoLauncher: { x: 0, y: 6.05, z: -21 },
+} as const;
+
+/** Shared modular WWII destroyer fittings used by both battle and dock views. */
+export function createDestroyerV2Superstructure(
+  scene: Scene,
+  parent: TransformNode,
+  name: string,
+  palette: DestroyerV2Palette,
+): void {
+  const box = (
+    suffix: string,
+    width: number,
+    height: number,
+    depth: number,
+    x: number,
+    y: number,
+    z: number,
+    material: Material,
+  ): Mesh => {
+    const mesh = CreateBox(`${name}-${suffix}`, { width, height, depth }, scene);
+    mesh.position.set(x, y, z);
+    mesh.material = material;
+    mesh.parent = parent;
+    return mesh;
+  };
+  const cylinder = (
+    suffix: string,
+    height: number,
+    top: number,
+    bottom: number,
+    x: number,
+    y: number,
+    z: number,
+    material: Material,
+    tessellation = 8,
+  ): Mesh => {
+    const mesh = CreateCylinder(`${name}-${suffix}`, {
+      height,
+      diameterTop: top,
+      diameterBottom: bottom,
+      tessellation,
+    }, scene);
+    mesh.position.set(x, y, z);
+    mesh.material = material;
+    mesh.parent = parent;
+    return mesh;
+  };
+
+  // A compact three-step bridge gives a readable destroyer silhouette without
+  // committing the component system to one imported mesh.
+  box("bridge-lower", 8.7, 4.5, 12.5, 0, 7.55, 8, palette.structure);
+  box("bridge-middle", 7.35, 3.25, 9.2, 0, 11.2, 9.7, palette.structure);
+  box("bridge-upper", 5.8, 2.25, 6.5, 0, 13.85, 11.1, palette.accent);
+  box("bridge-window-band", 5.95, 0.68, 6.62, 0, 14.12, 11.2, palette.dark);
+  for (const x of [-2.15, -0.72, 0.72, 2.15]) {
+    box(`bridge-window-${x}`, 1.02, 0.72, 0.18, x, 14.15, 14.55, palette.dark);
+  }
+  box("bridge-wing-port", 2.2, 0.55, 4.3, -4.45, 11.45, 10.2, palette.deck);
+  box("bridge-wing-starboard", 2.2, 0.55, 4.3, 4.45, 11.45, 10.2, palette.deck);
+
+  for (const [index, z] of [-7, -20].entries()) {
+    const funnel = cylinder(`funnel-${index}`, 9.2, 3.1, 4.5, 0, 10.2, z, palette.dark);
+    funnel.rotation.x = -0.1;
+    box(`funnel-cap-${index}`, 4.4, 0.55, 3.5, 0, 14.9, z - 0.45, palette.dark);
+  }
+
+  const mast = cylinder("foremast", 19, 0.48, 0.68, 0, 22, 3.5, palette.dark, 6);
+  mast.rotation.x = -0.04;
+  box("foremast-yard", 11.5, 0.38, 0.38, 0, 25.6, 3.15, palette.dark);
+  for (const side of [-1, 1]) {
+    const leg = cylinder(`tripod-leg-${side}`, 13.5, 0.34, 0.48, side * 2.2, 17.5, 1.3, palette.dark, 6);
+    leg.rotation.z = side * 0.17;
+  }
+
+  // Foredeck breakwater, stern machinery house and ventilation trunks add
+  // close-range detail while retaining a low mesh count.
+  for (const side of [-1, 1]) {
+    const breakwater = box(`breakwater-${side}`, 5.4, 1.25, 0.38, side * 2.05, 6.45, 23.4, palette.structure);
+    breakwater.rotation.y = side * 0.55;
+  }
+  box("stern-deckhouse", 7.2, 2.8, 9.5, 0, 6.55, -34, palette.structure);
+  for (const x of [-2.3, 2.3]) {
+    cylinder(`stern-vent-${x}`, 3.4, 1, 1.35, x, 8.8, -30.5, palette.dark, 8);
+  }
+
+  for (const side of [-1, 1]) {
+    const boat = cylinder(`lifeboat-${side}`, 7.8, 1.9, 1.9, side * 4.1, 6.8, -14, palette.accent, 8);
+    boat.rotation.x = Math.PI / 2;
+    box(`boat-rack-${side}`, 1.1, 0.45, 8.4, side * 4.1, 5.95, -14, palette.dark);
+    box(`boat-davit-${side}`, 0.42, 4.2, 0.42, side * 5, 8, -14, palette.dark);
+  }
 }
 
 /** A low-cost multi-station hull with a continuous sheer line and underwater chine. */

@@ -58,6 +58,7 @@ export interface SensorContact {
 
 export interface SensorSnapshot {
   sampleIndex: number;
+  hydroActive: boolean;
   contacts: SensorContact[];
 }
 
@@ -135,6 +136,9 @@ export interface ShipState {
   smokeCooldownRemaining: number;
   smokeDeploymentRemaining: number;
   smokeNextPuffAt: number;
+  hydroCharges: number;
+  hydroCooldownRemaining: number;
+  hydroActiveRemaining: number;
   lastMainGunFiredAt?: number;
   damageControlPriority: DamageControlPriority;
   damageControlAllocation: DamageControlAllocation;
@@ -251,6 +255,7 @@ export interface ControlCommand {
   ammoType?: AmmoType;
   torpedoSpread?: TorpedoSpreadMode;
   activateSmoke?: boolean;
+  activateHydro?: boolean;
   perception?: PerceptionTelemetry;
 }
 
