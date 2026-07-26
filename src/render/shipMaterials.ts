@@ -11,7 +11,7 @@ export interface PixelShipPalette {
   accent: StandardMaterial;
 }
 
-const ATLAS_URL = "/assets/textures/ww2-destroyer-pixel-atlas.png";
+const ATLAS_URL = `${import.meta.env.BASE_URL}assets/textures/ww2-destroyer-pixel-atlas.png`;
 
 function atlasRegion(
   scene: Scene,

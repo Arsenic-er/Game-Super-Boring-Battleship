@@ -3,11 +3,13 @@ import { Engine } from "@babylonjs/core/Engines/engine";
 import { DirectionalLight } from "@babylonjs/core/Lights/directionalLight";
 import { HemisphericLight } from "@babylonjs/core/Lights/hemisphericLight";
 import { StandardMaterial } from "@babylonjs/core/Materials/standardMaterial";
+import { Texture } from "@babylonjs/core/Materials/Textures/texture";
 import { Color3, Color4 } from "@babylonjs/core/Maths/math.color";
 import { Vector3 } from "@babylonjs/core/Maths/math.vector";
 import { CreateBox } from "@babylonjs/core/Meshes/Builders/boxBuilder.pure";
 import { CreateCylinder } from "@babylonjs/core/Meshes/Builders/cylinderBuilder.pure";
 import { CreateGround } from "@babylonjs/core/Meshes/Builders/groundBuilder.pure";
+import { CreatePlane } from "@babylonjs/core/Meshes/Builders/planeBuilder.pure";
 import { CreateDashedLines, CreateLines } from "@babylonjs/core/Meshes/Builders/linesBuilder.pure";
 import { CreateSphere } from "@babylonjs/core/Meshes/Builders/sphereBuilder.pure";
 import { CreateTorus } from "@babylonjs/core/Meshes/Builders/torusBuilder.pure";
@@ -37,6 +39,9 @@ import {
   createTorpedoLauncherVisual,
 } from "./shipGeometry";
 import { createPixelShipPalette } from "./shipMaterials";
+import { createPixelOceanSurface, createPixelSkyMaterial } from "./environmentMaterials";
+import { createPixelVfxMaterial } from "./vfxMaterials";
+import type { PixelVfxKind } from "./vfxMaterials";
 import type { AimProvider } from "../controllers/playerInput";
 import type {
   BattleState,
@@ -72,7 +77,7 @@ interface ProjectileVisual {
 
 interface ProjectileTrail {
   core: LinesMesh;
-  plume: Mesh;
+  plume?: Mesh;
   points: Vector3[];
   capacity: number;
 }
@@ -85,6 +90,7 @@ interface TimedMesh {
   gravity?: number;
   scaleFrom?: number;
   scaleTo?: number;
+  poolKey?: string;
 }
 
 interface SmokeCloudVisual {
@@ -110,7 +116,10 @@ export class GameView implements AimProvider {
   private readonly projectileTrails = new Map<number, ProjectileTrail>();
   private readonly smokeCloudMeshes = new Map<number, SmokeCloudVisual>();
   private readonly effects: TimedMesh[] = [];
+  private readonly effectPools = new Map<string, Mesh[]>();
   private readonly sharedEffectMaterials = new Map<string, StandardMaterial>();
+  private readonly sharedVfxMaterials = new Map<PixelVfxKind, StandardMaterial>();
+  private readonly oceanTexture: Texture;
   private readonly waveLayers: Mesh[];
   private readonly objectiveRing: Mesh;
   private readonly objectiveMaterial: StandardMaterial;
@@ -134,11 +143,11 @@ export class GameView implements AimProvider {
     });
     this.engine.setHardwareScalingLevel(1.35);
     this.scene = new Scene(this.engine);
-    this.scene.clearColor = new Color4(0.43, 0.66, 0.76, 1);
+    this.scene.clearColor = new Color4(0.36, 0.56, 0.66, 1);
     this.scene.fogMode = Scene.FOGMODE_LINEAR;
-    this.scene.fogStart = 2_600;
-    this.scene.fogEnd = 5_800;
-    this.scene.fogColor = new Color3(0.43, 0.66, 0.76);
+    this.scene.fogStart = 2_200;
+    this.scene.fogEnd = 4_700;
+    this.scene.fogColor = new Color3(0.36, 0.56, 0.66);
 
     const ambient = new HemisphericLight("ambient", new Vector3(0, 1, 0), this.scene);
     ambient.intensity = 0.78;
@@ -147,12 +156,12 @@ export class GameView implements AimProvider {
     sun.intensity = 0.65;
 
     const ocean = CreateGround("ocean", { width: 12_000, height: 12_000, subdivisions: 2 }, this.scene);
-    const oceanMaterial = new StandardMaterial("ocean-material", this.scene);
-    oceanMaterial.diffuseColor = new Color3(0.035, 0.22, 0.3);
-    oceanMaterial.specularColor = new Color3(0.48, 0.66, 0.7);
-    oceanMaterial.specularPower = 72;
-    ocean.material = oceanMaterial;
+    const oceanSurface = createPixelOceanSurface(this.scene);
+    this.oceanTexture = oceanSurface.texture;
+    ocean.material = oceanSurface.material;
     ocean.position.y = -0.8;
+    ocean.isPickable = false;
+    ocean.freezeWorldMatrix();
 
     this.objectiveRing = CreateTorus("objective-zone-a", {
       diameter: OBJECTIVE.radiusMeters * 2,
@@ -188,11 +197,7 @@ export class GameView implements AimProvider {
     ];
 
     const sky = CreateSphere("sky-dome", { diameter: 10_500, segments: 8 }, this.scene);
-    const skyMaterial = new StandardMaterial("sky-material", this.scene);
-    skyMaterial.backFaceCulling = false;
-    skyMaterial.disableLighting = true;
-    skyMaterial.diffuseColor = new Color3(0.31, 0.57, 0.71);
-    skyMaterial.emissiveColor = new Color3(0.31, 0.57, 0.71);
+    const skyMaterial = createPixelSkyMaterial(this.scene);
     sky.material = skyMaterial;
     sky.infiniteDistance = true;
     sky.isPickable = false;
@@ -284,6 +289,46 @@ export class GameView implements AimProvider {
     return material;
   }
 
+  private pixelVfxMaterial(kind: PixelVfxKind): StandardMaterial {
+    const existing = this.sharedVfxMaterials.get(kind);
+    if (existing) return existing;
+    const material = createPixelVfxMaterial(this.scene, kind);
+    this.sharedVfxMaterials.set(kind, material);
+    return material;
+  }
+
+  private pooledBillboard(
+    poolKey: string,
+    width: number,
+    height: number,
+    material: StandardMaterial,
+  ): Mesh {
+    const pool = this.effectPools.get(poolKey) ?? [];
+    if (!this.effectPools.has(poolKey)) this.effectPools.set(poolKey, pool);
+    let mesh = pool.find((candidate) => !candidate.isEnabled());
+    if (!mesh) {
+      mesh = CreatePlane(`pooled-${poolKey}-${pool.length}`, { width, height }, this.scene);
+      mesh.billboardMode = Mesh.BILLBOARDMODE_ALL;
+      mesh.isPickable = false;
+      mesh.material = material;
+      pool.push(mesh);
+    }
+    mesh.setEnabled(true);
+    mesh.visibility = 1;
+    mesh.scaling.setAll(1);
+    mesh.rotation.setAll(0);
+    return mesh;
+  }
+
+  private releaseEffect(effect: TimedMesh): void {
+    if (effect.poolKey) {
+      effect.mesh.setEnabled(false);
+      effect.mesh.visibility = 0;
+      return;
+    }
+    effect.mesh.dispose();
+  }
+
   private createWaveLayer(
     name: string,
     count: number,
@@ -352,26 +397,26 @@ export class GameView implements AimProvider {
     wakeMaterial.alpha = 0.3;
     wakeMaterial.disableLighting = true;
     const wakes = [-1, 1].map((side) => {
-      const wake = CreateBox(`${ship.id}-wake-${side}`, {
+      const wake = CreatePlane(`${ship.id}-wake-${side}`, {
         width: 2.2,
-        height: 0.06,
-        depth: 86,
+        height: 86,
       }, this.scene);
       wake.position.set(side * 4.3, -0.63, -65);
+      wake.rotation.x = Math.PI / 2;
       wake.rotation.y = side * 0.035;
       wake.material = wakeMaterial;
       wake.parent = root;
       return wake;
     });
 
-    const smokeMaterial = this.material(`${ship.id}-smoke-material`, new Color3(0.09, 0.1, 0.1));
-    smokeMaterial.alpha = 0.42;
-    smokeMaterial.disableLighting = true;
+    const smokeMaterial = this.pixelVfxMaterial("smoke");
     const smokePuffs = Array.from({ length: 3 }, (_, index) => {
-      const puff = CreateSphere(`${ship.id}-damage-smoke-${index}`, {
-        diameter: 7 + index * 1.4,
-        segments: 4,
+      const puff = CreatePlane(`${ship.id}-damage-smoke-${index}`, {
+        width: 8 + index * 1.6,
+        height: 10 + index * 2.2,
       }, this.scene);
+      puff.billboardMode = Mesh.BILLBOARDMODE_ALL;
+      puff.isPickable = false;
       puff.position.set((index - 1) * 1.2, 13 + index * 4.5, -5 + index * 1.8);
       puff.material = smokeMaterial;
       puff.visibility = 0;
@@ -379,25 +424,19 @@ export class GameView implements AimProvider {
       return puff;
     });
 
-    const fireMaterial = this.material(
-      `${ship.id}-fire-material`,
-      new Color3(0.95, 0.24, 0.03),
-      new Color3(0.75, 0.12, 0.01),
-    );
-    fireMaterial.alpha = 0.86;
-    fireMaterial.disableLighting = true;
+    const fireMaterial = this.pixelVfxMaterial("fire");
     const flamePositions = [
       { x: -1.7, y: 9.3, z: -8 },
       { x: 1.5, y: 8.2, z: -1 },
       { x: -0.6, y: 8.8, z: 7 },
     ];
     const fireFlames = flamePositions.map((position, index) => {
-      const flame = CreateCylinder(`${ship.id}-fire-flame-${index}`, {
-        height: 5.5 + index * 0.8,
-        diameterTop: 0.35,
-        diameterBottom: 3.2 - index * 0.35,
-        tessellation: 5,
+      const flame = CreatePlane(`${ship.id}-fire-flame-${index}`, {
+        width: 4.8 - index * 0.35,
+        height: 7.5 + index * 0.8,
       }, this.scene);
+      flame.billboardMode = Mesh.BILLBOARDMODE_ALL;
+      flame.isPickable = false;
       flame.position.set(position.x, position.y, position.z);
       flame.material = fireMaterial;
       flame.visibility = 0;
@@ -545,7 +584,7 @@ export class GameView implements AimProvider {
       const wakeStrength = Math.min(1, Math.abs(ship.speedKnots) / 18);
       for (const [index, wake] of visual.wakes.entries()) {
         wake.visibility = ship.hull > 0 ? wakeStrength * 0.75 : 0;
-        wake.scaling.z = 0.35 + wakeStrength * 0.85;
+        wake.scaling.y = 0.35 + wakeStrength * 0.85;
         wake.scaling.x = 0.72 + wakeStrength * 0.32
           + Math.sin(state.time * 3.2 + index * 2.4) * 0.08;
         wake.rotation.y = (index === 0 ? -1 : 1) * (0.035 + ship.rudder * 0.035);
@@ -562,7 +601,6 @@ export class GameView implements AimProvider {
         const flicker = 0.78 + Math.sin(state.time * (8.5 + index) + index * 2.2) * 0.18;
         flame.visibility = ship.hull > 0 ? fireRatio * (0.82 + index * 0.08) : 0;
         flame.scaling.set(0.72 + flicker * 0.22, 0.48 + fireRatio * flicker, 0.72 + flicker * 0.22);
-        flame.rotation.y = state.time * (0.8 + index * 0.13);
       }
       visual.collider.visibility = this.debugColliders && ship.hull > 0 ? 0.9 : 0;
     }
@@ -578,7 +616,7 @@ export class GameView implements AimProvider {
         visual.root.dispose(false, true);
         this.projectileMeshes.delete(id);
         this.projectileTrails.get(id)?.core.dispose();
-        this.projectileTrails.get(id)?.plume.dispose();
+        this.projectileTrails.get(id)?.plume?.dispose();
         this.projectileTrails.delete(id);
       }
     }
@@ -603,8 +641,8 @@ export class GameView implements AimProvider {
             depth: 4.8,
           }, this.scene);
         if (torpedo) shell.rotation.x = Math.PI / 2;
-        const shellMaterial = this.material(
-          `${projectile.kind}-material-${projectile.id}`,
+        const shellMaterial = this.effectMaterial(
+          torpedo ? "projectile-torpedo" : apShell ? "projectile-ap" : "projectile-he",
           torpedo
             ? new Color3(0.12, 0.18, 0.17)
             : apShell ? new Color3(0.62, 0.86, 1) : new Color3(1, 0.78, 0.25),
@@ -612,20 +650,18 @@ export class GameView implements AimProvider {
             ? new Color3(0.34, 0.42, 0.36)
             : apShell ? new Color3(0.12, 0.48, 1) : new Color3(1, 0.4, 0.04),
         );
-        shellMaterial.disableLighting = !torpedo;
         shell.material = shellMaterial;
         shell.parent = root;
         const glow = CreateSphere(`shell-glow-${projectile.id}`, {
           diameter: 2.6,
           segments: 4,
         }, this.scene);
-        const glowMaterial = this.material(
-          `shell-glow-material-${projectile.id}`,
+        const glowMaterial = this.effectMaterial(
+          apShell ? "projectile-glow-ap" : "projectile-glow-he",
           apShell ? new Color3(0.28, 0.72, 1) : new Color3(1, 0.3, 0.02),
           apShell ? new Color3(0.08, 0.32, 1) : new Color3(1, 0.2, 0.01),
+          0.4,
         );
-        glowMaterial.alpha = 0.4;
-        glowMaterial.disableLighting = true;
         glow.material = glowMaterial;
         glow.parent = root;
         glow.visibility = torpedo ? 0 : 1;
@@ -643,7 +679,7 @@ export class GameView implements AimProvider {
 
       let trail = this.projectileTrails.get(projectile.id);
       if (!trail) {
-        const capacity = this.quality === "low" ? 18 : 30;
+        const capacity = this.quality === "low" ? 18 : 24;
         const tailPoint = nextPoint.subtract(direction.scale(1.2));
         const points = Array.from({ length: capacity }, (_, index) => Vector3.Lerp(
           tailPoint,
@@ -663,24 +699,26 @@ export class GameView implements AimProvider {
           ? Math.min(1, Math.max(0.28, ((projectile.detectionRange ?? 500) - 280) / 370))
           : 1;
         core.alpha = projectile.kind === "torpedo" ? 0.74 * wakeVisibility : 0.96;
-        const plume = CreateTube(`trail-plume-${projectile.id}`, {
-          path: points,
-          radius: projectile.kind === "torpedo" ? 0.48 : 0.32,
-          tessellation: 4,
-          updatable: true,
-        }, this.scene);
-        const plumeMaterial = this.material(
-          `trail-plume-material-${projectile.id}`,
-          projectile.kind === "torpedo"
-            ? new Color3(0.68, 0.86, 0.86)
-            : new Color3(0.76, 0.72, 0.57),
-          projectile.kind === "torpedo"
-            ? new Color3(0.03, 0.12, 0.14)
-            : new Color3(0.22, 0.12, 0.03),
-        );
-        plumeMaterial.alpha = projectile.kind === "torpedo" ? 0.3 * wakeVisibility : 0.3;
-        plumeMaterial.disableLighting = true;
-        plume.material = plumeMaterial;
+        const plume = this.quality === "medium"
+          ? CreateTube(`trail-plume-${projectile.id}`, {
+            path: points,
+            radius: projectile.kind === "torpedo" ? 0.48 : 0.32,
+            tessellation: 4,
+            updatable: true,
+          }, this.scene)
+          : undefined;
+        if (plume) {
+          plume.material = this.effectMaterial(
+            projectile.kind === "torpedo" ? "trail-plume-torpedo" : "trail-plume-shell",
+            projectile.kind === "torpedo"
+              ? new Color3(0.68, 0.86, 0.86)
+              : new Color3(0.76, 0.72, 0.57),
+            projectile.kind === "torpedo"
+              ? new Color3(0.03, 0.12, 0.14)
+              : new Color3(0.22, 0.12, 0.03),
+            projectile.kind === "torpedo" ? 0.3 * wakeVisibility : 0.3,
+          );
+        }
         trail = { core, plume, points, capacity };
         this.projectileTrails.set(projectile.id, trail);
       } else {
@@ -690,14 +728,14 @@ export class GameView implements AimProvider {
           points: trail.points,
           instance: trail.core,
         }, this.scene);
-        trail.plume = CreateTube(`trail-plume-${projectile.id}`, {
-          path: trail.points,
-          radius: projectile.kind === "torpedo"
-            ? (this.quality === "low" ? 0.42 : 0.52)
-            : (this.quality === "low" ? 0.28 : 0.36),
-          tessellation: 4,
-          instance: trail.plume,
-        }, this.scene);
+        if (trail.plume) {
+          trail.plume = CreateTube(`trail-plume-${projectile.id}`, {
+            path: trail.points,
+            radius: projectile.kind === "torpedo" ? 0.52 : 0.36,
+            tessellation: 4,
+            instance: trail.plume,
+          }, this.scene);
+        }
       }
     }
   }
@@ -709,12 +747,7 @@ export class GameView implements AimProvider {
       visual.root.dispose(false, true);
       this.smokeCloudMeshes.delete(id);
     }
-    const material = this.effectMaterial(
-      "smoke-screen",
-      new Color3(0.62, 0.67, 0.66),
-      Color3.Black(),
-      0.08,
-    );
+    const material = this.pixelVfxMaterial("smoke");
     for (const cloud of state.smokeClouds) {
       let visual = this.smokeCloudMeshes.get(cloud.id);
       if (!visual) {
@@ -726,21 +759,23 @@ export class GameView implements AimProvider {
           { x: 0.02, y: 7, z: 0.2, scale: 0.24 },
         ];
         const lobes = lobeSpecs.map((spec, index) => {
-          const lobe = CreateSphere(`smoke-screen-${cloud.id}-${index}`, {
-            diameter: 2,
-            segments: 6,
+          const lobe = CreatePlane(`smoke-screen-${cloud.id}-${index}`, {
+            width: 2,
+            height: 2,
           }, this.scene);
+          lobe.billboardMode = Mesh.BILLBOARDMODE_ALL;
+          lobe.isPickable = false;
           lobe.material = material;
           lobe.parent = root;
           lobe.position.set(cloud.radius * spec.x, spec.y, cloud.radius * spec.z);
-          lobe.scaling.set(cloud.radius * spec.scale, 8 + index * 1.7, cloud.radius * spec.scale);
+          lobe.scaling.set(cloud.radius * spec.scale, 8 + index * 1.7, 1);
           return lobe;
         });
         visual = { root, lobes };
         this.smokeCloudMeshes.set(cloud.id, visual);
       }
       const life = Math.max(0, (cloud.expiresAt - state.time) / Math.max(1, cloud.expiresAt - cloud.spawnedAt));
-      for (const lobe of visual.lobes) lobe.visibility = Math.min(1, life * 4);
+      for (const lobe of visual.lobes) lobe.visibility = Math.min(0.72, life * 2.8);
       visual.root.rotation.y = cloud.id * 0.71 + state.time * 0.015;
     }
   }
@@ -896,43 +931,31 @@ export class GameView implements AimProvider {
         });
         continue;
       }
-      const flash = CreateCylinder(`muzzle-flash-${shot.id}`, {
-        height: 4.8,
-        diameterTop: 0.18,
-        diameterBottom: 2.7,
-        tessellation: 6,
-      }, this.scene);
-      flash.position.copyFrom(toVector(shot.position));
-      flash.rotation.x = Math.PI / 2;
-      const owner = this.ships.get(shot.ownerId);
-      flash.rotation.y = owner
-        ? owner.root.rotation.y + owner.turret.rotation.y
-        : 0;
-      flash.material = this.effectMaterial(
-        "muzzle-core",
-        new Color3(1, 0.56, 0.08),
-        new Color3(1, 0.28, 0.01),
+      const flash = this.pooledBillboard(
+        "muzzle-flash",
+        7.5,
+        10,
+        this.pixelVfxMaterial("muzzle"),
       );
+      flash.position.copyFrom(toVector(shot.position));
       this.effects.push({
         mesh: flash,
+        poolKey: "muzzle-flash",
         remaining: 0.14,
         duration: 0.14,
         scaleFrom: 0.4,
         scaleTo: 1.2,
       });
-      const smoke = CreateSphere(`muzzle-smoke-${shot.id}`, {
-        diameter: 2.6,
-        segments: 4,
-      }, this.scene);
-      smoke.position.copyFrom(toVector(shot.position));
-      smoke.material = this.effectMaterial(
+      const smoke = this.pooledBillboard(
         "muzzle-smoke",
-        new Color3(0.28, 0.29, 0.27),
-        Color3.Black(),
-        0.38,
+        5.5,
+        5.5,
+        this.pixelVfxMaterial("smoke"),
       );
+      smoke.position.copyFrom(toVector(shot.position));
       this.effects.push({
         mesh: smoke,
+        poolKey: "muzzle-smoke",
         remaining: 0.72,
         duration: 0.72,
         velocity: new Vector3(0, 3.8, 0),
@@ -947,22 +970,17 @@ export class GameView implements AimProvider {
     for (const impact of impacts) {
       const point = toVector(impact.position);
       if (impact.kind === "splash") {
-        const plume = CreateCylinder(`splash-plume-${impact.id}`, {
-          height: 27,
-          diameterTop: 0.8,
-          diameterBottom: 7.5,
-          tessellation: 7,
-        }, this.scene);
+        const plume = this.pooledBillboard(
+          "shell-splash",
+          18,
+          32,
+          this.pixelVfxMaterial("splash"),
+        );
         plume.position.copyFrom(point);
         plume.position.y += 12;
-        plume.material = this.effectMaterial(
-          "splash-water",
-          new Color3(0.78, 0.9, 0.92),
-          new Color3(0.08, 0.16, 0.18),
-          0.82,
-        );
         this.effects.push({
           mesh: plume,
+          poolKey: "shell-splash",
           remaining: 1.05,
           duration: 1.05,
           velocity: new Vector3(0, 3.8, 0),
@@ -990,7 +1008,7 @@ export class GameView implements AimProvider {
           scaleFrom: 0.25,
           scaleTo: 2.35,
         });
-        const droplets = this.quality === "low" ? 4 : 7;
+        const droplets = this.quality === "low" ? 0 : 3;
         for (let index = 0; index < droplets; index += 1) {
           const angle = impact.id * 0.37 + index / droplets * Math.PI * 2;
           const droplet = CreateSphere(`splash-drop-${impact.id}-${index}`, {
@@ -1024,22 +1042,17 @@ export class GameView implements AimProvider {
       }
 
       if (impact.projectileKind === "torpedo") {
-        const waterColumn = CreateCylinder(`torpedo-hit-column-${impact.id}`, {
-          height: 42,
-          diameterTop: 2.2,
-          diameterBottom: 13,
-          tessellation: 8,
-        }, this.scene);
+        const waterColumn = this.pooledBillboard(
+          "torpedo-splash",
+          28,
+          48,
+          this.pixelVfxMaterial("splash"),
+        );
         waterColumn.position.copyFrom(point);
         waterColumn.position.y += 18;
-        waterColumn.material = this.effectMaterial(
-          "torpedo-hit-water",
-          new Color3(0.72, 0.88, 0.9),
-          new Color3(0.05, 0.13, 0.15),
-          0.86,
-        );
         this.effects.push({
           mesh: waterColumn,
+          poolKey: "torpedo-splash",
           remaining: 1.35,
           duration: 1.35,
           velocity: new Vector3(0, 5.5, 0),
@@ -1070,23 +1083,23 @@ export class GameView implements AimProvider {
         continue;
       }
 
-      const burst = CreateSphere(`hit-burst-${impact.id}`, { diameter: 8, segments: 5 }, this.scene);
+      const burst = this.pooledBillboard(
+        "hit-fire",
+        13,
+        17,
+        this.pixelVfxMaterial("fire"),
+      );
       burst.position.copyFrom(point);
       burst.position.y += 4;
-      burst.material = this.effectMaterial(
-        "hit-fire",
-        new Color3(1, 0.3, 0.03),
-        new Color3(0.78, 0.08, 0.01),
-        0.9,
-      );
       this.effects.push({
         mesh: burst,
+        poolKey: "hit-fire",
         remaining: 0.52,
         duration: 0.52,
         scaleFrom: 0.3,
         scaleTo: 1.75,
       });
-      const sparks = this.quality === "low" ? 4 : 7;
+      const sparks = this.quality === "low" ? 2 : 4;
       for (let index = 0; index < sparks; index += 1) {
         const angle = impact.id * 0.51 + index / sparks * Math.PI * 2;
         const spark = CreateBox(`hit-spark-${impact.id}-${index}`, {
@@ -1135,7 +1148,7 @@ export class GameView implements AimProvider {
       effect.mesh.scaling.setAll(scaleFrom + (scaleTo - scaleFrom) * progress);
       effect.mesh.visibility = Math.max(0, 1 - progress);
       if (effect.remaining <= 0) {
-        effect.mesh.dispose();
+        this.releaseEffect(effect);
         this.effects.splice(index, 1);
       }
     }
@@ -1148,6 +1161,9 @@ export class GameView implements AimProvider {
     weaponSlot: WeaponSlot = "mainGun",
     torpedoSpread: TorpedoSpreadMode = "narrow",
   ): void {
+    const steppedTime = Math.floor(state.time * 6) / 6;
+    this.oceanTexture.uOffset = steppedTime * 0.0018;
+    this.oceanTexture.vOffset = steppedTime * -0.00115;
     this.syncShips(state, perceivedTarget);
     this.syncProjectiles(state, perceivedTarget);
     this.syncSmokeClouds(state);
@@ -1197,9 +1213,9 @@ export class GameView implements AimProvider {
     for (const visual of this.projectileMeshes.values()) visual.root.dispose(false, true);
     for (const trail of this.projectileTrails.values()) {
       trail.core.dispose();
-      trail.plume.dispose();
+      trail.plume?.dispose();
     }
-    for (const effect of this.effects) effect.mesh.dispose();
+    for (const effect of this.effects) this.releaseEffect(effect);
     this.projectileMeshes.clear();
     this.projectileTrails.clear();
     for (const visual of this.smokeCloudMeshes.values()) visual.root.dispose(false, true);
