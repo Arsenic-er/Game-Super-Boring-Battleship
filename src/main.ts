@@ -5,7 +5,12 @@ import { RuleBasedAi } from "./controllers/ruleBasedAi";
 import { PlayerInput } from "./controllers/playerInput";
 import { GameView } from "./render/gameView";
 import { CombatAudio } from "./render/combatAudio";
-import { battleLoadout, loadLocalProfile, saveLocalProfile } from "./profile/localProfile";
+import {
+  awardBattleResult,
+  battleLoadout,
+  loadLocalProfile,
+  saveLocalProfile,
+} from "./profile/localProfile";
 import type { LocalProfile } from "./profile/localProfile";
 import { loadGameSettings, saveGameSettings } from "./settings/gameSettings";
 import type { GameSettings } from "./settings/gameSettings";
@@ -42,9 +47,11 @@ let started = false;
 let paused = true;
 let accumulator = 0;
 let currentMode: GameMode = "battle";
+let battleRewarded = false;
 
 function startMode(mode: GameMode): void {
   currentMode = mode;
+  battleRewarded = false;
   const equipment = battleLoadout(profile);
   state = createInitialState(undefined, mode, equipment.mainGunId, equipment, equipment.torpedoId);
   input.reset();
@@ -221,6 +228,13 @@ view.engine.runRenderLoop(() => {
     input.selectedTorpedoSpread,
   );
   if (state.status !== "running") {
+    if (currentMode === "battle" && !battleRewarded) {
+      const economy = awardBattleResult(profile, state.status);
+      profile = economy.profile;
+      saveLocalProfile(profile);
+      menus.setProfile(profile);
+      battleRewarded = true;
+    }
     gameShell.classList.remove("game-active");
     view.releasePointerLock();
   }

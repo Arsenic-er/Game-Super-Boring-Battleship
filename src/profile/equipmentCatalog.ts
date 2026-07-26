@@ -20,6 +20,10 @@ export interface EquipmentDefinition {
   torpedoId?: TorpedoId;
   bonus: number;
   drawback?: number;
+  researchCost: number;
+  purchaseCost: { credits: number; steel: number; parts: number };
+  sellCredits: number;
+  salvageParts: number;
 }
 
 export const RARITY_META: Record<EquipmentRarity, { label: string; color: string; guarantee: number }> = {
@@ -44,6 +48,19 @@ const bonuses: Record<EquipmentRarity, number> = {
   purple: 0.08,
   gold: 0.14,
   redGold: 0.22,
+};
+
+const economyByRarity: Record<EquipmentRarity, {
+  research: number;
+  credits: number;
+  steel: number;
+  parts: number;
+  salvageParts: number;
+}> = {
+  common: { research: 0, credits: 1_200, steel: 0, parts: 0, salvageParts: 6 },
+  purple: { research: 120, credits: 3_800, steel: 0, parts: 20, salvageParts: 18 },
+  gold: { research: 360, credits: 9_500, steel: 35, parts: 55, salvageParts: 45 },
+  redGold: { research: 900, credits: 22_000, steel: 110, parts: 120, salvageParts: 100 },
 };
 
 interface HistoricalEquipment {
@@ -227,23 +244,34 @@ const categories = Object.keys(CATEGORY_META) as EquipmentCategory[];
 const rarities = Object.keys(RARITY_META) as EquipmentRarity[];
 
 export const EQUIPMENT_CATALOG: EquipmentDefinition[] = categories.flatMap((category) =>
-  rarities.map((rarity) => ({
-    id: `${category}-${rarity}`,
-    category,
-    rarity,
-    name: historicalModels[category][rarity].name,
-    origin: historicalModels[category][rarity].origin,
-    description: historicalModels[category][rarity].description,
-    compatibleHulls: category === "sideGun" ? ["lightCruiser", "battleship"] : ["destroyer", "lightCruiser", "battleship"],
-    mainGunId: category === "mainGun" ? gunByRarity[rarity] : undefined,
-    torpedoId: category === "torpedo" ? torpedoByRarity[rarity] : undefined,
-    bonus: bonuses[rarity],
-    drawback: category === "magazine" && rarity !== "common"
-      ? bonuses[rarity] * 0.24
-      : category === "torpedo"
-        ? getTorpedo(torpedoByRarity[rarity]).storageRiskMultiplier - 1
-        : undefined,
-  })),
+  rarities.map((rarity) => {
+    const economy = economyByRarity[rarity];
+    return {
+      id: `${category}-${rarity}`,
+      category,
+      rarity,
+      name: historicalModels[category][rarity].name,
+      origin: historicalModels[category][rarity].origin,
+      description: historicalModels[category][rarity].description,
+      compatibleHulls: category === "sideGun" ? ["lightCruiser", "battleship"] : ["destroyer", "lightCruiser", "battleship"],
+      mainGunId: category === "mainGun" ? gunByRarity[rarity] : undefined,
+      torpedoId: category === "torpedo" ? torpedoByRarity[rarity] : undefined,
+      bonus: bonuses[rarity],
+      drawback: category === "magazine" && rarity !== "common"
+        ? bonuses[rarity] * 0.24
+        : category === "torpedo"
+          ? getTorpedo(torpedoByRarity[rarity]).storageRiskMultiplier - 1
+          : undefined,
+      researchCost: economy.research,
+      purchaseCost: {
+        credits: economy.credits,
+        steel: economy.steel,
+        parts: economy.parts,
+      },
+      sellCredits: Math.floor(economy.credits * 0.5),
+      salvageParts: economy.salvageParts,
+    };
+  }),
 );
 
 export const EQUIPMENT_BY_ID = Object.fromEntries(

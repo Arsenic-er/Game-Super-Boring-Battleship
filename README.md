@@ -36,7 +36,8 @@ This is an early prototype rather than a finished commercial game. Visuals, bala
 - Player HUD, aiming scope, 3D visibility and tactical maps use the same optical contacts; stale targets become fading last-known markers instead of live tracking.
 - Physical ship collision and location-dependent collision damage.
 - Tactical minimap and full map, dedicated aiming scope, developer diagnostics and adjustable sensitivity.
-- Local captain profile, supply draws, component inventory, upgrades and a modular dockyard preview.
+- Local captain profile with a non-cash Armory, research unlocks, transparent resource prices, free battle-earned supply tickets and deterministic direct procurement.
+- A standalone warehouse for owned/installed counts, protected baseline equipment, duplicate sales and parts salvaging; the dockyard remains focused on fitting components.
 - Portable Windows x64 build: extract the ZIP and launch the EXE; no installer is required.
 
 ## Controls
@@ -127,7 +128,8 @@ Third-party libraries and the Fusion Pixel Font remain under their respective li
 - 船体分区、组件损伤、起火、进水、有限人力损管与可恢复血量。
 - 舰船实体碰撞，以及依据碰撞部位计算的不同伤害。
 - 小地图、大地图、专用瞄准镜、开发者调试面板与灵敏度设置。
-- 本地舰长档案、军需抽取、组件仓库、升级与模块化船坞预览。
+- 本地舰长档案与无氪金军械库：研发解锁、资源明码标价、战斗免费补给券和可确定获得的定向采购。
+- 独立舰队仓库：显示持有/安装数量，保护基础配装，并支持出售或拆解重复件；船坞继续专注舰船配装。
 - Windows x64 便携版：解压 ZIP 后直接运行 EXE，无需安装。
 
 ## 操作方式

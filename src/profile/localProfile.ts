@@ -2,6 +2,7 @@ import { DEFAULT_MAIN_GUN_ID } from "../ships/components";
 import type { MainGunId } from "../ships/components";
 import { DEFAULT_TORPEDO_ID } from "../ships/torpedoes";
 import type { TorpedoId } from "../ships/torpedoes";
+import type { BattleStatus } from "../sim/types";
 import {
   CATEGORY_META,
   EQUIPMENT_BY_ID,
@@ -11,16 +12,34 @@ import {
 import type { EquipmentCategory, EquipmentRarity, HullId } from "./equipmentCatalog";
 
 export interface LocalProfile {
-  version: 2;
+  version: 3;
   commanderName: string;
   credits: number;
+  researchPoints: number;
   supplyTokens: number;
   materials: { steel: number; parts: number };
   drawCount: number;
+  battlesCompleted: number;
   inventory: Record<string, number>;
+  unlockedEquipment: Record<string, boolean>;
   recentDraws: SupplyDrawResult[];
   hullId: HullId;
   loadout: Record<EquipmentCategory, string | null>;
+}
+
+export interface ArmoryTransaction {
+  profile: LocalProfile;
+  success: boolean;
+  reason: "ok" | "unknown-item" | "already-unlocked" | "research-required"
+    | "insufficient-resources" | "installed" | "protected-baseline" | "not-owned";
+}
+
+export interface BattleEconomyReward {
+  credits: number;
+  researchPoints: number;
+  steel: number;
+  parts: number;
+  supplyTokens: number;
 }
 
 export interface SupplyDrawResult {
@@ -41,7 +60,8 @@ export interface BattleLoadout {
   magazineRiskMultiplier: number;
 }
 
-const STORAGE_KEY = "grey-sea-local-profile-v1";
+const STORAGE_KEY = "grey-sea-local-profile-v3";
+const LEGACY_STORAGE_KEYS = ["grey-sea-local-profile-v1"] as const;
 const categories = Object.keys(CATEGORY_META) as EquipmentCategory[];
 
 function baseLoadout(): LocalProfile["loadout"] {
@@ -57,15 +77,24 @@ function baseInventory(): Record<string, number> {
     .map((category) => [equipmentFor(category, "common").id, 1]));
 }
 
+function baseUnlocks(): Record<string, boolean> {
+  return Object.fromEntries(EQUIPMENT_CATALOG
+    .filter((item) => item.rarity === "common")
+    .map((item) => [item.id, true]));
+}
+
 export function createDefaultLocalProfile(): LocalProfile {
   return {
-    version: 2,
+    version: 3,
     commanderName: "本地舰长",
     credits: 12_000,
-    supplyTokens: 120,
+    researchPoints: 220,
+    supplyTokens: 10,
     materials: { steel: 240, parts: 80 },
     drawCount: 0,
+    battlesCompleted: 0,
     inventory: baseInventory(),
+    unlockedEquipment: baseUnlocks(),
     recentDraws: [],
     hullId: "destroyer",
     loadout: baseLoadout(),
@@ -85,12 +114,24 @@ export function normalizeLocalProfile(value: unknown): LocalProfile {
       if (EQUIPMENT_BY_ID[id] && typeof count === "number" && Number.isFinite(count)) inventory[id] = Math.max(0, Math.floor(count));
     }
   }
+  const unlockedEquipment = { ...baseUnlocks() };
+  if (candidate.unlockedEquipment && typeof candidate.unlockedEquipment === "object") {
+    for (const [id, unlocked] of Object.entries(candidate.unlockedEquipment as Record<string, unknown>)) {
+      if (EQUIPMENT_BY_ID[id] && unlocked === true) unlockedEquipment[id] = true;
+    }
+  }
+  // Every previously owned component remains researched after the v2 migration.
+  for (const [id, count] of Object.entries(inventory)) {
+    if (count > 0 && EQUIPMENT_BY_ID[id]) unlockedEquipment[id] = true;
+  }
   const legacyMainGun = oldLoadout.mainGun === "mk2-twin" ? "mainGun-purple" : "mainGun-common";
   inventory[legacyMainGun] = Math.max(1, inventory[legacyMainGun] ?? 0);
+  unlockedEquipment[legacyMainGun] = true;
   const loadout = baseLoadout();
   for (const category of categories) {
     const requested = oldLoadout[category];
-    if (typeof requested === "string" && EQUIPMENT_BY_ID[requested] && (inventory[requested] ?? 0) > 0) loadout[category] = requested;
+    const item = typeof requested === "string" ? EQUIPMENT_BY_ID[requested] : undefined;
+    if (item?.category === category && item.compatibleHulls.includes("destroyer") && (inventory[item.id] ?? 0) > 0) loadout[category] = item.id;
   }
   if (!oldLoadout.mainGun || String(oldLoadout.mainGun).startsWith("mk")) loadout.mainGun = legacyMainGun;
   loadout.sideGun = null;
@@ -98,16 +139,19 @@ export function normalizeLocalProfile(value: unknown): LocalProfile {
     ? candidate.recentDraws.filter((entry) => entry && typeof entry === "object").slice(0, 10) as SupplyDrawResult[]
     : [];
   return {
-    version: 2,
+    version: 3,
     commanderName: requestedName || defaults.commanderName,
     credits: finiteInt(candidate.credits, defaults.credits, 999_999),
+    researchPoints: finiteInt(candidate.researchPoints, defaults.researchPoints, 999_999),
     supplyTokens: finiteInt(candidate.supplyTokens, defaults.supplyTokens, 9_999),
     materials: {
       steel: finiteInt((candidate.materials as Record<string, unknown> | undefined)?.steel, defaults.materials.steel, 999_999),
       parts: finiteInt((candidate.materials as Record<string, unknown> | undefined)?.parts, defaults.materials.parts, 999_999),
     },
     drawCount: finiteInt(candidate.drawCount, 0, 999_999),
+    battlesCompleted: finiteInt(candidate.battlesCompleted, 0, 999_999),
     inventory,
+    unlockedEquipment,
     recentDraws: recent,
     hullId: "destroyer",
     loadout,
@@ -162,6 +206,103 @@ export function drawSupplies(
   return { profile: normalizeLocalProfile(profile), results };
 }
 
+export function researchComponent(source: LocalProfile, itemId: string): ArmoryTransaction {
+  const profile = normalizeLocalProfile(source);
+  const item = EQUIPMENT_BY_ID[itemId];
+  if (!item) return { profile, success: false, reason: "unknown-item" };
+  if (profile.unlockedEquipment[itemId]) {
+    return { profile, success: false, reason: "already-unlocked" };
+  }
+  if (profile.researchPoints < item.researchCost) {
+    return { profile, success: false, reason: "insufficient-resources" };
+  }
+  profile.researchPoints -= item.researchCost;
+  profile.unlockedEquipment[itemId] = true;
+  return { profile: normalizeLocalProfile(profile), success: true, reason: "ok" };
+}
+
+export function purchaseComponent(source: LocalProfile, itemId: string): ArmoryTransaction {
+  const profile = normalizeLocalProfile(source);
+  const item = EQUIPMENT_BY_ID[itemId];
+  if (!item) return { profile, success: false, reason: "unknown-item" };
+  if (!profile.unlockedEquipment[itemId]) {
+    return { profile, success: false, reason: "research-required" };
+  }
+  const cost = item.purchaseCost;
+  if (
+    profile.credits < cost.credits
+    || profile.materials.steel < cost.steel
+    || profile.materials.parts < cost.parts
+  ) return { profile, success: false, reason: "insufficient-resources" };
+  profile.credits -= cost.credits;
+  profile.materials.steel -= cost.steel;
+  profile.materials.parts -= cost.parts;
+  profile.inventory[itemId] = (profile.inventory[itemId] ?? 0) + 1;
+  return { profile: normalizeLocalProfile(profile), success: true, reason: "ok" };
+}
+
+function availableCopies(profile: LocalProfile, itemId: string): number {
+  const item = EQUIPMENT_BY_ID[itemId];
+  if (!item) return 0;
+  const installed = profile.loadout[item.category] === itemId ? 1 : 0;
+  return Math.max(0, (profile.inventory[itemId] ?? 0) - installed);
+}
+
+export function sellComponent(source: LocalProfile, itemId: string): ArmoryTransaction {
+  const profile = normalizeLocalProfile(source);
+  const item = EQUIPMENT_BY_ID[itemId];
+  if (!item) return { profile, success: false, reason: "unknown-item" };
+  if ((profile.inventory[itemId] ?? 0) <= 0) {
+    return { profile, success: false, reason: "not-owned" };
+  }
+  if (availableCopies(profile, itemId) <= 0) {
+    return { profile, success: false, reason: "installed" };
+  }
+  if (item.rarity === "common" && (profile.inventory[itemId] ?? 0) <= 1) {
+    return { profile, success: false, reason: "protected-baseline" };
+  }
+  profile.inventory[itemId] -= 1;
+  profile.credits += item.sellCredits;
+  return { profile: normalizeLocalProfile(profile), success: true, reason: "ok" };
+}
+
+export function salvageComponent(source: LocalProfile, itemId: string): ArmoryTransaction {
+  const profile = normalizeLocalProfile(source);
+  const item = EQUIPMENT_BY_ID[itemId];
+  if (!item) return { profile, success: false, reason: "unknown-item" };
+  if ((profile.inventory[itemId] ?? 0) <= 0) {
+    return { profile, success: false, reason: "not-owned" };
+  }
+  if (availableCopies(profile, itemId) <= 0) {
+    return { profile, success: false, reason: "installed" };
+  }
+  if (item.rarity === "common" && (profile.inventory[itemId] ?? 0) <= 1) {
+    return { profile, success: false, reason: "protected-baseline" };
+  }
+  profile.inventory[itemId] -= 1;
+  profile.materials.parts += item.salvageParts;
+  return { profile: normalizeLocalProfile(profile), success: true, reason: "ok" };
+}
+
+export function awardBattleResult(
+  source: LocalProfile,
+  status: Exclude<BattleStatus, "running">,
+): { profile: LocalProfile; reward: BattleEconomyReward } {
+  const profile = normalizeLocalProfile(source);
+  const reward: BattleEconomyReward = status === "player-won"
+    ? { credits: 2_200, researchPoints: 90, steel: 4, parts: 12, supplyTokens: 1 }
+    : status === "draw"
+      ? { credits: 1_700, researchPoints: 70, steel: 3, parts: 9, supplyTokens: 1 }
+      : { credits: 1_400, researchPoints: 55, steel: 2, parts: 7, supplyTokens: 1 };
+  profile.credits += reward.credits;
+  profile.researchPoints += reward.researchPoints;
+  profile.materials.steel += reward.steel;
+  profile.materials.parts += reward.parts;
+  profile.supplyTokens += reward.supplyTokens;
+  profile.battlesCompleted += 1;
+  return { profile: normalizeLocalProfile(profile), reward };
+}
+
 export function equipComponent(source: LocalProfile, itemId: string): LocalProfile {
   const profile = normalizeLocalProfile(source);
   const item = EQUIPMENT_BY_ID[itemId];
@@ -199,7 +340,15 @@ export function guaranteeProgress(drawCount: number, threshold: 10 | 50 | 100): 
 export function loadLocalProfile(): LocalProfile {
   try {
     const stored = window.localStorage.getItem(STORAGE_KEY);
-    return stored ? normalizeLocalProfile(JSON.parse(stored)) : createDefaultLocalProfile();
+    if (stored) return normalizeLocalProfile(JSON.parse(stored));
+    for (const legacyKey of LEGACY_STORAGE_KEYS) {
+      const legacy = window.localStorage.getItem(legacyKey);
+      if (!legacy) continue;
+      const migrated = normalizeLocalProfile(JSON.parse(legacy));
+      window.localStorage.setItem(STORAGE_KEY, JSON.stringify(migrated));
+      return migrated;
+    }
+    return createDefaultLocalProfile();
   } catch {
     return createDefaultLocalProfile();
   }
