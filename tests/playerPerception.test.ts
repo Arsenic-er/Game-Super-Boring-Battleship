@@ -137,4 +137,58 @@ describe("player optical perception", () => {
     torpedo.detectionRange = 360;
     expect(isProjectileVisibleToPlayer(torpedo, player)).toBe(false);
   });
+
+  it("reveals a distant ship after main-gun fire and restores concealment after bloom", () => {
+    const state = createInitialState(305);
+    const player = state.ships.find((ship) => ship.id === "player")!;
+    const enemy = state.ships.find((ship) => ship.id === "enemy")!;
+    enemy.position = {
+      x: player.position.x + 4_500,
+      y: player.position.y,
+      z: player.position.z,
+    };
+    state.time = 1;
+    expect(observe(state, "player").contacts).toHaveLength(0);
+
+    enemy.lastMainGunFiredAt = state.time;
+    expect(observe(state, "player").contacts.map((contact) => contact.id))
+      .toContain(enemy.id);
+
+    state.time += SENSOR.gunBloomSeconds + 0.01;
+    expect(observe(state, "player").contacts).toHaveLength(0);
+  });
+
+  it("applies gun bloom symmetrically without revealing through a separate smoke wall", () => {
+    const state = createInitialState(306);
+    const player = state.ships.find((ship) => ship.id === "player")!;
+    const enemy = state.ships.find((ship) => ship.id === "enemy")!;
+    enemy.position = {
+      x: player.position.x + 4_400,
+      y: player.position.y,
+      z: player.position.z,
+    };
+    player.lastMainGunFiredAt = state.time;
+    enemy.lastMainGunFiredAt = state.time;
+    expect(observe(state, "player").contacts.map((contact) => contact.id))
+      .toContain(enemy.id);
+    expect(observe(state, "enemy").contacts.map((contact) => contact.id))
+      .toContain(player.id);
+
+    state.smokeClouds.push({
+      id: 900,
+      ownerId: player.id,
+      ownerTeam: player.team,
+      position: {
+        x: (player.position.x + enemy.position.x) / 2,
+        y: 0,
+        z: (player.position.z + enemy.position.z) / 2,
+      },
+      radius: 120,
+      spawnedAt: state.time,
+      expiresAt: state.time + 30,
+    });
+    state.sensorSnapshots = {};
+    expect(observe(state, "player").contacts).toHaveLength(0);
+    expect(observe(state, "enemy").contacts).toHaveLength(0);
+  });
 });

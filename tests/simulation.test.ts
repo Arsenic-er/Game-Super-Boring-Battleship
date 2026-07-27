@@ -111,6 +111,7 @@ describe("deterministic battle simulation", () => {
     const projectile = state.projectiles[0]!;
     expect(projectile.velocity.z).toBeGreaterThan(Math.abs(projectile.velocity.x) * 20);
     expect(player.reloadRemaining).toBeGreaterThan(0);
+    expect(player.lastMainGunFiredAt).toBe(state.time);
   });
 
   it("applies the equipped main gun stats to projectiles and reload", () => {
@@ -149,6 +150,7 @@ describe("deterministic battle simulation", () => {
     expect(torpedoes).toHaveLength(2);
     expect(state.shots.every((shot) => shot.kind === "torpedo")).toBe(true);
     expect(player.torpedoReloadRemaining).toBeGreaterThan(40);
+    expect(player.lastMainGunFiredAt).toBeUndefined();
     expect(torpedoes[0]?.position).not.toEqual(torpedoes[1]?.position);
     expect(torpedoes.every((torpedo) => torpedo.velocity.y === 0)).toBe(true);
     expect(torpedoes.every((torpedo) => torpedo.armingDistance === TORPEDO.armingDistanceMeters))
@@ -166,6 +168,7 @@ describe("deterministic battle simulation", () => {
       }]]), FIXED_STEP);
     }
     expect(state.projectiles).toHaveLength(0);
+    expect(player.lastMainGunFiredAt).toBeUndefined();
     expect(player.torpedoReloadRemaining).toBe(0);
   });
 

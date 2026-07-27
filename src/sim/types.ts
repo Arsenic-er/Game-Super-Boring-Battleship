@@ -59,6 +59,7 @@ export interface SensorContact {
 export interface SensorSnapshot {
   sampleIndex: number;
   hydroActive: boolean;
+  gunBloomSignature: string;
   contacts: SensorContact[];
 }
 

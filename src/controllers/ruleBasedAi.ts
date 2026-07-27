@@ -438,7 +438,13 @@ export class RuleBasedAi implements Controller {
         + HYDRO.cooldownSeconds
         + 5;
     }
-    const suppressMainGun = activateSmoke || observation.self.smokeDeploymentRemaining > 0;
+    const concealmentRetreat = damaged
+      && !shouldSecureObjective
+      && Boolean(target)
+      && range > 1_300;
+    const suppressMainGun = activateSmoke
+      || observation.self.smokeDeploymentRemaining > 0
+      || concealmentRetreat;
 
     return {
       throttle: damaged ? Math.min(tacticalThrottle, 0.52) : tacticalThrottle,

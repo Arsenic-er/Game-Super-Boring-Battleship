@@ -64,6 +64,21 @@ const zeroCommand: ControlCommand = {
 const clamp = (value: number, min: number, max: number): number =>
   Math.min(max, Math.max(min, value));
 
+export function mainGunBloomRemaining(
+  time: number,
+  ship: Pick<ShipState, "lastMainGunFiredAt">,
+): number {
+  if (ship.lastMainGunFiredAt === undefined) return 0;
+  return Math.max(0, SENSOR.gunBloomSeconds - (time - ship.lastMainGunFiredAt));
+}
+
+function gunBloomSignature(state: BattleState, observer: ShipState): string {
+  return state.ships
+    .filter((ship) => ship.team !== observer.team && ship.hull > 0)
+    .map((ship) => `${ship.id}:${mainGunBloomRemaining(state.time, ship) > 0 ? 1 : 0}`)
+    .join("|");
+}
+
 const copyVec = (value: Vec3): Vec3 => ({ ...value });
 
 const wrapAngle = (angle: number): number => {
@@ -1762,8 +1777,13 @@ export function observe(state: BattleState, shipId: string) {
   };
   const sampleIndex = Math.floor(state.time / SENSOR.observationIntervalSeconds);
   const hydroActive = self.hydroActiveRemaining > 0;
+  const currentGunBloomSignature = gunBloomSignature(state, self);
   const cached = state.sensorSnapshots[shipId];
-  if (cached?.sampleIndex === sampleIndex && cached.hydroActive === hydroActive) {
+  if (
+    cached?.sampleIndex === sampleIndex
+    && cached.hydroActive === hydroActive
+    && cached.gunBloomSignature === currentGunBloomSignature
+  ) {
     return {
       self,
       contacts: cached.contacts,
@@ -1782,8 +1802,7 @@ export function observe(state: BattleState, shipId: string) {
     const hydroDetected = hydroActive && actualRange <= HYDRO.shipDetectionMeters;
     const smokeBlocked = isLineObscuredBySmoke(state, self.position, target.position);
     const targetInSmoke = isPointInSmoke(state, target.position);
-    const recentlyFiredMainGun = target.lastMainGunFiredAt !== undefined
-      && state.time - target.lastMainGunFiredAt <= SMOKE.firingBloomSeconds;
+    const recentlyFiredMainGun = mainGunBloomRemaining(state.time, target) > 0;
     const smokeFiringReveal = targetInSmoke
       && recentlyFiredMainGun
       && actualRange <= SMOKE.firingDetectionMeters;
@@ -1797,10 +1816,15 @@ export function observe(state: BattleState, shipId: string) {
         ) > cloud.radius);
       if (!smokeFiringReveal || separateSmokeWall) continue;
     }
-    const detectionRange = SENSOR.maximumDetectionMeters
+    const passiveDetectionRange = SENSOR.maximumDetectionMeters
       + target.fireIntensity / 100 * SENSOR.burningDetectionBonusMeters
       + clamp(Math.abs(target.speedKnots) / SHIP.maxSpeedKnots, 0, 1)
         * SENSOR.highSpeedDetectionBonusMeters;
+    const detectionRange = recentlyFiredMainGun
+      ? Math.max(passiveDetectionRange, SENSOR.gunBloomDetectionMeters)
+      : passiveDetectionRange;
+    const gunBloomReveal = recentlyFiredMainGun
+      && actualRange <= SENSOR.gunBloomDetectionMeters;
     const rangeFactor = hydroDetected ? 0 : clamp(
       (actualRange - SENSOR.guaranteedDetectionMeters)
         / Math.max(1, detectionRange - SENSOR.guaranteedDetectionMeters),
@@ -1810,7 +1834,8 @@ export function observe(state: BattleState, shipId: string) {
     const detectionChance = 1 - rangeFactor * 0.72;
     if (
       (!hydroDetected && actualRange > detectionRange)
-      || (!smokeFiringReveal && actualRange > SENSOR.guaranteedDetectionMeters
+      || (!smokeFiringReveal && !gunBloomReveal
+        && actualRange > SENSOR.guaranteedDetectionMeters
         && !hydroDetected
         && sensorUnit(sampleSeed ^ stringSeed(target.id) ^ 0x91e10da5) > detectionChance)
     ) {
@@ -1872,7 +1897,12 @@ export function observe(state: BattleState, shipId: string) {
       ),
     });
   }
-  state.sensorSnapshots[shipId] = { sampleIndex, hydroActive, contacts };
+  state.sensorSnapshots[shipId] = {
+    sampleIndex,
+    hydroActive,
+    gunBloomSignature: currentGunBloomSignature,
+    contacts,
+  };
   return {
     self,
     contacts,

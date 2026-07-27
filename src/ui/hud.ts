@@ -4,6 +4,7 @@ import {
   dispersionAtRange,
   isGunFireBlocked,
   isPointInSmoke,
+  mainGunBloomRemaining,
   torpedoLauncherAlignmentError,
   torpedoLaunchSolution,
   torpedoThreatsFor,
@@ -104,6 +105,7 @@ export class Hud {
   private readonly damageState: HTMLElement;
   private readonly smokeStatus: HTMLElement;
   private readonly hydroStatus: HTMLElement;
+  private readonly gunBloomStatus: HTMLElement;
   private readonly damageControlPriority: HTMLElement;
   private readonly damageControlTasks: HTMLElement;
   private readonly aimReadout: HTMLElement;
@@ -169,6 +171,7 @@ export class Hud {
           <div id="damage-state" class="damage-state">损管正常</div>
           <div id="smoke-status" class="damage-state"><kbd>E</kbd> 烟幕就绪 · 2 次</div>
           <div id="hydro-status" class="damage-state"><kbd>F</kbd> 水听就绪 · 2 次</div>
+          <div id="gun-bloom-status" class="damage-state">隐蔽状态正常</div>
           <div class="damage-control">
             <div class="damage-control-heading">
               <span>损管人力调度</span>
@@ -289,6 +292,7 @@ export class Hud {
     this.damageState = find("#damage-state");
     this.smokeStatus = find("#smoke-status");
     this.hydroStatus = find("#hydro-status");
+    this.gunBloomStatus = find("#gun-bloom-status");
     this.damageControlPriority = find("#damage-control-priority");
     this.damageControlTasks = find("#damage-control-tasks");
     this.aimReadout = find("#aim-readout");
@@ -503,6 +507,11 @@ export class Hud {
           ? `<kbd>F</kbd> 水听就绪 · ${player.hydroCharges} 次`
           : `<kbd>F</kbd> 水听耗尽`;
     this.hydroStatus.className = `damage-state${player.hydroActiveRemaining > 0 ? " active" : ""}`;
+    const gunBloomRemaining = mainGunBloomRemaining(state.time, player);
+    this.gunBloomStatus.textContent = gunBloomRemaining > 0
+      ? `主炮开火暴露 · ${gunBloomRemaining.toFixed(1)} s · 可被远距发现`
+      : "隐蔽状态正常 · 开炮将扩大被发现距离";
+    this.gunBloomStatus.className = `damage-state${gunBloomRemaining > 0 ? " critical" : ""}`;
     this.damageControlPriority.innerHTML = `<kbd>4</kbd> ${damageControlPriorityLabels[player.damageControlPriority]}`;
     const repairModule = player.damageControlModule
       ? ` · ${moduleLabels[player.damageControlModule]}`

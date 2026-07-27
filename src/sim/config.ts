@@ -22,6 +22,8 @@ export const SENSOR = {
   acquisitionSamples: 2,
   guaranteedDetectionMeters: 1_700,
   maximumDetectionMeters: 3_400,
+  gunBloomDetectionMeters: 5_000,
+  gunBloomSeconds: 12,
   burningDetectionBonusMeters: 650,
   highSpeedDetectionBonusMeters: 220,
   nearBearingErrorRadians: 0.45 * Math.PI / 180,
@@ -56,7 +58,6 @@ export const SMOKE = {
   cooldownSeconds: 120,
   guaranteedDetectionMeters: 650,
   firingDetectionMeters: 2_300,
-  firingBloomSeconds: 12,
   maximumClouds: 40,
 } as const;
 
