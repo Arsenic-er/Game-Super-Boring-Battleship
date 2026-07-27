@@ -3,6 +3,7 @@ import { getShipClass } from "../ships/classes";
 import { torpedoLauncherAlignmentError } from "../sim/simulation";
 import type { BattleState, CompartmentId, ModuleId, ShipState } from "../sim/types";
 import { getTorpedo } from "../ships/torpedoes";
+import { getSecondaryGun } from "../ships/secondaryGuns";
 
 export type CursorStyle = "neon-arrow" | "neon-hand" | "crosshair";
 
@@ -39,6 +40,7 @@ export class DeveloperPanel {
   private readonly live: HTMLElement;
   private readonly perception: HTMLElement;
   private readonly torpedoStatus: HTMLElement;
+  private readonly secondaryStatus: HTMLElement;
   private open = false;
 
   constructor(
@@ -55,6 +57,7 @@ export class DeveloperPanel {
       <div class="dev-live" data-role="live">等待状态</div>
       <div class="dev-perception" data-role="perception">感知：无遥测</div>
       <div class="dev-perception" data-role="torpedo">鱼雷：等待状态</div>
+      <div class="dev-perception" data-role="secondary">副炮：等待状态</div>
       <section class="dev-section">
         <h3>船体与运动</h3>
         ${this.field("hull", "当前生命", 0, 1000, 1)}
@@ -108,11 +111,13 @@ export class DeveloperPanel {
     const live = this.element.querySelector<HTMLElement>('[data-role="live"]');
     const perception = this.element.querySelector<HTMLElement>('[data-role="perception"]');
     const torpedoStatus = this.element.querySelector<HTMLElement>('[data-role="torpedo"]');
-    if (!shipSelect || !live || !perception || !torpedoStatus) throw new Error("Missing developer panel controls");
+    const secondaryStatus = this.element.querySelector<HTMLElement>('[data-role="secondary"]');
+    if (!shipSelect || !live || !perception || !torpedoStatus || !secondaryStatus) throw new Error("Missing developer panel controls");
     this.shipSelect = shipSelect;
     this.live = live;
     this.perception = perception;
     this.torpedoStatus = torpedoStatus;
+    this.secondaryStatus = secondaryStatus;
     this.bindControls();
   }
 
@@ -321,6 +326,10 @@ export class DeveloperPanel {
     ship.torpedoesLoaded = 2;
     ship.torpedoReserveSalvos = torpedo.reserveSalvos;
     ship.torpedoReloadRemaining = 0;
+    for (const mount of ship.secondaryMounts) mount.reloadRemaining = 0;
+    ship.secondaryAcquisitionSamples = 0;
+    ship.secondaryTargetId = undefined;
+    ship.secondaryLastObservationAt = undefined;
     for (const module of Object.values(ship.modules)) module.health = module.maxHealth;
     for (const id of Object.keys(ship.compartments) as CompartmentId[]) {
       ship.compartments[id] = COMPARTMENT_MAX_HEALTH[id]
@@ -402,6 +411,18 @@ export class DeveloperPanel {
     const relativeLauncher = ((ship.torpedoLauncherHeading - ship.heading) * 180 / Math.PI + 540) % 360 - 180;
     const alignment = torpedoLauncherAlignmentError(ship) * 180 / Math.PI;
     this.torpedoStatus.textContent = `鱼雷 · 发射器 ${relativeLauncher >= 0 ? "右" : "左"} ${Math.abs(relativeLauncher).toFixed(1)}° · 偏差 ${alignment.toFixed(1)}° · 管内 ${ship.torpedoesLoaded}/2 · 备用 ${ship.torpedoReserveSalvos} 组 · 装填 ${Number.isFinite(reloadEta) ? `${reloadEta.toFixed(1)} s` : "已停止"}`;
+    const secondaryReloads = ship.secondaryMounts.map((mount) => ({
+      side: mount.side,
+      seconds: mount.reloadRemaining,
+      model: getSecondaryGun(mount.definitionId).shortLabel,
+    }));
+    const portReload = secondaryReloads.filter((mount) => mount.side === -1)
+      .reduce((minimum, mount) => Math.min(minimum, mount.seconds), Number.POSITIVE_INFINITY);
+    const starboardReload = secondaryReloads.filter((mount) => mount.side === 1)
+      .reduce((minimum, mount) => Math.min(minimum, mount.seconds), Number.POSITIVE_INFINITY);
+    this.secondaryStatus.textContent = ship.secondaryMounts.length > 0
+      ? `副炮 · ${ship.secondaryBatteryStatus} · 目标 ${ship.secondaryTargetId ?? "无"} · 确认 ${ship.secondaryAcquisitionSamples} 次 · 左/右装填 ${Number.isFinite(portReload) ? portReload.toFixed(1) : "-"}/${Number.isFinite(starboardReload) ? starboardReload.toFixed(1) : "-"} s · ${[...new Set(secondaryReloads.map((mount) => mount.model))].join(" / ")}`
+      : "副炮 · 未安装";
     const telemetry = ship.perception;
     if (!telemetry) {
       this.perception.textContent = "感知：玩家/无 AI 遥测";

@@ -27,6 +27,7 @@ import {
   gunMuzzleOrigin,
   gunMuzzleOrigins,
   observe,
+  secondaryMountCanBear,
   stepSimulation,
   torpedoLauncherAlignmentError,
   torpedoInterceptPoint,
@@ -1089,5 +1090,115 @@ describe("deterministic battle simulation", () => {
     ]), FIXED_STEP);
     expect(state.status).toBe("draw");
     expect(state.endReason).toBe("time");
+  });
+
+  it("creates automatic secondary mounts only for equipped cruisers and battleships", () => {
+    const destroyer = createInitialState(304, "sea-trials").ships[0]!;
+    const cruiser = createInitialState(
+      304, "sea-trials", undefined, undefined, undefined, "cleveland",
+    ).ships[0]!;
+    const battleship = createInitialState(
+      304, "sea-trials", undefined, undefined, undefined, "north-carolina",
+    ).ships[0]!;
+    expect(destroyer.secondaryMounts).toHaveLength(0);
+    expect(cruiser.secondaryMounts).toHaveLength(SHIP_CLASSES.cleveland.starterSlots.sideGun);
+    expect(battleship.secondaryMounts).toHaveLength(SHIP_CLASSES["north-carolina"].starterSlots.sideGun);
+    expect(cruiser.secondaryMounts.every((mount) => mount.definitionId === "sideGun-common"))
+      .toBe(true);
+    expect(secondaryMountCanBear(cruiser, 1, cruiser.heading + Math.PI / 2)).toBe(true);
+    expect(secondaryMountCanBear(cruiser, -1, cruiser.heading + Math.PI / 2)).toBe(false);
+  });
+
+  it("uses two sampled contacts before secondaries fire from the bearing side", () => {
+    const state = createInitialState(
+      305, "sea-trials", undefined, undefined, undefined, "cleveland",
+    );
+    const player = state.ships[0]!;
+    const target = state.ships.find((ship) => ship.isTestTarget)!;
+    player.position = { x: 0, y: 0, z: 0 };
+    player.previousPosition = { ...player.position };
+    player.heading = 0;
+    player.speedKnots = 0;
+    target.position = { x: 650, y: 0, z: 0 };
+    target.previousPosition = { ...target.position };
+    const command = new Map([[player.id, idle(0, 1_000)]]);
+    stepSimulation(state, command, FIXED_STEP);
+    expect(state.projectiles.filter((projectile) => projectile.weaponSource === "secondary"))
+      .toHaveLength(0);
+    let secondaryShots = 0;
+    for (let tick = 0; tick < Math.ceil(SENSOR.observationIntervalSeconds / FIXED_STEP) + 8; tick += 1) {
+      stepSimulation(state, command, FIXED_STEP);
+      secondaryShots += state.shots.filter((shot) => shot.weaponSource === "secondary").length;
+    }
+    expect(secondaryShots).toBeGreaterThan(0);
+    expect(player.secondaryMounts.filter((mount) => mount.side === 1 && mount.reloadRemaining > 0).length)
+      .toBeGreaterThan(0);
+    expect(player.secondaryMounts.filter((mount) => mount.side === -1 && mount.reloadRemaining > 0))
+      .toHaveLength(0);
+  });
+
+  it("stops automatic secondary fire when the shared gun module is destroyed", () => {
+    const state = createInitialState(
+      306, "sea-trials", undefined, undefined, undefined, "north-carolina",
+    );
+    const player = state.ships[0]!;
+    const target = state.ships.find((ship) => ship.isTestTarget)!;
+    player.position = { x: 0, y: 0, z: 0 };
+    player.previousPosition = { ...player.position };
+    player.heading = 0;
+    player.speedKnots = 0;
+    player.modules.gun.health = 0;
+    target.position = { x: 700, y: 0, z: 0 };
+    target.previousPosition = { ...target.position };
+    const command = new Map([[player.id, idle(0, 1_000)]]);
+    for (let tick = 0; tick < 200; tick += 1) stepSimulation(state, command, FIXED_STEP);
+    expect(state.projectiles.some((projectile) => projectile.weaponSource === "secondary"))
+      .toBe(false);
+    expect(player.secondaryBatteryStatus).toBe("disabled");
+  });
+
+  it("does not let automatic secondaries see through an optical smoke screen", () => {
+    const state = createInitialState(
+      307, "sea-trials", undefined, undefined, undefined, "cleveland",
+    );
+    const player = state.ships[0]!;
+    const target = state.ships.find((ship) => ship.isTestTarget)!;
+    player.position = { x: 0, y: 0, z: 0 };
+    player.previousPosition = { ...player.position };
+    player.heading = 0;
+    player.speedKnots = 0;
+    target.position = { x: 1_800, y: 0, z: 0 };
+    target.previousPosition = { ...target.position };
+    state.smokeClouds.push({
+      id: 99_001,
+      ownerId: "smoke-test",
+      ownerTeam: "enemy",
+      position: { x: 900, y: 0, z: 0 },
+      radius: 150,
+      spawnedAt: 0,
+      expiresAt: 100,
+    });
+    const command = new Map([[player.id, idle(0, 1_000)]]);
+    for (let tick = 0; tick < 220; tick += 1) stepSimulation(state, command, FIXED_STEP);
+    expect(state.projectiles.some((projectile) => projectile.weaponSource === "secondary"))
+      .toBe(false);
+    expect(player.secondaryBatteryStatus).toBe("searching");
+  });
+
+  it("keeps enemy starter secondaries common when the player fits advanced mounts", () => {
+    const state = createInitialState(
+      308,
+      "battle",
+      undefined,
+      { secondaryGunIds: Array(6).fill("sideGun-redGold") } as never,
+      undefined,
+      "cleveland",
+    );
+    const player = state.ships.find((ship) => ship.id === "player")!;
+    const enemy = state.ships.find((ship) => ship.id === "enemy")!;
+    expect(player.secondaryMounts.every((mount) => mount.definitionId === "sideGun-redGold"))
+      .toBe(true);
+    expect(enemy.secondaryMounts.every((mount) => mount.definitionId === "sideGun-common"))
+      .toBe(true);
   });
 });

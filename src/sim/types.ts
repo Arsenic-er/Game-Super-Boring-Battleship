@@ -2,6 +2,7 @@ import type { MainGunId } from "../ships/components";
 import type { HullId } from "../ships/hulls";
 import type { ShipClassId } from "../ships/classes";
 import type { TorpedoId } from "../ships/torpedoes";
+import type { SecondaryGunId } from "../ships/secondaryGuns";
 
 export interface Vec3 {
   x: number;
@@ -27,6 +28,9 @@ export type PenetrationResult = "penetration" | "overpenetration" | "ricochet" |
 export type ArmorZoneId = "side" | "end" | "deck";
 export type DamageControlPriority = "balanced" | "fire" | "flood" | "module";
 export type PerceptionMode = "unaware" | "acquiring" | "tracking" | "lost" | "searching";
+export type SecondaryBatteryStatus =
+  | "unavailable" | "disabled" | "searching" | "acquiring"
+  | "out-of-range" | "sector" | "traversing" | "reloading" | "firing";
 
 export interface DamageControlAllocation {
   fire: number;
@@ -101,6 +105,14 @@ export interface ShipPerformanceModifiers {
   magazineRiskMultiplier: number;
 }
 
+export interface SecondaryMountState {
+  definitionId: SecondaryGunId;
+  side: -1 | 1;
+  longitudinalOffset: number;
+  heading: number;
+  reloadRemaining: number;
+}
+
 export interface ShipState {
   id: string;
   team: Team;
@@ -124,6 +136,12 @@ export interface ShipState {
   mainGunMounts: number;
   torpedoLauncherMounts: number;
   depthChargeMounts: number;
+  secondaryMounts: SecondaryMountState[];
+  secondaryBatteryStatus: SecondaryBatteryStatus;
+  secondaryTargetId?: string;
+  secondaryAcquisitionSamples: number;
+  secondaryLastObservationAt?: number;
+  lastSecondaryFiredAt?: number;
   performance: ShipPerformanceModifiers;
   gunTraverseBlocked: boolean;
   reloadRemaining: number;
@@ -180,6 +198,7 @@ export interface ProjectileState {
   team: Team;
   kind: ProjectileKind;
   ammoType?: AmmoType;
+  weaponSource?: "mainGun" | "secondary";
   position: Vec3;
   previousPosition: Vec3;
   velocity: Vec3;
@@ -221,6 +240,7 @@ export interface ShotEvent {
   team: Team;
   kind: ProjectileKind | "depthCharge";
   ammoType?: AmmoType;
+  weaponSource?: "mainGun" | "secondary";
   position: Vec3;
 }
 
@@ -243,6 +263,7 @@ export interface ImpactEvent {
   impactAngleDegrees?: number;
   armorZone?: ArmorZoneId;
   projectileKind?: ProjectileKind | "depthCharge";
+  weaponSource?: "mainGun" | "secondary";
 }
 
 export interface TorpedoThreat {

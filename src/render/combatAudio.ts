@@ -125,6 +125,7 @@ export class CombatAudio {
     const torpedoSalvos = new Set<string>();
     const gunSalvos = new Set<string>();
     const depthChargePatterns = new Set<string>();
+    const secondarySalvos = new Set<string>();
     for (const shot of shots) {
       if (shot.kind === "depthCharge") {
         if (depthChargePatterns.has(shot.ownerId)) continue;
@@ -134,6 +135,10 @@ export class CombatAudio {
         if (torpedoSalvos.has(shot.ownerId)) continue;
         torpedoSalvos.add(shot.ownerId);
         this.torpedoLaunch(shot.team === "player" ? 0.2 : 0.08);
+      } else if (shot.weaponSource === "secondary") {
+        if (secondarySalvos.has(shot.ownerId)) continue;
+        secondarySalvos.add(shot.ownerId);
+        this.secondaryBoom(shot.team === "player" ? 0.075 : 0.035);
       } else {
         if (gunSalvos.has(shot.ownerId)) continue;
         gunSalvos.add(shot.ownerId);
@@ -376,6 +381,24 @@ export class CombatAudio {
     oscillator.start(now);
     oscillator.stop(now + 0.5);
     this.noiseBurst(volume * 0.45, 0.2, 420);
+  }
+
+  private secondaryBoom(volume: number): void {
+    const context = this.context;
+    const output = this.output();
+    if (!context || !output) return;
+    const now = context.currentTime;
+    const oscillator = context.createOscillator();
+    const gain = context.createGain();
+    oscillator.type = "triangle";
+    oscillator.frequency.setValueAtTime(150, now);
+    oscillator.frequency.exponentialRampToValueAtTime(62, now + 0.22);
+    gain.gain.setValueAtTime(volume, now);
+    gain.gain.exponentialRampToValueAtTime(0.001, now + 0.26);
+    oscillator.connect(gain).connect(output);
+    oscillator.start(now);
+    oscillator.stop(now + 0.28);
+    this.noiseBurst(volume * 0.34, 0.12, 720);
   }
 
   private noiseBurst(volume: number, duration: number, cutoff: number): void {

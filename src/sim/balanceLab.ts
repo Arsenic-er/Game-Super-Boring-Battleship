@@ -197,6 +197,16 @@ export function battleStateFingerprint(state: BattleState): string {
         hydroCharges: ship.hydroCharges,
         hydroCooldownRemaining: round(ship.hydroCooldownRemaining),
         hydroActiveRemaining: round(ship.hydroActiveRemaining),
+        secondaryBatteryStatus: ship.secondaryBatteryStatus,
+        secondaryTargetId: ship.secondaryTargetId ?? null,
+        secondaryAcquisitionSamples: ship.secondaryAcquisitionSamples,
+        secondaryMounts: ship.secondaryMounts.map((mount) => ({
+          definitionId: mount.definitionId,
+          side: mount.side,
+          longitudinalOffset: round(mount.longitudinalOffset),
+          heading: round(mount.heading, 6),
+          reloadRemaining: round(mount.reloadRemaining),
+        })),
       })),
     smokeClouds: [...state.smokeClouds]
       .sort((left, right) => left.id - right.id)
@@ -216,6 +226,7 @@ export function battleStateFingerprint(state: BattleState): string {
         ownerId: projectile.ownerId,
         kind: projectile.kind,
         ammoType: projectile.ammoType ?? null,
+        weaponSource: projectile.weaponSource ?? null,
         position: {
           x: round(projectile.position.x),
           y: round(projectile.position.y),
@@ -228,6 +239,27 @@ export function battleStateFingerprint(state: BattleState): string {
         },
         detectionRange: round(projectile.detectionRange ?? 0),
       })),
+    depthCharges: [...state.depthCharges]
+      .sort((left, right) => left.id - right.id)
+      .map((charge) => ({
+        id: charge.id,
+        ownerId: charge.ownerId,
+        position: {
+          x: round(charge.position.x),
+          y: round(charge.position.y),
+          z: round(charge.position.z),
+        },
+        age: round(charge.age),
+      })),
+    underwaterTargets: state.underwaterTargets.map((target) => ({
+      id: target.id,
+      hull: round(target.hull),
+      position: {
+        x: round(target.position.x),
+        y: round(target.position.y),
+        z: round(target.position.z),
+      },
+    })),
   });
 }
 

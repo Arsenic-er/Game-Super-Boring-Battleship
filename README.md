@@ -35,6 +35,7 @@ This is an early prototype rather than a finished commercial game. Visuals, bala
 - Non-omniscient AI optics with sampled noisy contacts, acquisition, target loss, search and reacquisition; firing requires a live track.
 - Player HUD, aiming scope, 3D visibility and tactical maps use the same optical contacts; stale targets become fading last-known markers instead of live tracking.
 - Physical ship collision and location-dependent collision damage.
+- Automatic cruiser and battleship secondary batteries: every fitted historical mount keeps its own range, traverse, reload and dispersion, and fires only after two valid sensor samples.
 - Tactical minimap and full map, dedicated aiming scope, developer diagnostics and adjustable sensitivity.
 - Local captain profile with a non-cash Armory, research unlocks, transparent resource prices, free battle-earned supply tickets and deterministic direct procurement.
 - A standalone warehouse for owned/installed counts, protected baseline equipment, duplicate sales and parts salvaging; the dockyard remains focused on fitting components.
@@ -125,6 +126,7 @@ Third-party libraries and the Fusion Pixel Font remain under their respective li
 - 鱼雷发射器成为独立可损伤模块；部分损坏同时减慢转向和装填，完全摧毁后两者都会停止。
 - 两次使用机会的驱逐舰烟幕发生器：连续形成固定烟团、双向阻断光学接触，烟中主炮开火会重新暴露。
 - 两次使用机会的水听搜索：在 2 公里内穿透烟幕发现舰船，并把敌方鱼雷探测距离扩展到 1.4 公里。
+- 轻巡洋舰与战列舰的自动副炮：每个已安装的历史炮座分别计算射界、转动、射程、散布和装填，火控连续两次确认目标后才会开火。
 - 可玩的驱逐舰反潜海试：装备深弹后按 `G` 从舰艉投放，深弹受水阻下沉并在 18 米定深爆炸，只按三维距离伤害水下训练靶。
 - 战斗与船坞共用同一套 112 米“驱逐舰 V2”：包含阶梯舰桥、双后倾烟囱、三脚桅、挡浪板、救生艇和标准化组件挂点。
 - 船体分区、组件损伤、起火、进水、有限人力损管与可恢复血量。

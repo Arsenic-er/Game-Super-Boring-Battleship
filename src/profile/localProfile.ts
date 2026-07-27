@@ -6,6 +6,7 @@ import { DEFAULT_SHIP_CLASS_ID, SHIP_CLASS_IDS, getShipClass, isShipClassId } fr
 import type { ShipClassId } from "../ships/classes";
 import { DEFAULT_TORPEDO_ID } from "../ships/torpedoes";
 import type { TorpedoId } from "../ships/torpedoes";
+import type { SecondaryGunId } from "../ships/secondaryGuns";
 import type { BattleStatus } from "../sim/types";
 import {
   CATEGORY_META,
@@ -73,6 +74,7 @@ export interface BattleLoadout {
   mainGunMounts: number;
   torpedoLauncherMounts: number;
   depthChargeMounts: number;
+  secondaryGunIds: SecondaryGunId[];
 }
 
 const STORAGE_KEY = "grey-sea-local-profile-v5";
@@ -448,6 +450,10 @@ export function battleLoadout(profileSource: LocalProfile): BattleLoadout {
     mainGunMounts: profile.slotLoadoutsByShipClass[profile.shipClassId].mainGun.filter(Boolean).length,
     torpedoLauncherMounts: profile.slotLoadoutsByShipClass[profile.shipClassId].torpedo.filter(Boolean).length,
     depthChargeMounts: profile.slotLoadoutsByShipClass[profile.shipClassId].depthCharge.filter(Boolean).length,
+    secondaryGunIds: profile.slotLoadoutsByShipClass[profile.shipClassId].sideGun.flatMap((id) => {
+      const definition = id ? EQUIPMENT_BY_ID[id] : undefined;
+      return definition?.secondaryGunId ? [definition.secondaryGunId] : [];
+    }),
   };
 }
 

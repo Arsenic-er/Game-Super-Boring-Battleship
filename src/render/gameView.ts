@@ -67,12 +67,14 @@ import type {
 interface ShipVisual {
   hullId: HullId;
   shipClassId: ShipClassId;
+  armamentSignature: string;
   root: TransformNode;
   turrets: TransformNode[];
   gunCradles: TransformNode[];
   gunBarrels: Mesh[];
   gunBarrelRestZ: number[];
   torpedoLauncher: TransformNode;
+  secondaryTurrets: TransformNode[];
   rudder: TransformNode;
   propellers: TransformNode[];
   wakes: Mesh[];
@@ -113,6 +115,13 @@ interface SmokeCloudVisual {
 }
 
 const toVector = (value: Vec3): Vector3 => new Vector3(value.x, value.y, value.z);
+const shipArmamentSignature = (ship: ShipState): string => [
+  ship.mainGunId,
+  ship.mainGunMounts,
+  ship.torpedoId,
+  ship.torpedoLauncherMounts,
+  ...ship.secondaryMounts.map((mount) => mount.definitionId),
+].join(":");
 
 const wrapAngle = (angle: number): number => {
   let wrapped = angle;
@@ -502,6 +511,34 @@ export class GameView implements AimProvider {
     );
     torpedo.root.setEnabled(hullDefinition.slotCounts.torpedo > 0 && ship.torpedoLauncherMounts > 0);
 
+    const secondaryTurrets = ship.secondaryMounts.map((mount, index) => {
+      const turret = new TransformNode(`${ship.id}-secondary-${index}`, this.scene);
+      turret.position.set(
+        mount.side * 4.35,
+        8.2,
+        mount.longitudinalOffset / hullDefinition.renderScale.z,
+      );
+      turret.parent = root;
+      const base = CreateCylinder(`${ship.id}-secondary-base-${index}`, {
+        height: 0.65,
+        diameter: 1.8,
+        tessellation: 8,
+      }, this.scene);
+      base.material = palette.dark;
+      base.parent = turret;
+      for (const barrelSide of [-1, 1]) {
+        const barrel = CreateBox(`${ship.id}-secondary-barrel-${index}-${barrelSide}`, {
+          width: 0.22,
+          height: 0.22,
+          depth: 3.4,
+        }, this.scene);
+        barrel.position.set(barrelSide * 0.24, 0.55, 1.65);
+        barrel.material = palette.accent;
+        barrel.parent = turret;
+      }
+      return turret;
+    });
+
     const wakeMaterial = this.material(`${ship.id}-wake-material`, new Color3(0.72, 0.86, 0.88));
     wakeMaterial.alpha = 0.3;
     wakeMaterial.disableLighting = true;
@@ -570,12 +607,14 @@ export class GameView implements AimProvider {
     return {
       hullId: ship.hullId,
       shipClassId: ship.shipClassId,
+      armamentSignature: shipArmamentSignature(ship),
       root,
       turrets: guns.map((gun) => gun.root),
       gunCradles: guns.map((gun) => gun.cradle),
       gunBarrels: guns.flatMap((gun) => gun.barrels),
       gunBarrelRestZ: guns.flatMap((gun) => gun.barrelRestZ),
       torpedoLauncher: torpedo.root,
+      secondaryTurrets,
       rudder: motion.rudder,
       propellers: motion.propellers,
       wakes,
@@ -629,7 +668,10 @@ export class GameView implements AimProvider {
   private syncShips(state: BattleState, perceivedTarget?: PlayerTargetView): void {
     for (const ship of state.ships) {
       let visual = this.ships.get(ship.id);
-      if (visual && visual.shipClassId !== ship.shipClassId) {
+      if (visual && (
+        visual.shipClassId !== ship.shipClassId
+        || visual.armamentSignature !== shipArmamentSignature(ship)
+      )) {
         visual.root.dispose(false, true);
         this.ships.delete(ship.id);
         visual = undefined;
@@ -689,6 +731,10 @@ export class GameView implements AimProvider {
         ship.torpedoLauncherHeading - ship.heading,
       );
       visual.torpedoLauncher.rotation.z = ship.modules.torpedoTubes.health <= 0 ? -0.16 : 0;
+      for (const [index, turret] of visual.secondaryTurrets.entries()) {
+        const mount = ship.secondaryMounts[index];
+        if (mount) turret.rotation.y = wrapAngle(mount.heading - ship.heading);
+      }
       visual.rudder.rotation.y = -ship.rudder * 0.5;
       for (const [index, propeller] of visual.propellers.entries()) {
         propeller.rotation.z = state.time * ship.speedKnots * (index === 0 ? 0.62 : -0.62);
@@ -749,6 +795,7 @@ export class GameView implements AimProvider {
       let visual = this.projectileMeshes.get(projectile.id);
       if (!visual) {
         const torpedo = projectile.kind === "torpedo";
+        const secondary = projectile.weaponSource === "secondary";
         const apShell = projectile.kind === "shell" && projectile.ammoType === "ap";
         const root = new TransformNode(`${projectile.kind}-root-${projectile.id}`, this.scene);
         const shell = torpedo
@@ -758,9 +805,9 @@ export class GameView implements AimProvider {
             tessellation: 8,
           }, this.scene)
           : CreateBox(`shell-${projectile.id}`, {
-            width: 0.72,
-            height: 0.72,
-            depth: 4.8,
+            width: secondary ? 0.38 : 0.72,
+            height: secondary ? 0.38 : 0.72,
+            depth: secondary ? 2.6 : 4.8,
           }, this.scene);
         if (torpedo) shell.rotation.x = Math.PI / 2;
         const shellMaterial = this.effectMaterial(
@@ -775,7 +822,7 @@ export class GameView implements AimProvider {
         shell.material = shellMaterial;
         shell.parent = root;
         const glow = CreateSphere(`shell-glow-${projectile.id}`, {
-          diameter: 2.6,
+          diameter: secondary ? 1.35 : 2.6,
           segments: 4,
         }, this.scene);
         const glowMaterial = this.effectMaterial(
@@ -801,7 +848,8 @@ export class GameView implements AimProvider {
 
       let trail = this.projectileTrails.get(projectile.id);
       if (!trail) {
-        const capacity = this.quality === "low" ? 18 : 24;
+        const secondary = projectile.weaponSource === "secondary";
+        const capacity = secondary ? 12 : this.quality === "low" ? 18 : 24;
         const tailPoint = nextPoint.subtract(direction.scale(1.2));
         const points = Array.from({ length: capacity }, (_, index) => Vector3.Lerp(
           tailPoint,
@@ -821,7 +869,7 @@ export class GameView implements AimProvider {
           ? Math.min(1, Math.max(0.28, ((projectile.detectionRange ?? 500) - 280) / 370))
           : 1;
         core.alpha = projectile.kind === "torpedo" ? 0.26 * wakeVisibility : 0.96;
-        const plume = this.quality === "medium"
+        const plume = this.quality === "medium" && !secondary
           ? CreateTube(`trail-plume-${projectile.id}`, {
             path: points,
             radius: projectile.kind === "torpedo" ? 0.48 : 0.32,
@@ -1136,6 +1184,29 @@ export class GameView implements AimProvider {
 
   consumeShots(shots: readonly ShotEvent[]): void {
     for (const shot of shots) {
+      if (shot.kind === "depthCharge") {
+        const dropRing = CreateTorus(`depth-charge-drop-${shot.id}`, {
+          diameter: 4.5,
+          thickness: 0.45,
+          tessellation: 10,
+        }, this.scene);
+        dropRing.position.copyFrom(toVector(shot.position));
+        dropRing.position.y = -0.24;
+        dropRing.material = this.effectMaterial(
+          "depth-charge-drop-foam",
+          new Color3(0.66, 0.86, 0.89),
+          Color3.Black(),
+          0.48,
+        );
+        this.effects.push({
+          mesh: dropRing,
+          remaining: 0.8,
+          duration: 0.8,
+          scaleFrom: 0.25,
+          scaleTo: 1.8,
+        });
+        continue;
+      }
       if (shot.kind === "torpedo") {
         const wake = CreateTorus(`torpedo-launch-${shot.id}`, {
           diameter: 5.5,
@@ -1159,33 +1230,38 @@ export class GameView implements AimProvider {
         });
         continue;
       }
-      const flash = this.pooledBillboard(
-        "muzzle-flash",
-        7.5,
-        10,
-        this.pixelVfxMaterial("muzzle"),
-      );
+        const secondary = shot.weaponSource === "secondary";
+        const flash = this.pooledBillboard(
+          secondary ? "secondary-muzzle-flash" : "muzzle-flash",
+          secondary ? 3.4 : 7.5,
+          secondary ? 4.5 : 10,
+          this.pixelVfxMaterial("muzzle"),
+        );
       flash.position.copyFrom(toVector(shot.position));
       this.effects.push({
         mesh: flash,
-        poolKey: "muzzle-flash",
+          poolKey: secondary ? "secondary-muzzle-flash" : "muzzle-flash",
         remaining: 0.14,
         duration: 0.14,
         scaleFrom: 0.4,
         scaleTo: 1.2,
       });
-      const smoke = this.pooledSmokeVolume("muzzle-smoke-3d", 3.6);
+        if (secondary && this.quality === "low") continue;
+        const smoke = this.pooledSmokeVolume(
+          secondary ? "secondary-muzzle-smoke-3d" : "muzzle-smoke-3d",
+          secondary ? 1.8 : 3.6,
+        );
       smoke.position.copyFrom(toVector(shot.position));
       this.effects.push({
         mesh: smoke,
-        poolKey: "muzzle-smoke-3d",
+          poolKey: secondary ? "secondary-muzzle-smoke-3d" : "muzzle-smoke-3d",
         remaining: 0.72,
         duration: 0.72,
         velocity: new Vector3(0, 3.8, 0),
         gravity: -0.5,
         spin: new Vector3(0.52, 0.78, 0.34),
         scaleFrom: 0.45,
-        scaleTo: 2.4,
+          scaleTo: secondary ? 1.45 : 2.4,
       });
     }
   }

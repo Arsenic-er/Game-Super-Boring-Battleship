@@ -4,6 +4,7 @@ import { SHIP_CLASSES } from "../ships/classes";
 import type { ShipClassId } from "../ships/classes";
 import { getTorpedo } from "../ships/torpedoes";
 import type { TorpedoId } from "../ships/torpedoes";
+import type { SecondaryGunId } from "../ships/secondaryGuns";
 
 export type { HullId } from "../ships/hulls";
 
@@ -22,6 +23,7 @@ export interface EquipmentDefinition {
   compatibleHulls: HullId[];
   mainGunId?: MainGunId;
   torpedoId?: TorpedoId;
+  secondaryGunId?: SecondaryGunId;
   bonus: number;
   drawback?: number;
   researchCost: number;
@@ -168,22 +170,22 @@ const historicalModels: Record<EquipmentCategory, Record<EquipmentRarity, Histor
     common: {
       name: "Mk VII 深水炸弹 / 艉轨组",
       origin: "英国 · 二战驱逐舰反潜装备",
-      description: "舰艉投放轨与基础定深深水炸弹。当前版本尚无水下目标，因此水面战中不可使用。",
+      description: "舰艉投放轨与基础定深深水炸弹，已可在海试模式对水下训练靶使用。",
     },
     purple: {
       name: "九五式深水炸弹 / 投射机组",
       origin: "日本 · 驱逐舰反潜装备",
-      description: "以投射机扩大覆盖宽度的反潜配置。当前版本尚无水下目标，因此水面战中不可使用。",
+      description: "以投射机扩大覆盖宽度的反潜配置；首版沿用标准深弹参数，专属阵型待后续接入。",
     },
     gold: {
       name: "Mk 6 深水炸弹 / K-gun组",
       origin: "美国 · 舰队驱逐舰反潜装备",
-      description: "由舷侧 K-gun 与艉轨形成连续投放阵列。当前版本尚无水下目标，因此水面战中不可使用。",
+      description: "由舷侧 K-gun 与艉轨形成连续投放阵列；首版沿用标准深弹参数，专属阵型待后续接入。",
     },
     redGold: {
       name: "Hedgehog Mk 10 前投反潜炮",
       origin: "盟军 · 战争后期反潜装备",
-      description: "保持声呐接触时向舰首前方投射弹幕。当前版本尚无水下目标，因此水面战中不可使用。",
+      description: "保持声呐接触时向舰首前方投射弹幕；前投接触引信逻辑尚未接入，首版沿用标准深弹参数。",
     },
   },
   magazine: {
@@ -288,6 +290,7 @@ export const EQUIPMENT_CATALOG: EquipmentDefinition[] = categories.flatMap((cate
           : ["destroyer", "lightCruiser", "battleship"],
       mainGunId: category === "mainGun" ? gunByRarity[rarity] : undefined,
       torpedoId: category === "torpedo" ? torpedoByRarity[rarity] : undefined,
+      secondaryGunId: category === "sideGun" ? `sideGun-${rarity}` : undefined,
       bonus: bonuses[rarity],
       drawback: category === "magazine" && rarity !== "common"
         ? bonuses[rarity] * 0.24

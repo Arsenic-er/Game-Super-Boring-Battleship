@@ -190,7 +190,7 @@ export class GameMenus {
           <div class="menu-tab-panel codex-panel" data-menu-panel="codex" hidden>
             <div class="screen-heading"><div><p class="eyebrow">二战舰装档案</p><h2>组件图鉴</h2></div><span>边框表示舰装档位 · 名称采用历史型号</span></div>
             <div class="codex-table-wrap"><table class="codex-table"><thead><tr><th>类别</th><th>常备舰装</th><th>改装舰装</th><th>精锐舰装</th><th>舰队试验</th><th>当前舰型</th></tr></thead><tbody></tbody></table></div>
-            <p class="codex-note">历史鱼雷型号已接入战斗性能与发射器损伤；防空炮和侧炮仍等待对应战斗系统。侧炮仅供轻巡洋舰与战列舰。</p>
+            <p class="codex-note">历史鱼雷与侧炮型号已接入实际战斗性能；轻巡洋舰和战列舰的侧炮会在火控连续确认目标后自动接战。防空炮等待舰载机系统。</p>
           </div>
         </section>
       </div>

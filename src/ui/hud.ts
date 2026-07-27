@@ -12,6 +12,7 @@ import {
 } from "../sim/simulation";
 import { getMainGun } from "../ships/components";
 import { getTorpedo } from "../ships/torpedoes";
+import { getSecondaryGun } from "../ships/secondaryGuns";
 import type {
   AmmoType,
   BattleState,
@@ -106,6 +107,7 @@ export class Hud {
   private readonly smokeStatus: HTMLElement;
   private readonly hydroStatus: HTMLElement;
   private readonly depthChargeStatus: HTMLElement;
+  private readonly secondaryBatteryStatus: HTMLElement;
   private readonly gunBloomStatus: HTMLElement;
   private readonly damageControlPriority: HTMLElement;
   private readonly damageControlTasks: HTMLElement;
@@ -173,6 +175,7 @@ export class Hud {
           <div id="smoke-status" class="damage-state"><kbd>E</kbd> 烟幕就绪 · 2 次</div>
           <div id="hydro-status" class="damage-state"><kbd>F</kbd> 水听就绪 · 2 次</div>
           <div id="depth-charge-status" class="damage-state"><kbd>G</kbd> 深弹状态</div>
+          <div id="secondary-battery-status" class="damage-state">自动副炮 · 未安装</div>
           <div id="gun-bloom-status" class="damage-state">隐蔽状态正常</div>
           <div class="damage-control">
             <div class="damage-control-heading">
@@ -296,6 +299,7 @@ export class Hud {
     this.smokeStatus = find("#smoke-status");
     this.hydroStatus = find("#hydro-status");
     this.depthChargeStatus = find("#depth-charge-status");
+    this.secondaryBatteryStatus = find("#secondary-battery-status");
     this.gunBloomStatus = find("#gun-bloom-status");
     this.damageControlPriority = find("#damage-control-priority");
     this.damageControlTasks = find("#damage-control-tasks");
@@ -540,6 +544,30 @@ export class Hud {
             ? `<kbd>G</kbd> 深弹就绪 · ${player.depthChargeSalvos} 批`
             : `<kbd>G</kbd> 深弹耗尽`;
     this.depthChargeStatus.className = `damage-state${recentReject ? " critical" : player.depthChargeReloadRemaining <= 0 && player.depthChargeSalvos > 0 ? " active" : ""}`;
+    const secondaryStatusLabels = {
+      unavailable: "未安装",
+      disabled: "炮组损坏",
+      searching: "搜索目标",
+      acquiring: "火控测距",
+      "out-of-range": "目标超出射程",
+      sector: "目标位于射界外",
+      traversing: "炮座转动中",
+      reloading: "装填中",
+      firing: "自动开火",
+    } as const;
+    const secondaryReadiness = player.secondaryMounts.length > 0
+      ? Math.round(player.secondaryMounts.reduce((sum, mount) => {
+        const duration = getSecondaryGun(mount.definitionId).reloadSeconds
+          * player.performance.reloadMultiplier;
+        return sum + clamp(1 - mount.reloadRemaining / duration, 0, 1);
+      }, 0) / player.secondaryMounts.length * 100)
+      : 0;
+    const secondaryModels = [...new Set(player.secondaryMounts.map((mount) =>
+      getSecondaryGun(mount.definitionId).shortLabel))].join(" / ");
+    this.secondaryBatteryStatus.textContent = player.secondaryMounts.length > 0
+      ? `自动副炮 · ${secondaryStatusLabels[player.secondaryBatteryStatus]} · ${player.secondaryMounts.length} 座 · 装填 ${secondaryReadiness}% · ${secondaryModels}`
+      : "自动副炮 · 未安装";
+    this.secondaryBatteryStatus.className = `damage-state${player.secondaryBatteryStatus === "firing" ? " active" : player.secondaryBatteryStatus === "disabled" ? " critical" : ""}`;
     const gunBloomRemaining = mainGunBloomRemaining(state.time, player);
     this.gunBloomStatus.textContent = gunBloomRemaining > 0
       ? `主炮开火暴露 · ${gunBloomRemaining.toFixed(1)} s · 可被远距发现`

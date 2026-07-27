@@ -210,4 +210,22 @@ describe("local commander profile", () => {
     expect(battleLoadout(cruiser).depthChargeMounts).toBe(0);
     expect(equipComponent(cruiser, "depthCharge-common")).toEqual(cruiser);
   });
+  it("passes every fitted historical side-gun slot into battle in slot order", () => {
+    const base = selectShipClass(createDefaultLocalProfile(), "agano");
+    const mixed = normalizeLocalProfile({
+      ...base,
+      inventory: { ...base.inventory, "sideGun-purple": 1 },
+      unlockedEquipment: { ...base.unlockedEquipment, "sideGun-purple": true },
+      slotLoadoutsByShipClass: {
+        ...base.slotLoadoutsByShipClass,
+        agano: {
+          ...base.slotLoadoutsByShipClass.agano,
+          sideGun: ["sideGun-common", "sideGun-purple"],
+        },
+      },
+    });
+    expect(battleLoadout(mixed).secondaryGunIds)
+      .toEqual(["sideGun-common", "sideGun-purple"]);
+    expect(battleLoadout(selectShipClass(mixed, "fletcher")).secondaryGunIds).toEqual([]);
+  });
 });

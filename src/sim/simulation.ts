@@ -32,6 +32,8 @@ import { DEFAULT_SHIP_CLASS_ID, getShipClass, isShipClassId } from "../ships/cla
 import type { ShipClassId } from "../ships/classes";
 import { DEFAULT_TORPEDO_ID, getTorpedo } from "../ships/torpedoes";
 import type { TorpedoId } from "../ships/torpedoes";
+import { getSecondaryGun } from "../ships/secondaryGuns";
+import type { SecondaryGunId } from "../ships/secondaryGuns";
 import { effectiveTorpedoDetectionRange } from "./detection";
 import type {
   AmmoType,
@@ -124,6 +126,27 @@ function createModules(): ShipState["modules"] {
   };
 }
 
+function createSecondaryMounts(
+  ids: readonly SecondaryGunId[],
+  heading: number,
+  shipClassId: ShipClassId,
+): ShipState["secondaryMounts"] {
+  const definition = getShipClass(shipClassId);
+  const pairCount = Math.max(1, Math.ceil(ids.length / 2));
+  return ids.map((definitionId, index) => {
+    const pairIndex = Math.floor(index / 2);
+    const progress = pairCount <= 1 ? 0.5 : pairIndex / (pairCount - 1);
+    const side = (index % 2 === 0 ? -1 : 1) as -1 | 1;
+    return {
+      definitionId,
+      side,
+      longitudinalOffset: definition.length * (0.28 - progress * 0.56),
+      heading: wrapAngle(heading + side * Math.PI / 2),
+      reloadRemaining: 0,
+    };
+  });
+}
+
 function createShip(
   id: string,
   team: Team,
@@ -143,6 +166,7 @@ function createShip(
   mainGunMounts = 1,
   torpedoLauncherMounts = 1,
   depthChargeMounts = 0,
+  secondaryGunIds: readonly SecondaryGunId[] = [],
 ): ShipState {
   const hullDefinition = getShipClass(shipClassId);
   const hullId = hullDefinition.hullId;
@@ -175,6 +199,9 @@ function createShip(
     mainGunMounts: Math.max(1, mainGunMounts),
     torpedoLauncherMounts: Math.max(0, torpedoLauncherMounts),
     depthChargeMounts: Math.max(0, depthChargeMounts),
+    secondaryMounts: createSecondaryMounts(secondaryGunIds, heading, shipClassId),
+    secondaryBatteryStatus: secondaryGunIds.length > 0 ? "searching" : "unavailable",
+    secondaryAcquisitionSamples: 0,
     performance,
     gunTraverseBlocked: false,
     reloadRemaining: 0,
@@ -222,19 +249,29 @@ export function createInitialState(
     mainGunMounts?: number;
     torpedoLauncherMounts?: number;
     depthChargeMounts?: number;
+    secondaryGunIds?: SecondaryGunId[];
   }) | undefined;
   const mainGunMounts = armament?.mainGunMounts ?? 1;
   const torpedoLauncherMounts = armament?.torpedoLauncherMounts
     ?? (playerShipClass.slotCounts.torpedo > 0 ? 1 : 0);
   const depthChargeMounts = armament?.depthChargeMounts
     ?? (playerShipClass.slotCounts.depthCharge > 0 ? 1 : 0);
+  const secondaryGunIds = armament?.secondaryGunIds
+    ?? Array.from(
+      { length: playerShipClass.starterSlots.sideGun },
+      () => "sideGun-common" as const,
+    );
+  const enemySecondaryGunIds = Array.from(
+    { length: playerShipClass.starterSlots.sideGun },
+    () => "sideGun-common" as const,
+  );
   const player = createShip("player", "player", 0, -900, 0, playerMainGunId, playerTorpedoId, {
     maxSpeedMultiplier: playerPerformance?.maxSpeedMultiplier ?? 1,
     accelerationMultiplier: playerPerformance?.accelerationMultiplier ?? 1,
     turnMultiplier: playerPerformance?.turnMultiplier ?? 1,
     reloadMultiplier: playerPerformance?.reloadMultiplier ?? 1,
     magazineRiskMultiplier: playerPerformance?.magazineRiskMultiplier ?? 1,
-  }, playerShipClassId, mainGunMounts, torpedoLauncherMounts, depthChargeMounts);
+  }, playerShipClassId, mainGunMounts, torpedoLauncherMounts, depthChargeMounts, secondaryGunIds);
   const testTarget = createShip(
     "test-target",
     "enemy",
@@ -248,6 +285,7 @@ export function createInitialState(
     mainGunMounts,
     torpedoLauncherMounts,
     0,
+    [],
   );
   testTarget.speedKnots = 0;
   testTarget.throttle = 0;
@@ -278,6 +316,7 @@ export function createInitialState(
         mainGunMounts,
         torpedoLauncherMounts,
         0,
+        enemySecondaryGunIds,
       )]
       : [player, testTarget],
     projectiles: [],
@@ -458,6 +497,9 @@ function moveShip(ship: ShipState, command: ControlCommand, dt: number): void {
   );
   ship.reloadRemaining = Math.max(0, ship.reloadRemaining - dt);
   ship.depthChargeReloadRemaining = Math.max(0, ship.depthChargeReloadRemaining - dt);
+  for (const mount of ship.secondaryMounts) {
+    mount.reloadRemaining = Math.max(0, mount.reloadRemaining - dt);
+  }
   if (ship.reloadRemaining <= 0 && ship.pendingAmmoType) {
     ship.ammoType = ship.pendingAmmoType;
     ship.pendingAmmoType = undefined;
@@ -629,6 +671,7 @@ function fireGun(state: BattleState, ship: ShipState): void {
       team: ship.team,
       kind: "shell",
       ammoType: ship.ammoType,
+      weaponSource: "mainGun",
       position: copyVec(origin),
       previousPosition: copyVec(origin),
       velocity,
@@ -641,6 +684,7 @@ function fireGun(state: BattleState, ship: ShipState): void {
       team: ship.team,
       kind: "shell",
       ammoType: ship.ammoType,
+      weaponSource: "mainGun",
       position: copyVec(origin),
     });
     firedShells += 1;
@@ -649,6 +693,186 @@ function fireGun(state: BattleState, ship: ShipState): void {
   ship.lastMainGunFiredAt = state.time;
   const gunRatio = Math.max(0.25, moduleRatio(ship, "gun"));
   ship.reloadRemaining = gunDefinition.reloadSeconds * ship.performance.reloadMultiplier / gunRatio;
+}
+
+export function secondaryMountOrigin(
+  ship: ShipState,
+  mount: ShipState["secondaryMounts"][number],
+): Vec3 {
+  const definition = getShipClass(ship.shipClassId);
+  const forwardX = Math.sin(ship.heading);
+  const forwardZ = Math.cos(ship.heading);
+  const rightX = Math.cos(ship.heading);
+  const rightZ = -Math.sin(ship.heading);
+  const lateral = mount.side * definition.beam * 0.43;
+  return {
+    x: ship.position.x + forwardX * mount.longitudinalOffset + rightX * lateral,
+    y: definition.deckHeight * 0.82,
+    z: ship.position.z + forwardZ * mount.longitudinalOffset + rightZ * lateral,
+  };
+}
+
+export function secondaryMountCanBear(
+  ship: Pick<ShipState, "heading">,
+  side: -1 | 1,
+  bearing: number,
+): boolean {
+  const relative = wrapAngle(bearing - ship.heading);
+  const absolute = Math.abs(relative);
+  const targetSide = relative >= 0 ? 1 : -1;
+  return side === targetSide
+    && absolute >= 25 * Math.PI / 180
+    && absolute <= 155 * Math.PI / 180;
+}
+
+function secondaryAimPoint(
+  state: BattleState,
+  ship: ShipState,
+  contact: SensorContact,
+  origin: Vec3,
+  muzzleVelocity: number,
+  dispersionMultiplier: number,
+): Vec3 {
+  const range = Math.max(1, Math.hypot(
+    contact.position.x - origin.x,
+    contact.position.z - origin.z,
+  ));
+  const leadSeconds = range / muzzleVelocity;
+  const targetSpeed = contact.speedKnots * KNOT_TO_MPS;
+  const target = {
+    x: contact.position.x + Math.sin(contact.heading) * targetSpeed * leadSeconds,
+    y: 3,
+    z: contact.position.z + Math.cos(contact.heading) * targetSpeed * leadSeconds,
+  };
+  const dx = target.x - origin.x;
+  const dz = target.z - origin.z;
+  const forwardX = dx / range;
+  const forwardZ = dz / range;
+  const rightX = forwardZ;
+  const rightZ = -forwardX;
+  const gunRatio = Math.max(0.25, moduleRatio(ship, "gun"));
+  const longitudinal = (18 + range * 0.018) * dispersionMultiplier / gunRatio;
+  const lateral = (9 + range * 0.011) * dispersionMultiplier / gunRatio;
+  const centeredNoise = (): number =>
+    ((random(state) + random(state) + random(state)) - 1.5) / 1.5;
+  const longitudinalError = centeredNoise() * longitudinal;
+  const lateralError = centeredNoise() * lateral;
+  return {
+    x: target.x + forwardX * longitudinalError + rightX * lateralError,
+    y: target.y,
+    z: target.z + forwardZ * longitudinalError + rightZ * lateralError,
+  };
+}
+
+function updateSecondaryBattery(state: BattleState, ship: ShipState, dt: number): void {
+  if (ship.secondaryMounts.length === 0) {
+    ship.secondaryBatteryStatus = "unavailable";
+    return;
+  }
+  if (ship.modules.gun.health <= 0) {
+    ship.secondaryBatteryStatus = "disabled";
+    return;
+  }
+  const observation = observe(state, ship.id);
+  const target = [...observation.contacts]
+    .filter((contact) => contact.confidence >= 0.55)
+    .sort((left, right) => left.rangeMeters - right.rangeMeters)[0];
+  if (!target) {
+    ship.secondaryBatteryStatus = "searching";
+    ship.secondaryTargetId = undefined;
+    ship.secondaryAcquisitionSamples = 0;
+    ship.secondaryLastObservationAt = undefined;
+    return;
+  }
+  if (target.observedAt !== ship.secondaryLastObservationAt) {
+    ship.secondaryAcquisitionSamples = ship.secondaryTargetId === target.id
+      ? ship.secondaryAcquisitionSamples + 1
+      : 1;
+    ship.secondaryTargetId = target.id;
+    ship.secondaryLastObservationAt = target.observedAt;
+  }
+
+  const bearing = Math.atan2(
+    target.position.x - ship.position.x,
+    target.position.z - ship.position.z,
+  );
+  const gunRatio = Math.max(0.25, moduleRatio(ship, "gun"));
+  let inSector = false;
+  let inRange = false;
+  let aligned = false;
+  let ready = false;
+  let fired = false;
+  for (const mount of ship.secondaryMounts) {
+    if (!secondaryMountCanBear(ship, mount.side, bearing)) continue;
+    inSector = true;
+    const definition = getSecondaryGun(mount.definitionId);
+    const range = Math.hypot(
+      target.position.x - ship.position.x,
+      target.position.z - ship.position.z,
+    );
+    if (range < 200 || range > definition.maximumRangeMeters) continue;
+    inRange = true;
+    const traverseRate = definition.traverseRadiansPerSecond * gunRatio;
+    const headingError = wrapAngle(bearing - mount.heading);
+    mount.heading = wrapAngle(
+      mount.heading + clamp(headingError, -traverseRate * dt, traverseRate * dt),
+    );
+    const mountAligned = Math.abs(wrapAngle(bearing - mount.heading)) <= 4 * Math.PI / 180;
+    aligned ||= mountAligned;
+    if (!mountAligned || ship.secondaryAcquisitionSamples < SENSOR.acquisitionSamples) continue;
+    if (mount.reloadRemaining > 0) continue;
+    ready = true;
+    const origin = secondaryMountOrigin(ship, mount);
+    const aimPoint = secondaryAimPoint(
+      state,
+      ship,
+      target,
+      origin,
+      definition.muzzleVelocity,
+      definition.dispersionMultiplier,
+    );
+    const velocity = ballisticVelocity(origin, aimPoint, definition.muzzleVelocity);
+    if (!velocity) continue;
+    state.projectiles.push({
+      id: state.nextEntityId++,
+      ownerId: ship.id,
+      team: ship.team,
+      kind: "shell",
+      ammoType: "he",
+      weaponSource: "secondary",
+      position: copyVec(origin),
+      previousPosition: copyVec(origin),
+      velocity,
+      damage: definition.damage,
+      age: 0,
+    });
+    state.shots.push({
+      id: state.nextEntityId++,
+      ownerId: ship.id,
+      team: ship.team,
+      kind: "shell",
+      ammoType: "he",
+      weaponSource: "secondary",
+      position: copyVec(origin),
+    });
+    mount.reloadRemaining = definition.reloadSeconds
+      * ship.performance.reloadMultiplier / gunRatio;
+    fired = true;
+  }
+  if (fired) {
+    ship.lastSecondaryFiredAt = state.time;
+    ship.secondaryBatteryStatus = "firing";
+  } else if (ship.secondaryAcquisitionSamples < SENSOR.acquisitionSamples) {
+    ship.secondaryBatteryStatus = "acquiring";
+  } else if (!inSector) {
+    ship.secondaryBatteryStatus = "sector";
+  } else if (!inRange) {
+    ship.secondaryBatteryStatus = "out-of-range";
+  } else if (!aligned) {
+    ship.secondaryBatteryStatus = "traversing";
+  } else if (!ready) {
+    ship.secondaryBatteryStatus = "reloading";
+  }
 }
 
 function deploySmokePuff(state: BattleState, ship: ShipState): void {
@@ -1461,6 +1685,7 @@ function applyHit(
     impactAngleDegrees,
     armorZone: contact.armorZone,
     projectileKind: projectile.kind,
+    weaponSource: projectile.weaponSource,
   });
 }
 
@@ -2216,6 +2441,9 @@ export function stepSimulation(
       else if (command.weaponSlot === "torpedo") fireTorpedoes(state, ship);
     }
     if (command.deployDepthCharge) deployDepthChargePattern(state, ship);
+  }
+  for (const ship of state.ships) {
+    if (ship.hull > 0) updateSecondaryBattery(state, ship, dt);
   }
   resolveShipCollisions(state);
   advanceProjectiles(state, dt);
