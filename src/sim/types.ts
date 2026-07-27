@@ -19,6 +19,8 @@ export type WeaponSlot = "mainGun" | "torpedo" | "aircraft";
 export type TorpedoSpreadMode = "narrow" | "wide";
 export type TorpedoFireRejectReason =
   | "destroyed" | "reloading" | "empty" | "sector" | "aligning";
+export type DepthChargeFireRejectReason =
+  | "wrong-hull" | "not-installed" | "reloading" | "empty" | "no-target";
 export type ProjectileKind = "shell" | "torpedo";
 export type AmmoType = "he" | "ap";
 export type PenetrationResult = "penetration" | "overpenetration" | "ricochet" | "shatter";
@@ -121,6 +123,7 @@ export interface ShipState {
   torpedoId: TorpedoId;
   mainGunMounts: number;
   torpedoLauncherMounts: number;
+  depthChargeMounts: number;
   performance: ShipPerformanceModifiers;
   gunTraverseBlocked: boolean;
   reloadRemaining: number;
@@ -132,6 +135,10 @@ export interface ShipState {
   torpedoFireRejectReason?: TorpedoFireRejectReason;
   torpedoFireRejectedAt?: number;
   torpedoSpreadMode: TorpedoSpreadMode;
+  depthChargeReloadRemaining: number;
+  depthChargeSalvos: number;
+  depthChargeFireRejectReason?: DepthChargeFireRejectReason;
+  depthChargeFireRejectedAt?: number;
   aimPoint: Vec3;
   /** Shell currently inside the gun breech and used by the next salvo. */
   ammoType: AmmoType;
@@ -184,18 +191,42 @@ export interface ProjectileState {
   detectionRange?: number;
 }
 
+export interface DepthChargeState {
+  id: number;
+  ownerId: string;
+  team: Team;
+  position: Vec3;
+  previousPosition: Vec3;
+  velocity: Vec3;
+  age: number;
+  detonationDepth: number;
+  blastRadius: number;
+  damage: number;
+}
+
+export interface UnderwaterTargetState {
+  id: string;
+  position: Vec3;
+  previousPosition: Vec3;
+  hull: number;
+  maxHull: number;
+  radius: number;
+  length: number;
+  isTrainingTarget?: boolean;
+}
+
 export interface ShotEvent {
   id: number;
   ownerId: string;
   team: Team;
-  kind: ProjectileKind;
+  kind: ProjectileKind | "depthCharge";
   ammoType?: AmmoType;
   position: Vec3;
 }
 
 export interface ImpactEvent {
   id: number;
-  kind: "hit" | "splash" | "collision";
+  kind: "hit" | "splash" | "collision" | "underwater-explosion";
   position: Vec3;
   targetId?: string;
   damage?: number;
@@ -211,7 +242,7 @@ export interface ImpactEvent {
   effectiveArmorMm?: number;
   impactAngleDegrees?: number;
   armorZone?: ArmorZoneId;
-  projectileKind?: ProjectileKind;
+  projectileKind?: ProjectileKind | "depthCharge";
 }
 
 export interface TorpedoThreat {
@@ -242,6 +273,8 @@ export interface BattleState {
   objective: ObjectiveState;
   ships: ShipState[];
   projectiles: ProjectileState[];
+  depthCharges: DepthChargeState[];
+  underwaterTargets: UnderwaterTargetState[];
   shots: ShotEvent[];
   impacts: ImpactEvent[];
   smokeClouds: SmokeCloudState[];
@@ -263,6 +296,7 @@ export interface ControlCommand {
   torpedoSpread?: TorpedoSpreadMode;
   activateSmoke?: boolean;
   activateHydro?: boolean;
+  deployDepthCharge?: boolean;
   perception?: PerceptionTelemetry;
 }
 

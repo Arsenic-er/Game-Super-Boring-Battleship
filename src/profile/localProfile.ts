@@ -72,6 +72,7 @@ export interface BattleLoadout {
   magazineRiskMultiplier: number;
   mainGunMounts: number;
   torpedoLauncherMounts: number;
+  depthChargeMounts: number;
 }
 
 const STORAGE_KEY = "grey-sea-local-profile-v5";
@@ -446,6 +447,7 @@ export function battleLoadout(profileSource: LocalProfile): BattleLoadout {
     magazineRiskMultiplier: (1 + (magazine?.drawback ?? 0)) * (1 + (torpedo?.drawback ?? 0)),
     mainGunMounts: profile.slotLoadoutsByShipClass[profile.shipClassId].mainGun.filter(Boolean).length,
     torpedoLauncherMounts: profile.slotLoadoutsByShipClass[profile.shipClassId].torpedo.filter(Boolean).length,
+    depthChargeMounts: profile.slotLoadoutsByShipClass[profile.shipClassId].depthCharge.filter(Boolean).length,
   };
 }
 

@@ -124,8 +124,13 @@ export class CombatAudio {
     if (!this.context || this.context.state !== "running") return;
     const torpedoSalvos = new Set<string>();
     const gunSalvos = new Set<string>();
+    const depthChargePatterns = new Set<string>();
     for (const shot of shots) {
-      if (shot.kind === "torpedo") {
+      if (shot.kind === "depthCharge") {
+        if (depthChargePatterns.has(shot.ownerId)) continue;
+        depthChargePatterns.add(shot.ownerId);
+        this.depthChargeDrop(shot.team === "player" ? 0.13 : 0.05);
+      } else if (shot.kind === "torpedo") {
         if (torpedoSalvos.has(shot.ownerId)) continue;
         torpedoSalvos.add(shot.ownerId);
         this.torpedoLaunch(shot.team === "player" ? 0.2 : 0.08);
@@ -140,7 +145,8 @@ export class CombatAudio {
   consumeImpacts(impacts: readonly ImpactEvent[]): void {
     if (!this.context || this.context.state !== "running") return;
     for (const impact of impacts) {
-      if (impact.projectileKind === "torpedo") this.torpedoImpact(0.22);
+      if (impact.projectileKind === "depthCharge") this.depthChargeExplosion(0.16);
+      else if (impact.projectileKind === "torpedo") this.torpedoImpact(0.22);
       else if (impact.kind === "hit") this.noiseBurst(0.13, 0.19, 520);
       else this.noiseBurst(0.06, 0.28, 1_600);
     }
@@ -298,6 +304,42 @@ export class CombatAudio {
     hiss.start(now);
     hiss.stop(now + 0.38);
     this.noiseBurst(volume, 0.48, 2_400);
+  }
+
+  private depthChargeDrop(volume: number): void {
+    const context = this.context;
+    const output = this.output();
+    if (!context || !output) return;
+    const now = context.currentTime;
+    const oscillator = context.createOscillator();
+    const gain = context.createGain();
+    oscillator.type = "sine";
+    oscillator.frequency.setValueAtTime(92, now);
+    oscillator.frequency.exponentialRampToValueAtTime(58, now + 0.24);
+    gain.gain.setValueAtTime(volume, now);
+    gain.gain.exponentialRampToValueAtTime(0.001, now + 0.28);
+    oscillator.connect(gain).connect(output);
+    oscillator.start(now);
+    oscillator.stop(now + 0.3);
+    this.noiseBurst(volume * 0.45, 0.18, 1_100);
+  }
+
+  private depthChargeExplosion(volume: number): void {
+    const context = this.context;
+    const output = this.output();
+    if (!context || !output) return;
+    const now = context.currentTime;
+    const oscillator = context.createOscillator();
+    const gain = context.createGain();
+    oscillator.type = "sine";
+    oscillator.frequency.setValueAtTime(36, now);
+    oscillator.frequency.exponentialRampToValueAtTime(18, now + 0.85);
+    gain.gain.setValueAtTime(volume, now);
+    gain.gain.exponentialRampToValueAtTime(0.001, now + 0.9);
+    oscillator.connect(gain).connect(output);
+    oscillator.start(now);
+    oscillator.stop(now + 0.92);
+    this.noiseBurst(volume * 0.75, 0.72, 430);
   }
 
   private torpedoImpact(volume: number): void {

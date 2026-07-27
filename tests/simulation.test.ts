@@ -7,6 +7,7 @@ import {
 import {
   AI_TORPEDO,
   BATTLE_DURATION_SECONDS,
+  DEPTH_CHARGE,
   FIXED_STEP,
   GUN,
   OBJECTIVE,
@@ -611,6 +612,71 @@ describe("deterministic battle simulation", () => {
     state.time = BATTLE_DURATION_SECONDS + 30;
     stepSimulation(state, new Map([["player", idle(0, 1_000)]]), FIXED_STEP);
     expect(state.status).toBe("running");
+  });
+
+  it("deploys a destroyer depth-charge pattern from the stern in sea trials", () => {
+    const state = createInitialState(2101, "sea-trials");
+    const player = state.ships.find((ship) => ship.id === "player")!;
+    const salvos = player.depthChargeSalvos;
+    stepSimulation(state, new Map([[player.id, {
+      ...idle(player.position.x, player.position.z + 1_000),
+      deployDepthCharge: true,
+    }]]), FIXED_STEP);
+    expect(state.depthCharges).toHaveLength(DEPTH_CHARGE.chargesPerPattern);
+    expect(player.depthChargeSalvos).toBe(salvos - 1);
+    expect(player.depthChargeReloadRemaining).toBeGreaterThan(9.9);
+    expect(state.shots.some((shot) => shot.kind === "depthCharge")).toBe(true);
+    expect(state.depthCharges.every((charge) => charge.position.z < player.position.z)).toBe(true);
+  });
+
+  it("detonates at the configured depth and damages only a nearby underwater target", () => {
+    const state = createInitialState(2102, "sea-trials");
+    const player = state.ships[0]!;
+    const target = state.underwaterTargets[0]!;
+    stepSimulation(state, new Map([[player.id, {
+      ...idle(0, 1_000), deployDepthCharge: true,
+    }]]), FIXED_STEP);
+    const surfaceHull = state.ships.find((ship) => ship.isTestTarget)!.hull;
+    for (const charge of state.depthCharges) {
+      charge.position = { x: target.position.x, y: -DEPTH_CHARGE.detonationDepthMeters + 0.01, z: target.position.z };
+      charge.velocity = { x: 0, y: -DEPTH_CHARGE.sinkSpeedMetersPerSecond, z: 0 };
+    }
+    stepSimulation(state, new Map([[player.id, idle(0, 1_000)]]), FIXED_STEP);
+    expect(state.depthCharges).toHaveLength(0);
+    expect(target.hull).toBeLessThan(target.maxHull);
+    expect(state.ships.find((ship) => ship.isTestTarget)!.hull).toBe(surfaceHull);
+    expect(state.impacts.filter((impact) => impact.kind === "underwater-explosion"))
+      .toHaveLength(DEPTH_CHARGE.chargesPerPattern);
+  });
+
+  it("rejects depth charges without a live underwater target and consumes nothing", () => {
+    const state = createInitialState(2103, "battle");
+    const player = state.ships[0]!;
+    const salvos = player.depthChargeSalvos;
+    stepSimulation(state, new Map([[player.id, {
+      ...idle(0, 1_000), deployDepthCharge: true,
+    }]]), FIXED_STEP);
+    expect(state.depthCharges).toHaveLength(0);
+    expect(player.depthChargeSalvos).toBe(salvos);
+    expect(player.depthChargeReloadRemaining).toBe(0);
+    expect(player.depthChargeFireRejectReason).toBe("no-target");
+  });
+
+  it("rejects forged depth-charge mounts on cruisers", () => {
+    const state = createInitialState(
+      2104,
+      "sea-trials",
+      undefined,
+      { depthChargeMounts: 1 } as never,
+      undefined,
+      "cleveland",
+    );
+    const player = state.ships[0]!;
+    stepSimulation(state, new Map([[player.id, {
+      ...idle(0, 1_000), deployDepthCharge: true,
+    }]]), FIXED_STEP);
+    expect(state.depthCharges).toHaveLength(0);
+    expect(player.depthChargeFireRejectReason).toBe("wrong-hull");
   });
 
   it("creates distinct destroyer, cruiser and battleship performance envelopes", () => {

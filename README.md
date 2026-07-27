@@ -56,6 +56,7 @@ This is an early prototype rather than a finished commercial game. Visuals, bala
 | `H` | Hold to divert damage-control crew to recoverable hull damage |
 | `E` | Activate Smoke Generator |
 | `F` | Activate Hydroacoustic Search |
+| `G` | Drop a depth-charge pattern (destroyers with ASW equipment) |
 | `M` | Open / close tactical map |
 | `F3` | Developer diagnostics |
 | `Esc` | Exit scope/map or pause |
@@ -124,6 +125,7 @@ Third-party libraries and the Fusion Pixel Font remain under their respective li
 - 鱼雷发射器成为独立可损伤模块；部分损坏同时减慢转向和装填，完全摧毁后两者都会停止。
 - 两次使用机会的驱逐舰烟幕发生器：连续形成固定烟团、双向阻断光学接触，烟中主炮开火会重新暴露。
 - 两次使用机会的水听搜索：在 2 公里内穿透烟幕发现舰船，并把敌方鱼雷探测距离扩展到 1.4 公里。
+- 可玩的驱逐舰反潜海试：装备深弹后按 `G` 从舰艉投放，深弹受水阻下沉并在 18 米定深爆炸，只按三维距离伤害水下训练靶。
 - 战斗与船坞共用同一套 112 米“驱逐舰 V2”：包含阶梯舰桥、双后倾烟囱、三脚桅、挡浪板、救生艇和标准化组件挂点。
 - 船体分区、组件损伤、起火、进水、有限人力损管与可恢复血量。
 - 舰船实体碰撞，以及依据碰撞部位计算的不同伤害。
@@ -148,6 +150,7 @@ Third-party libraries and the Fusion Pixel Font remain under their respective li
 | `H` | 按住抽调损管人力修复可恢复舰体血量 |
 | `E` | 启动烟幕发生器 |
 | `F` | 启动水听搜索 |
+| `G` | 投放深水炸弹（仅限已装备反潜组件的驱逐舰） |
 | `M` | 打开或关闭战术地图 |
 | `F3` | 开发者调试面板 |
 | `Esc` | 退出瞄准/地图或暂停 |

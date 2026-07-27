@@ -204,7 +204,10 @@ describe("local commander profile", () => {
       },
     }), "depthCharge-common");
     expect(destroyer.slotLoadoutsByShipClass.fletcher.depthCharge.filter(Boolean)).toHaveLength(2);
+    expect(battleLoadout(profile).depthChargeMounts).toBe(1);
+    expect(battleLoadout(destroyer).depthChargeMounts).toBe(2);
     const cruiser = selectShipClass(profile, "agano");
+    expect(battleLoadout(cruiser).depthChargeMounts).toBe(0);
     expect(equipComponent(cruiser, "depthCharge-common")).toEqual(cruiser);
   });
 });

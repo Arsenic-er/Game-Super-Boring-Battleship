@@ -129,6 +129,8 @@ export class GameView implements AimProvider {
   private readonly sunLight: DirectionalLight;
   private readonly ships = new Map<string, ShipVisual>();
   private readonly projectileMeshes = new Map<number, ProjectileVisual>();
+  private readonly depthChargeMeshes = new Map<number, Mesh>();
+  private readonly underwaterTargetMeshes = new Map<string, TransformNode>();
   private readonly projectileTrails = new Map<number, ProjectileTrail>();
   private readonly smokeCloudMeshes = new Map<number, SmokeCloudVisual>();
   private readonly effects: TimedMesh[] = [];
@@ -889,6 +891,75 @@ export class GameView implements AimProvider {
     }
   }
 
+  private syncUnderwaterEntities(state: BattleState): void {
+    const activeCharges = new Set(state.depthCharges.map((charge) => charge.id));
+    for (const [id, mesh] of this.depthChargeMeshes) {
+      if (activeCharges.has(id)) continue;
+      mesh.dispose();
+      this.depthChargeMeshes.delete(id);
+    }
+    for (const charge of state.depthCharges) {
+      let mesh = this.depthChargeMeshes.get(charge.id);
+      if (!mesh) {
+        mesh = CreateCylinder(`depth-charge-${charge.id}`, {
+          height: 2.1,
+          diameter: 1.15,
+          tessellation: 8,
+        }, this.scene);
+        mesh.material = this.effectMaterial(
+          "depth-charge-body",
+          new Color3(0.12, 0.17, 0.16),
+          new Color3(0.05, 0.13, 0.13),
+        );
+        this.depthChargeMeshes.set(charge.id, mesh);
+      }
+      mesh.position.copyFrom(toVector(charge.position));
+      mesh.rotation.z = charge.age * 1.8;
+    }
+
+    const activeTargets = new Set(state.underwaterTargets.filter((target) => target.hull > 0).map((target) => target.id));
+    for (const [id, root] of this.underwaterTargetMeshes) {
+      if (activeTargets.has(id)) continue;
+      root.dispose(false, false);
+      this.underwaterTargetMeshes.delete(id);
+    }
+    for (const target of state.underwaterTargets) {
+      if (target.hull <= 0) continue;
+      let root = this.underwaterTargetMeshes.get(target.id);
+      if (!root) {
+        root = new TransformNode(`underwater-target-${target.id}`, this.scene);
+        const body = CreateCylinder(`underwater-target-body-${target.id}`, {
+          height: target.length,
+          diameter: target.radius * 1.5,
+          tessellation: 10,
+        }, this.scene);
+        body.rotation.x = Math.PI / 2;
+        body.material = this.effectMaterial(
+          "underwater-training-target",
+          new Color3(0.05, 0.18, 0.22),
+          new Color3(0.02, 0.22, 0.28),
+          0.58,
+        );
+        body.parent = root;
+        const marker = CreateTorus(`underwater-target-marker-${target.id}`, {
+          diameter: 20,
+          thickness: 0.7,
+          tessellation: 16,
+        }, this.scene);
+        marker.position.y = -target.position.y - 0.25;
+        marker.material = this.effectMaterial(
+          "underwater-training-marker",
+          new Color3(0.16, 0.78, 0.88),
+          new Color3(0.04, 0.45, 0.58),
+          0.62,
+        );
+        marker.parent = root;
+        this.underwaterTargetMeshes.set(target.id, root);
+      }
+      root.position.copyFrom(toVector(target.position));
+    }
+  }
+
   private syncSmokeClouds(state: BattleState): void {
     const activeIds = new Set(state.smokeClouds.map((cloud) => cloud.id));
     for (const [id, visual] of this.smokeCloudMeshes) {
@@ -1122,6 +1193,46 @@ export class GameView implements AimProvider {
   consumeImpacts(impacts: readonly ImpactEvent[]): void {
     for (const impact of impacts) {
       const point = toVector(impact.position);
+      if (impact.kind === "underwater-explosion") {
+        const bubble = CreateSphere(`depth-charge-burst-${impact.id}`, {
+          diameter: 9,
+          segments: 6,
+        }, this.scene);
+        bubble.position.copyFrom(point);
+        bubble.material = this.effectMaterial(
+          "depth-charge-burst",
+          new Color3(0.58, 0.86, 0.9),
+          new Color3(0.08, 0.38, 0.5),
+          0.38,
+        );
+        this.effects.push({
+          mesh: bubble,
+          remaining: 0.72,
+          duration: 0.72,
+          scaleFrom: 0.35,
+          scaleTo: 4.5,
+        });
+        const ring = CreateTorus(`depth-charge-surface-ring-${impact.id}`, {
+          diameter: 8,
+          thickness: 0.7,
+          tessellation: 12,
+        }, this.scene);
+        ring.position.set(point.x, -0.24, point.z);
+        ring.material = this.effectMaterial(
+          "depth-charge-surface-foam",
+          new Color3(0.62, 0.86, 0.9),
+          Color3.Black(),
+          0.42,
+        );
+        this.effects.push({
+          mesh: ring,
+          remaining: 1.05,
+          duration: 1.05,
+          scaleFrom: 0.25,
+          scaleTo: 3.6,
+        });
+        continue;
+      }
       if (impact.kind === "splash") {
         const plume = this.pooledBillboard(
           "shell-splash",
@@ -1322,6 +1433,7 @@ export class GameView implements AimProvider {
     this.oceanBumpTexture.vOffset = steppedTime * -0.00135;
     this.syncShips(state, perceivedTarget);
     this.syncProjectiles(state, perceivedTarget);
+    this.syncUnderwaterEntities(state);
     this.syncSmokeClouds(state);
     this.objectiveRing.visibility = state.mode === "battle"
       ? state.objective.contested ? 0.72 + Math.sin(state.time * 7) * 0.18 : 0.72
@@ -1389,6 +1501,10 @@ export class GameView implements AimProvider {
     }
     for (const effect of this.effects) this.releaseEffect(effect);
     this.projectileMeshes.clear();
+    for (const mesh of this.depthChargeMeshes.values()) mesh.dispose();
+    this.depthChargeMeshes.clear();
+    for (const root of this.underwaterTargetMeshes.values()) root.dispose(false, false);
+    this.underwaterTargetMeshes.clear();
     this.projectileTrails.clear();
     for (const visual of this.smokeCloudMeshes.values()) visual.root.dispose(false, true);
     this.smokeCloudMeshes.clear();

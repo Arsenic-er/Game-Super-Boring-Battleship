@@ -1,4 +1,4 @@
-import { BATTLE_DURATION_SECONDS, GUN, HYDRO, OBJECTIVE, SMOKE, TORPEDO } from "../sim/config";
+import { BATTLE_DURATION_SECONDS, DEPTH_CHARGE, GUN, HYDRO, OBJECTIVE, SMOKE, TORPEDO } from "../sim/config";
 import {
   ballisticVelocity,
   dispersionAtRange,
@@ -105,6 +105,7 @@ export class Hud {
   private readonly damageState: HTMLElement;
   private readonly smokeStatus: HTMLElement;
   private readonly hydroStatus: HTMLElement;
+  private readonly depthChargeStatus: HTMLElement;
   private readonly gunBloomStatus: HTMLElement;
   private readonly damageControlPriority: HTMLElement;
   private readonly damageControlTasks: HTMLElement;
@@ -171,6 +172,7 @@ export class Hud {
           <div id="damage-state" class="damage-state">损管正常</div>
           <div id="smoke-status" class="damage-state"><kbd>E</kbd> 烟幕就绪 · 2 次</div>
           <div id="hydro-status" class="damage-state"><kbd>F</kbd> 水听就绪 · 2 次</div>
+          <div id="depth-charge-status" class="damage-state"><kbd>G</kbd> 深弹状态</div>
           <div id="gun-bloom-status" class="damage-state">隐蔽状态正常</div>
           <div class="damage-control">
             <div class="damage-control-heading">
@@ -200,7 +202,8 @@ export class Hud {
           <div class="metric-row"><span>航行距离</span><strong data-telemetry="distance">0 m</strong></div>
           <div class="metric-row"><span>航向</span><strong data-telemetry="heading">000°</strong></div>
           <div class="metric-row"><span>舵令 / 实际舵角</span><strong data-telemetry="rudder">0% / 0%</strong></div>
-          <small>无攻击 AI · 静止碰撞靶船 · 无时间限制</small>
+          <div class="metric-row"><span>水下训练靶</span><strong data-telemetry="asw-target">未探测</strong></div>
+          <small>无攻击 AI · 静止碰撞靶船 · 水下训练靶 · 无时间限制</small>
         </section>
         <section id="feedback" class="feedback-stack" aria-live="polite"></section>
         <div class="reticle" aria-hidden="true">
@@ -292,6 +295,7 @@ export class Hud {
     this.damageState = find("#damage-state");
     this.smokeStatus = find("#smoke-status");
     this.hydroStatus = find("#hydro-status");
+    this.depthChargeStatus = find("#depth-charge-status");
     this.gunBloomStatus = find("#gun-bloom-status");
     this.damageControlPriority = find("#damage-control-priority");
     this.damageControlTasks = find("#damage-control-tasks");
@@ -396,7 +400,7 @@ export class Hud {
     }
   }
 
-  private updateTelemetry(player: ShipState): void {
+  private updateTelemetry(player: ShipState, state: BattleState): void {
     this.maxObservedSpeed = Math.max(this.maxObservedSpeed, Math.abs(player.speedKnots));
     const set = (name: string, value: string): void => {
       const element = this.telemetry.querySelector<HTMLElement>(`[data-telemetry="${name}"]`);
@@ -409,6 +413,13 @@ export class Hud {
       : `${Math.round(player.distanceTravelled)} m`);
     set("heading", `${String(Math.round((player.heading * 180 / Math.PI + 360) % 360)).padStart(3, "0")}°`);
     set("rudder", `${Math.round(player.rudderCommand * 100)}% / ${Math.round(player.rudder * 100)}%`);
+    const target = state.underwaterTargets.find((entry) => entry.hull > 0)
+      ?? state.underwaterTargets[0];
+    set("asw-target", target
+      ? target.hull > 0
+        ? `${Math.round(Math.hypot(target.position.x - player.position.x, target.position.z - player.position.z)).toLocaleString("zh-CN")} m · 深 ${Math.abs(target.position.y)} m · ${Math.round(target.hull / target.maxHull * 100)}%`
+        : "已摧毁 · 重启海试重置"
+      : "当前海域无水下目标");
   }
 
   update(
@@ -507,6 +518,28 @@ export class Hud {
           ? `<kbd>F</kbd> 水听就绪 · ${player.hydroCharges} 次`
           : `<kbd>F</kbd> 水听耗尽`;
     this.hydroStatus.className = `damage-state${player.hydroActiveRemaining > 0 ? " active" : ""}`;
+    const depthReloadPercent = Math.round(
+      clamp(1 - player.depthChargeReloadRemaining / DEPTH_CHARGE.reloadSeconds, 0, 1) * 100,
+    );
+    const recentReject = player.depthChargeFireRejectedAt !== undefined
+      && state.time - player.depthChargeFireRejectedAt < 2.4;
+    const rejectLabels = {
+      "wrong-hull": "仅驱逐舰可投放",
+      "not-installed": "未安装深弹",
+      reloading: "深弹装填中",
+      empty: "深弹已耗尽",
+      "no-target": "当前无水下目标",
+    } as const;
+    this.depthChargeStatus.innerHTML = recentReject && player.depthChargeFireRejectReason
+      ? `<kbd>G</kbd> ${rejectLabels[player.depthChargeFireRejectReason]}`
+      : player.depthChargeMounts <= 0
+        ? `<kbd>G</kbd> 未安装深弹`
+        : player.depthChargeReloadRemaining > 0
+          ? `<kbd>G</kbd> 深弹装填 ${depthReloadPercent}% · ${player.depthChargeReloadRemaining.toFixed(1)} s · 剩 ${player.depthChargeSalvos} 批`
+          : player.depthChargeSalvos > 0
+            ? `<kbd>G</kbd> 深弹就绪 · ${player.depthChargeSalvos} 批`
+            : `<kbd>G</kbd> 深弹耗尽`;
+    this.depthChargeStatus.className = `damage-state${recentReject ? " critical" : player.depthChargeReloadRemaining <= 0 && player.depthChargeSalvos > 0 ? " active" : ""}`;
     const gunBloomRemaining = mainGunBloomRemaining(state.time, player);
     this.gunBloomStatus.textContent = gunBloomRemaining > 0
       ? `主炮开火暴露 · ${gunBloomRemaining.toFixed(1)} s · 可被远距发现`
@@ -701,7 +734,7 @@ export class Hud {
     }
 
     if (seaTrials) {
-      this.updateTelemetry(player);
+      this.updateTelemetry(player, state);
       this.result.hidden = true;
       return;
     }

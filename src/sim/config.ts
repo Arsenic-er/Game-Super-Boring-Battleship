@@ -1,5 +1,17 @@
 export const SIMULATION_HZ = 60;
 export const FIXED_STEP = 1 / SIMULATION_HZ;
+export const DEPTH_CHARGE = {
+  salvos: 4,
+  reloadSeconds: 10,
+  sinkSpeedMetersPerSecond: 3.2,
+  horizontalDragPerSecond: 2.1,
+  detonationDepthMeters: 18,
+  blastRadiusMeters: 42,
+  fullDamageRadiusMeters: 14,
+  damage: 160,
+  maximumLifetimeSeconds: 8,
+  chargesPerPattern: 4,
+} as const;
 export const GRAVITY = 9.81;
 export const KNOT_TO_MPS = 0.514444;
 export const BATTLE_DURATION_SECONDS = 10 * 60;

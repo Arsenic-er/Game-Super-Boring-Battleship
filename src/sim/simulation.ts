@@ -7,6 +7,7 @@ import {
   COLLISION_DAMAGE_MULTIPLIER,
   COMPARTMENT_MAX_HEALTH,
   DAMAGE_CONTROL,
+  DEPTH_CHARGE,
   FIXED_STEP,
   GUN,
   HULL_REPAIR,
@@ -141,6 +142,7 @@ function createShip(
   shipClassId: ShipClassId = DEFAULT_SHIP_CLASS_ID,
   mainGunMounts = 1,
   torpedoLauncherMounts = 1,
+  depthChargeMounts = 0,
 ): ShipState {
   const hullDefinition = getShipClass(shipClassId);
   const hullId = hullDefinition.hullId;
@@ -172,6 +174,7 @@ function createShip(
     torpedoId,
     mainGunMounts: Math.max(1, mainGunMounts),
     torpedoLauncherMounts: Math.max(0, torpedoLauncherMounts),
+    depthChargeMounts: Math.max(0, depthChargeMounts),
     performance,
     gunTraverseBlocked: false,
     reloadRemaining: 0,
@@ -183,6 +186,10 @@ function createShip(
       ? getTorpedo(torpedoId).reserveSalvos
       : 0,
     torpedoSpreadMode: "narrow",
+    depthChargeReloadRemaining: 0,
+    depthChargeSalvos: hullId === "destroyer" && depthChargeMounts > 0
+      ? DEPTH_CHARGE.salvos
+      : 0,
     aimPoint: { x, y: 0, z: z + Math.cos(heading) * 1_800 },
     ammoType: "he",
     fireIntensity: 0,
@@ -214,17 +221,20 @@ export function createInitialState(
   const armament = playerPerformance as (Partial<ShipPerformanceModifiers> & {
     mainGunMounts?: number;
     torpedoLauncherMounts?: number;
+    depthChargeMounts?: number;
   }) | undefined;
   const mainGunMounts = armament?.mainGunMounts ?? 1;
   const torpedoLauncherMounts = armament?.torpedoLauncherMounts
     ?? (playerShipClass.slotCounts.torpedo > 0 ? 1 : 0);
+  const depthChargeMounts = armament?.depthChargeMounts
+    ?? (playerShipClass.slotCounts.depthCharge > 0 ? 1 : 0);
   const player = createShip("player", "player", 0, -900, 0, playerMainGunId, playerTorpedoId, {
     maxSpeedMultiplier: playerPerformance?.maxSpeedMultiplier ?? 1,
     accelerationMultiplier: playerPerformance?.accelerationMultiplier ?? 1,
     turnMultiplier: playerPerformance?.turnMultiplier ?? 1,
     reloadMultiplier: playerPerformance?.reloadMultiplier ?? 1,
     magazineRiskMultiplier: playerPerformance?.magazineRiskMultiplier ?? 1,
-  }, playerShipClassId, mainGunMounts, torpedoLauncherMounts);
+  }, playerShipClassId, mainGunMounts, torpedoLauncherMounts, depthChargeMounts);
   const testTarget = createShip(
     "test-target",
     "enemy",
@@ -237,6 +247,7 @@ export function createInitialState(
     playerShipClassId,
     mainGunMounts,
     torpedoLauncherMounts,
+    0,
   );
   testTarget.speedKnots = 0;
   testTarget.throttle = 0;
@@ -266,9 +277,21 @@ export function createInitialState(
         playerShipClassId,
         mainGunMounts,
         torpedoLauncherMounts,
+        0,
       )]
       : [player, testTarget],
     projectiles: [],
+    depthCharges: [],
+    underwaterTargets: mode === "sea-trials" ? [{
+      id: "submerged-training-target",
+      position: { x: 0, y: -18, z: -330 },
+      previousPosition: { x: 0, y: -18, z: -330 },
+      hull: 1_000,
+      maxHull: 1_000,
+      radius: 6,
+      length: 52,
+      isTrainingTarget: true,
+    }] : [],
     shots: [],
     impacts: [],
     smokeClouds: [],
@@ -434,6 +457,7 @@ function moveShip(ship: ShipState, command: ControlCommand, dt: number): void {
       + clamp(launcherError, -launcherRate * dt, launcherRate * dt),
   );
   ship.reloadRemaining = Math.max(0, ship.reloadRemaining - dt);
+  ship.depthChargeReloadRemaining = Math.max(0, ship.depthChargeReloadRemaining - dt);
   if (ship.reloadRemaining <= 0 && ship.pendingAmmoType) {
     ship.ammoType = ship.pendingAmmoType;
     ship.pendingAmmoType = undefined;
@@ -909,6 +933,89 @@ function fireTorpedoes(state: BattleState, ship: ShipState): void {
   } else {
     ship.torpedoReloadRemaining = 0;
   }
+}
+
+function rejectDepthChargeFire(
+  state: BattleState,
+  ship: ShipState,
+  reason: NonNullable<ShipState["depthChargeFireRejectReason"]>,
+): void {
+  ship.depthChargeFireRejectReason = reason;
+  ship.depthChargeFireRejectedAt = state.time;
+}
+
+function deployDepthChargePattern(state: BattleState, ship: ShipState): void {
+  if (ship.hullId !== "destroyer") {
+    rejectDepthChargeFire(state, ship, "wrong-hull");
+    return;
+  }
+  if (ship.depthChargeMounts <= 0) {
+    rejectDepthChargeFire(state, ship, "not-installed");
+    return;
+  }
+  if (ship.depthChargeReloadRemaining > 0) {
+    rejectDepthChargeFire(state, ship, "reloading");
+    return;
+  }
+  if (ship.depthChargeSalvos <= 0) {
+    rejectDepthChargeFire(state, ship, "empty");
+    return;
+  }
+  if (!state.underwaterTargets.some((target) => target.hull > 0)) {
+    rejectDepthChargeFire(state, ship, "no-target");
+    return;
+  }
+
+  const definition = getShipClass(ship.shipClassId);
+  const forwardX = Math.sin(ship.heading);
+  const forwardZ = Math.cos(ship.heading);
+  const rightX = Math.cos(ship.heading);
+  const rightZ = -Math.sin(ship.heading);
+  const inheritedSpeed = ship.speedKnots * KNOT_TO_MPS * 0.7;
+  const lateral = definition.beam * 0.26;
+  const stern = definition.length * 0.46;
+  const offsets = [
+    { lateral: -lateral, aft: 0 },
+    { lateral, aft: 0 },
+    { lateral: -lateral * 0.72, aft: 5 },
+    { lateral: lateral * 0.72, aft: 5 },
+  ];
+  for (const offset of offsets.slice(0, DEPTH_CHARGE.chargesPerPattern)) {
+    const position = {
+      x: ship.position.x - forwardX * (stern + offset.aft) + rightX * offset.lateral,
+      y: 0.6,
+      z: ship.position.z - forwardZ * (stern + offset.aft) + rightZ * offset.lateral,
+    };
+    state.depthCharges.push({
+      id: state.nextEntityId++,
+      ownerId: ship.id,
+      team: ship.team,
+      position,
+      previousPosition: copyVec(position),
+      velocity: {
+        x: forwardX * inheritedSpeed,
+        y: -DEPTH_CHARGE.sinkSpeedMetersPerSecond,
+        z: forwardZ * inheritedSpeed,
+      },
+      age: 0,
+      detonationDepth: DEPTH_CHARGE.detonationDepthMeters,
+      blastRadius: DEPTH_CHARGE.blastRadiusMeters,
+      damage: DEPTH_CHARGE.damage,
+    });
+  }
+  state.shots.push({
+    id: state.nextEntityId++,
+    ownerId: ship.id,
+    team: ship.team,
+    kind: "depthCharge",
+    position: copyVec(ship.position),
+  });
+  ship.depthChargeSalvos -= 1;
+  ship.depthChargeReloadRemaining = ship.depthChargeSalvos > 0
+    ? DEPTH_CHARGE.reloadSeconds
+    : 0;
+  ship.depthChargeFireRejectReason = undefined;
+  ship.depthChargeFireRejectedAt = undefined;
 }
 
 function shipLocalPoint(
@@ -1544,6 +1651,54 @@ function advanceProjectiles(state: BattleState, dt: number): void {
   state.projectiles = active;
 }
 
+function advanceDepthCharges(state: BattleState, dt: number): void {
+  const active = [] as BattleState["depthCharges"];
+  const horizontalDrag = Math.exp(-DEPTH_CHARGE.horizontalDragPerSecond * dt);
+  for (const charge of state.depthCharges) {
+    charge.previousPosition = copyVec(charge.position);
+    charge.velocity.x *= horizontalDrag;
+    charge.velocity.z *= horizontalDrag;
+    charge.position.x += charge.velocity.x * dt;
+    charge.position.y += charge.velocity.y * dt;
+    charge.position.z += charge.velocity.z * dt;
+    charge.age += dt;
+    const detonated = charge.position.y <= -charge.detonationDepth;
+    if (detonated) {
+      let hitTargetId: string | undefined;
+      let dealtDamage = 0;
+      for (const target of state.underwaterTargets) {
+        if (target.hull <= 0) continue;
+        const distance = Math.hypot(
+          charge.position.x - target.position.x,
+          charge.position.y - target.position.y,
+          charge.position.z - target.position.z,
+        );
+        const effectiveDistance = Math.max(0, distance - target.radius);
+        if (effectiveDistance > charge.blastRadius) continue;
+        const falloff = effectiveDistance <= DEPTH_CHARGE.fullDamageRadiusMeters
+          ? 1
+          : 1 - (effectiveDistance - DEPTH_CHARGE.fullDamageRadiusMeters)
+            / (charge.blastRadius - DEPTH_CHARGE.fullDamageRadiusMeters);
+        const damage = Math.max(0, charge.damage * falloff);
+        target.hull = Math.max(0, target.hull - damage);
+        hitTargetId = target.id;
+        dealtDamage = damage;
+      }
+      state.impacts.push({
+        id: state.nextEntityId++,
+        kind: "underwater-explosion",
+        projectileKind: "depthCharge",
+        position: copyVec(charge.position),
+        targetId: hitTargetId,
+        damage: dealtDamage || undefined,
+      });
+      continue;
+    }
+    if (charge.age < DEPTH_CHARGE.maximumLifetimeSeconds) active.push(charge);
+  }
+  state.depthCharges = active;
+}
+
 const moduleRepairUrgency: Record<ModuleId, number> = {
   steering: 1.3,
   engine: 1.25,
@@ -2060,9 +2215,11 @@ export function stepSimulation(
       if ((command.weaponSlot ?? "mainGun") === "mainGun") fireGun(state, ship);
       else if (command.weaponSlot === "torpedo") fireTorpedoes(state, ship);
     }
+    if (command.deployDepthCharge) deployDepthChargePattern(state, ship);
   }
   resolveShipCollisions(state);
   advanceProjectiles(state, dt);
+  advanceDepthCharges(state, dt);
   updateObjective(state, dt);
   updateStatus(state);
 }
