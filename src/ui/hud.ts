@@ -10,7 +10,7 @@ import {
   torpedoThreatsFor,
   turretAlignmentError,
 } from "../sim/simulation";
-import { getMainGun } from "../ships/components";
+import { getMainBattery, mainBatteryBarrelCount } from "../ships/mainBatteries";
 import { getTorpedo } from "../ships/torpedoes";
 import { getSecondaryGun } from "../ships/secondaryGuns";
 import type {
@@ -640,10 +640,10 @@ export class Hud {
     const aimBearing = Math.atan2(player.aimPoint.x - player.position.x, player.aimPoint.z - player.position.z);
     const relativeBearing = wrapAngle(aimBearing - player.heading) * 180 / Math.PI;
     this.aimReadout.textContent = `相对方位 ${relativeBearing >= 0 ? "+" : ""}${relativeBearing.toFixed(1)}° · ${Math.round(aimRange).toLocaleString("zh-CN")} m`;
-    const gunDefinition = getMainGun(player.mainGunId);
+    const gunDefinition = getMainBattery(player.shipClassId, player.mainGunId, player.mainGunMounts);
     this.reloadLabel.textContent = player.pendingAmmoType
       ? `已装 ${ammoLabels[player.ammoType]} · 待装 ${ammoLabels[player.pendingAmmoType]}`
-      : `${ammoLabels[player.ammoType]} 已装填 · ${gunDefinition.shortLabel}`;
+      : `${ammoLabels[player.ammoType]} 已装填 · ${gunDefinition.shortLabel} · ${mainBatteryBarrelCount(gunDefinition)} 管`;
     const velocity = ballisticVelocity(
       { x: 0, y: GUN.muzzleHeight, z: 0 },
       { x: 0, y: 1.5, z: aimRange },

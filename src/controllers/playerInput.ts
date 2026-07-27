@@ -1,5 +1,6 @@
 import { GUN, TORPEDO } from "../sim/config";
 import { getTorpedo } from "../ships/torpedoes";
+import { getMainBattery } from "../ships/mainBatteries";
 import type {
   AmmoType,
   ControlCommand,
@@ -87,7 +88,14 @@ export class PlayerInput {
     event.preventDefault();
     const maximumRange = this.weaponSlot === "torpedo" && this.activeShip
       ? getTorpedo(this.activeShip.torpedoId).maximumRangeMeters
-      : this.weaponSlot === "torpedo" ? TORPEDO.maximumRangeMeters : GUN.maxAimRange;
+      : this.weaponSlot === "torpedo" ? TORPEDO.maximumRangeMeters
+        : this.activeShip
+          ? getMainBattery(
+            this.activeShip.shipClassId,
+            this.activeShip.mainGunId,
+            this.activeShip.mainGunMounts,
+          ).maximumRangeMeters
+          : GUN.maxAimRange;
     this.range = Math.max(
       GUN.minAimRange,
       Math.min(maximumRange, this.range + Math.sign(event.deltaY) * 150),

@@ -5,7 +5,7 @@ import { CreateBox } from "@babylonjs/core/Meshes/Builders/boxBuilder.pure";
 import { CreateCylinder } from "@babylonjs/core/Meshes/Builders/cylinderBuilder.pure";
 import { TransformNode } from "@babylonjs/core/Meshes/transformNode";
 import type { Scene } from "@babylonjs/core/scene";
-import type { MainGunDefinition } from "../ships/components";
+import type { MainGunVisualDefinition } from "../ships/components";
 import type { HullId } from "../ships/hulls";
 import type { TorpedoDefinition } from "../ships/torpedoes";
 
@@ -302,7 +302,7 @@ export function createMainGunVisual(
   scene: Scene,
   parent: TransformNode,
   name: string,
-  definition: MainGunDefinition,
+  definition: { visual: MainGunVisualDefinition },
   palette: DestroyerV3Palette,
 ): MainGunVisual {
   const root = new TransformNode(`${name}-turret`, scene);
@@ -312,9 +312,10 @@ export function createMainGunVisual(
     DESTROYER_V3_HARDPOINTS.mainGun.z,
   );
   root.parent = parent;
-  const dual = definition.visual.barrelCount === 2;
+  const barrelCount = definition.visual.barrelCount;
+  const multiBarrel = barrelCount > 1;
   const mount = CreateCylinder(`${name}-mount`, {
-    height: dual ? 1.35 : 1.15,
+    height: multiBarrel ? 1.35 : 1.15,
     diameter: definition.visual.mountDiameter,
     tessellation: 10,
   }, scene);
@@ -322,8 +323,8 @@ export function createMainGunVisual(
   mount.parent = root;
   const house = CreateBox(`${name}-gun-house`, {
     width: definition.visual.houseWidth,
-    height: dual ? 2.55 : 2.25,
-    depth: dual ? 4.7 : 4.1,
+    height: multiBarrel ? 2.55 : 2.25,
+    depth: multiBarrel ? 4.7 : 4.1,
   }, scene);
   house.position.set(0, 1.45, 0.75);
   house.material = palette.accent;
@@ -331,14 +332,15 @@ export function createMainGunVisual(
   const cradle = new TransformNode(`${name}-gun-cradle`, scene);
   cradle.position.set(0, 1.45, 0.75);
   cradle.parent = root;
-  const offsets = dual
-    ? [-definition.visual.barrelSpacing / 2, definition.visual.barrelSpacing / 2]
-    : [0];
+  const offsets = Array.from(
+    { length: barrelCount },
+    (_, index) => (index - (barrelCount - 1) / 2) * definition.visual.barrelSpacing,
+  );
   const barrelRestZ: number[] = [];
   const barrels = offsets.map((offset, index) => {
     const barrel = CreateCylinder(`${name}-barrel-${index}`, {
       height: definition.visual.barrelLength,
-      diameter: dual ? 0.44 : 0.4,
+      diameter: multiBarrel ? 0.44 : 0.4,
       tessellation: 8,
     }, scene);
     barrel.rotation.x = Math.PI / 2;

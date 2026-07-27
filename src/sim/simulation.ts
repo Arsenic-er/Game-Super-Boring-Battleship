@@ -23,7 +23,6 @@ import {
 import {
   DEFAULT_MAIN_GUN_ID,
   FRONT_TURRET_TRAVERSE_LIMIT_RADIANS,
-  getMainGun,
 } from "../ships/components";
 import type { MainGunId } from "../ships/components";
 import { DEFAULT_HULL_ID, getHull } from "../ships/hulls";
@@ -34,6 +33,7 @@ import { DEFAULT_TORPEDO_ID, getTorpedo } from "../ships/torpedoes";
 import type { TorpedoId } from "../ships/torpedoes";
 import { getSecondaryGun } from "../ships/secondaryGuns";
 import type { SecondaryGunId } from "../ships/secondaryGuns";
+import { getMainBattery } from "../ships/mainBatteries";
 import { effectiveTorpedoDetectionRange } from "./detection";
 import type {
   AmmoType,
@@ -429,7 +429,7 @@ function moveShip(ship: ShipState, command: ControlCommand, dt: number): void {
     && command.ammoType !== ship.pendingAmmoType
   ) {
     ship.pendingAmmoType = command.ammoType;
-    const gunDefinition = getMainGun(ship.mainGunId);
+    const gunDefinition = getMainBattery(ship.shipClassId, ship.mainGunId, ship.mainGunMounts);
     const gunRatio = Math.max(0.25, moduleRatio(ship, "gun"));
     ship.reloadRemaining = Math.max(
       ship.reloadRemaining,
@@ -476,7 +476,7 @@ function moveShip(ship: ShipState, command: ControlCommand, dt: number): void {
   ship.position.z += moveZ;
   ship.distanceTravelled += Math.hypot(moveX, moveZ);
   const gunRatio = moduleRatio(ship, "gun");
-  const gunDefinition = getMainGun(ship.mainGunId);
+  const gunDefinition = getMainBattery(ship.shipClassId, ship.mainGunId, ship.mainGunMounts);
   const traverseRate = gunRatio <= 0
     ? 0
     : gunDefinition.traverseDegreesPerSecond * Math.PI / 180 * (0.3 + gunRatio * 0.7);
@@ -572,33 +572,24 @@ export function dispersionAtRange(
 }
 
 export function gunMuzzleOrigin(ship: ShipState): Vec3 {
-  const hull = getShipClass(ship.shipClassId);
-  const mountDistance = hull.length * 0.28;
-  const barrelDistance = getMainGun(ship.mainGunId).visual.barrelLength * 0.88 * hull.renderScale.z;
-  return {
-    x: ship.position.x
-      + Math.sin(ship.heading) * mountDistance
-      + Math.sin(ship.turretHeading) * barrelDistance,
-    y: GUN.muzzleHeight * hull.renderScale.y,
-    z: ship.position.z
-      + Math.cos(ship.heading) * mountDistance
-      + Math.cos(ship.turretHeading) * barrelDistance,
+  return gunMuzzleOrigins(ship)[0] ?? {
+    x: ship.position.x,
+    y: GUN.muzzleHeight,
+    z: ship.position.z,
   };
 }
 
 export function gunMuzzleOrigins(ship: ShipState): Vec3[] {
   const hull = getShipClass(ship.shipClassId);
-  const gunDefinition = getMainGun(ship.mainGunId);
-  const offsets = gunDefinition.visual.barrelCount === 2
-    ? [-gunDefinition.visual.barrelSpacing / 2, gunDefinition.visual.barrelSpacing / 2]
-    : [0];
+  const gunDefinition = getMainBattery(ship.shipClassId, ship.mainGunId, ship.mainGunMounts);
   const barrelScale = hull.renderScale.x;
-  const mountCount = Math.max(1, ship.mainGunMounts);
-  const mountPositions = Array.from({ length: mountCount }, (_, index) => (
-    mountCount === 1 ? hull.length * .28 : hull.length * (.3 - index * (.62 / (mountCount - 1)))
-  ));
   const barrelDistance = gunDefinition.visual.barrelLength * .88 * hull.renderScale.z;
-  return mountPositions.flatMap((longitudinal) => {
+  return gunDefinition.mounts.flatMap((mount) => {
+    const longitudinal = mount.longitudinalFraction * hull.length;
+    const offsets = Array.from(
+      { length: mount.barrelCount },
+      (_, index) => (index - (mount.barrelCount - 1) / 2) * gunDefinition.visual.barrelSpacing,
+    );
     const center = {
       x: ship.position.x + Math.sin(ship.heading) * longitudinal + Math.sin(ship.turretHeading) * barrelDistance,
       y: GUN.muzzleHeight * hull.renderScale.y,
@@ -637,7 +628,7 @@ function dispersedAimPoint(
   const forwardZ = dz / range;
   const rightX = forwardZ;
   const rightZ = -forwardX;
-  const gunDefinition = getMainGun(ship.mainGunId);
+  const gunDefinition = getMainBattery(ship.shipClassId, ship.mainGunId, ship.mainGunMounts);
   const dispersion = dispersionAtRange(
     range,
     moduleRatio(ship, "gun"),
@@ -656,9 +647,9 @@ function dispersedAimPoint(
 
 function fireGun(state: BattleState, ship: ShipState): void {
   if (ship.reloadRemaining > 0 || ship.modules.gun.health <= 0 || isGunFireBlocked(ship)) return;
-  const gunDefinition = getMainGun(ship.mainGunId);
+  const gunDefinition = getMainBattery(ship.shipClassId, ship.mainGunId, ship.mainGunMounts);
   const origins = gunMuzzleOrigins(ship);
-  const damagePerShell = gunDefinition.damage / gunDefinition.visual.barrelCount;
+  const damagePerShell = gunDefinition.damagePerShell;
   let firedShells = 0;
   for (const origin of origins) {
     const barrelAimPoint = turretAimPoint(ship, origin);

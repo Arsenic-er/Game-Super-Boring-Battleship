@@ -30,7 +30,7 @@ import {
   torpedoLaunchSolution,
   turretAimPoint,
 } from "../sim/simulation";
-import { getMainGun } from "../ships/components";
+import { getMainBattery } from "../ships/mainBatteries";
 import type { HullId } from "../ships/hulls";
 import { getShipClass } from "../ships/classes";
 import type { ShipClassId } from "../ships/classes";
@@ -116,6 +116,7 @@ interface SmokeCloudVisual {
 
 const toVector = (value: Vec3): Vector3 => new Vector3(value.x, value.y, value.z);
 const shipArmamentSignature = (ship: ShipState): string => [
+  ship.shipClassId,
   ship.mainGunId,
   ship.mainGunMounts,
   ship.torpedoId,
@@ -494,11 +495,13 @@ export class GameView implements AimProvider {
 
     const motion = createDestroyerV3Superstructure(this.scene, root, ship.id, palette);
     createHullClassSilhouette(this.scene, root, ship.id, ship.hullId, palette, hullDefinition.visualVariant);
-    const gunDefinition = getMainGun(ship.mainGunId);
-    const mountCount = Math.max(1, ship.mainGunMounts);
-    const guns = Array.from({ length: mountCount }, (_, index) => {
-      const gun = createMainGunVisual(this.scene, root, `${ship.id}-mount-${index}`, gunDefinition, palette);
-      gun.root.position.z = mountCount === 1 ? 31 : 33 - index * (70 / (mountCount - 1));
+    const gunDefinition = getMainBattery(ship.shipClassId, ship.mainGunId, ship.mainGunMounts);
+    const guns = gunDefinition.mounts.map((mount, index) => {
+      const gun = createMainGunVisual(this.scene, root, `${ship.id}-mount-${index}`, {
+        ...gunDefinition,
+        visual: { ...gunDefinition.visual, barrelCount: mount.barrelCount },
+      }, palette);
+      gun.root.position.z = mount.longitudinalFraction * 112;
       return gun;
     });
     const torpedoDefinition = getTorpedo(ship.torpedoId);
@@ -704,7 +707,7 @@ export class GameView implements AimProvider {
         muzzle,
         turretAimPoint(ship, muzzle),
         3,
-        getMainGun(ship.mainGunId).muzzleVelocity,
+        getMainBattery(ship.shipClassId, ship.mainGunId, ship.mainGunMounts).muzzleVelocity,
       );
       if (elevationPath.length >= 2) {
         const first = elevationPath[0];
@@ -1058,7 +1061,11 @@ export class GameView implements AimProvider {
 
   syncAimArc(player: ShipState, weaponSlot: WeaponSlot): void {
     const origin = gunMuzzleOrigin(player);
-    const muzzleVelocity = getMainGun(player.mainGunId).muzzleVelocity;
+    const muzzleVelocity = getMainBattery(
+      player.shipClassId,
+      player.mainGunId,
+      player.mainGunMounts,
+    ).muzzleVelocity;
     const points = predictTrajectory(origin, player.aimPoint, 28, muzzleVelocity).map(toVector);
     const barrelPoints = predictTrajectory(
       origin,

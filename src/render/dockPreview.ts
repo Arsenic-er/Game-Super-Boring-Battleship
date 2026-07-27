@@ -5,8 +5,8 @@ import { HemisphericLight } from "@babylonjs/core/Lights/hemisphericLight";
 import { Vector3 } from "@babylonjs/core/Maths/math.vector";
 import { TransformNode } from "@babylonjs/core/Meshes/transformNode";
 import { Scene } from "@babylonjs/core/scene";
-import { getMainGun } from "../ships/components";
 import type { MainGunId } from "../ships/components";
+import { getMainBattery } from "../ships/mainBatteries";
 import { DEFAULT_SHIP_CLASS_ID, getShipClass } from "../ships/classes";
 import type { ShipClassId } from "../ships/classes";
 import { DEFAULT_TORPEDO_ID, getTorpedo } from "../ships/torpedoes";
@@ -95,11 +95,13 @@ export class DockPreview {
     this.turrets = [];
     this.gunCradles = [];
     this.mainGunId = id;
-    const definition = getMainGun(id);
     const count = getShipClass(this.shipClassId).starterSlots.mainGun;
-    for (let index = 0; index < count; index += 1) {
-      const visual = createMainGunVisual(this.scene, this.shipRoot, `dock-mount-${index}`, definition, this.palette);
-      visual.root.position.z = count === 1 ? 31 : 33 - index * (70 / (count - 1));
+    const definition = getMainBattery(this.shipClassId, id, count);
+    for (const [index, mount] of definition.mounts.entries()) {
+      const visual = createMainGunVisual(this.scene, this.shipRoot, `dock-mount-${index}`, {
+        visual: { ...definition.visual, barrelCount: mount.barrelCount },
+      }, this.palette);
+      visual.root.position.z = mount.longitudinalFraction * 112;
       this.turrets.push(visual.root);
       this.gunCradles.push(visual.cradle);
     }

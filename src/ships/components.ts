@@ -1,5 +1,13 @@
 export type MainGunId = "mk1-single" | "mk2-twin" | "mk3-twin" | "mk4-twin";
 
+export interface MainGunVisualDefinition {
+  barrelCount: 1 | 2 | 3 | 4;
+  barrelLength: number;
+  barrelSpacing: number;
+  mountDiameter: number;
+  houseWidth: number;
+}
+
 export interface MainGunDefinition {
   id: MainGunId;
   name: string;
@@ -11,13 +19,7 @@ export interface MainGunDefinition {
   traverseDegreesPerSecond: number;
   dispersionMultiplier: number;
   muzzleVelocity: number;
-  visual: {
-    barrelCount: 1 | 2;
-    barrelLength: number;
-    barrelSpacing: number;
-    mountDiameter: number;
-    houseWidth: number;
-  };
+  visual: MainGunVisualDefinition;
 }
 
 export const DEFAULT_MAIN_GUN_ID: MainGunId = "mk1-single";
