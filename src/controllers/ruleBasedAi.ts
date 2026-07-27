@@ -1,4 +1,12 @@
-import { GUN, HYDRO, KNOT_TO_MPS, SENSOR, SMOKE, TORPEDO } from "../sim/config";
+import {
+  AI_TORPEDO,
+  GUN,
+  HYDRO,
+  KNOT_TO_MPS,
+  SENSOR,
+  SMOKE,
+  TORPEDO,
+} from "../sim/config";
 import { getTorpedo } from "../ships/torpedoes";
 import {
   torpedoInterceptPoint,
@@ -47,6 +55,22 @@ export function recommendedAmmoForTarget(
   return rangeMeters <= 2_600 && broadsideExposure >= 0.72 ? "ap" : "he";
 }
 
+/**
+ * Restricts AI torpedo attacks to a short, useful interception window.
+ */
+export function isTorpedoAttackWindow(
+  rangeMeters: number,
+  interceptSeconds: number,
+  maximumRangeMeters: number,
+): boolean {
+  return rangeMeters >= AI_TORPEDO.minimumAttackRangeMeters
+    && rangeMeters <= Math.min(
+      AI_TORPEDO.maximumAttackRangeMeters,
+      maximumRangeMeters,
+    )
+    && interceptSeconds <= AI_TORPEDO.maximumInterceptSeconds;
+}
+
 const repairableModuleDamage = (observation: Observation): number =>
   (Object.keys(observation.self.modules) as ModuleId[]).reduce((worst, id) => {
     const module = observation.self.modules[id];
@@ -65,13 +89,43 @@ const damageControlPriority = (observation: Observation): DamageControlPriority 
   return "balanced";
 };
 
-interface TrackEstimate {
+export interface TrackEstimate {
   id: string;
   position: Vec3;
   heading: number;
   speedKnots: number;
   observedAt: number;
   confidence: number;
+}
+
+/**
+ * Builds a conservative torpedo track from two consecutive optical samples.
+ * Circular averaging keeps headings around -PI/PI from flipping direction.
+ */
+export function stableTorpedoTrack(
+  previous: Readonly<TrackEstimate> | undefined,
+  current: Readonly<TrackEstimate> | undefined,
+): TrackEstimate | undefined {
+  if (!previous || !current || previous.id !== current.id) return undefined;
+  const sampleGap = current.observedAt - previous.observedAt;
+  const headingChange = Math.abs(wrapAngle(current.heading - previous.heading));
+  if (
+    sampleGap <= 0
+    || sampleGap > AI_TORPEDO.maximumTrackSampleGapSeconds
+    || current.confidence < AI_TORPEDO.minimumTrackConfidence
+    || headingChange > AI_TORPEDO.maximumHeadingChangeRadians
+    || Math.abs(current.speedKnots - previous.speedKnots)
+      > AI_TORPEDO.maximumSpeedChangeKnots
+  ) return undefined;
+  return {
+    ...current,
+    position: { ...current.position },
+    heading: Math.atan2(
+      Math.sin(previous.heading) + Math.sin(current.heading),
+      Math.cos(previous.heading) + Math.cos(current.heading),
+    ),
+    speedKnots: (previous.speedKnots + current.speedKnots) / 2,
+  };
 }
 
 interface PerceptionResult {
@@ -105,6 +159,7 @@ export class RuleBasedAi implements Controller {
   private nextHydroAt = 15;
   private torpedoEvasionReactionAt = Number.POSITIVE_INFINITY;
   private lastContact?: TrackEstimate;
+  private previousContact?: TrackEstimate;
   private lastContactSample = Number.NEGATIVE_INFINITY;
   private acquisitionSamples = 0;
   private hadTrack = false;
@@ -165,6 +220,9 @@ export class RuleBasedAi implements Controller {
       this.acquisitionSamples = this.hadTrack && recentMemory
         ? SENSOR.acquisitionSamples
         : this.acquisitionSamples + 1;
+      this.previousContact = this.lastContact?.id === contact.id
+        ? this.lastContact
+        : undefined;
       this.lastContact = this.copyContact(contact);
       this.lastContactSample = contact.observedAt;
     }
@@ -188,6 +246,7 @@ export class RuleBasedAi implements Controller {
     const predicted = this.predictedTrack(observation.time);
     if (!predicted || observation.time - predicted.observedAt > SENSOR.memorySeconds) {
       this.lastContact = undefined;
+      this.previousContact = undefined;
       this.acquisitionSamples = 0;
       this.hadTrack = false;
       return {
@@ -309,16 +368,29 @@ export class RuleBasedAi implements Controller {
     }
     const torpedoSpread = "narrow" as const;
     const torpedo = getTorpedo(observation.self.torpedoId);
-    const torpedoAim = perception.mode === "tracking" && target
-      ? torpedoInterceptPoint(observation.self, target)
+    const torpedoTrack = perception.mode === "tracking"
+      ? stableTorpedoTrack(this.previousContact, target)
       : undefined;
+    const torpedoAim = torpedoTrack
+      ? torpedoInterceptPoint(observation.self, torpedoTrack)
+      : undefined;
+    const torpedoInterceptSeconds = torpedoAim
+      ? Math.hypot(
+        torpedoAim.x - observation.self.position.x,
+        torpedoAim.z - observation.self.position.z,
+      ) / torpedo.speedMetersPerSecond
+      : Number.POSITIVE_INFINITY;
     const torpedoSolution = torpedoAim
       ? torpedoLaunchSolution(observation.self, torpedoAim, torpedoSpread)
       : undefined;
     const torpedoReady = Boolean(
       torpedoAim
-      && range >= 900
-      && range <= Math.min(2_200, torpedo.maximumRangeMeters)
+      && target
+      && isTorpedoAttackWindow(
+        range,
+        torpedoInterceptSeconds,
+        torpedo.maximumRangeMeters,
+      )
       && observation.self.torpedoReloadRemaining <= 0
       && observation.self.torpedoesLoaded > 0
       && observation.self.modules.torpedoTubes.health > 0
@@ -369,7 +441,11 @@ export class RuleBasedAi implements Controller {
     }
     const incomingTorpedo = observation.incomingTorpedoes[0];
     if (incomingTorpedo && !Number.isFinite(this.torpedoEvasionReactionAt)) {
-      this.torpedoEvasionReactionAt = observation.time + 6 + this.random() * 6;
+      const reactionWindow = AI_TORPEDO.evasionReactionMaxSeconds
+        - AI_TORPEDO.evasionReactionMinSeconds;
+      this.torpedoEvasionReactionAt = observation.time
+        + AI_TORPEDO.evasionReactionMinSeconds
+        + this.random() * reactionWindow;
     } else if (!incomingTorpedo) {
       this.torpedoEvasionReactionAt = Number.POSITIVE_INFINITY;
     }

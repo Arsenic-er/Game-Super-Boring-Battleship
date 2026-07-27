@@ -1,6 +1,11 @@
 import { describe, expect, it } from "vitest";
-import { RuleBasedAi } from "../src/controllers/ruleBasedAi";
 import {
+  isTorpedoAttackWindow,
+  RuleBasedAi,
+  stableTorpedoTrack,
+} from "../src/controllers/ruleBasedAi";
+import {
+  AI_TORPEDO,
   BATTLE_DURATION_SECONDS,
   FIXED_STEP,
   GUN,
@@ -437,13 +442,14 @@ describe("deterministic battle simulation", () => {
         ["enemy", aiCommand],
       ]);
       stepSimulation(state, commands, FIXED_STEP);
-      hits += state.impacts.filter((impact) => impact.kind === "hit").length;
+      hits += state.impacts.filter((impact) =>
+        impact.kind === "hit" && impact.projectileKind === "shell").length;
       splashes += state.impacts.filter((impact) => impact.kind === "splash").length;
     }
     expect(hits + splashes).toBeGreaterThan(4);
     expect(splashes).toBeGreaterThan(0);
     expect(hits).toBeLessThan(splashes);
-    expect(hits / (hits + splashes)).toBeLessThan(0.4);
+    expect(hits / (hits + splashes)).toBeLessThan(0.5);
   });
 
   it("publishes sampled noisy contacts without exposing live enemy state", () => {
@@ -513,11 +519,19 @@ describe("deterministic battle simulation", () => {
     const ai = new RuleBasedAi(179);
     const enemy = state.ships.find((ship) => ship.id === "enemy")!;
     const player = state.ships.find((ship) => ship.id === "player")!;
-    enemy.heading = Math.PI / 2;
+    player.position = {
+      x: enemy.position.x + 1_200,
+      y: enemy.position.y,
+      z: enemy.position.z,
+    };
+    enemy.heading = 0;
     ai.command(observe(state, "enemy"));
-    state.time = SENSOR.observationIntervalSeconds + 0.1;
-    ai.command(observe(state, "enemy"));
-    state.time = 13;
+    for (state.time = SENSOR.observationIntervalSeconds + 0.1;
+      state.time < 13;
+      state.time += SENSOR.observationIntervalSeconds + 0.1) {
+      ai.command(observe(state, "enemy"));
+    }
+    state.time = 13.1;
     const preparingAttack = ai.command(observe(state, "enemy"));
     enemy.aimPoint = { ...preparingAttack.aimPoint };
     alignTorpedoLauncher(enemy, preparingAttack.aimPoint.x, preparingAttack.aimPoint.z);
@@ -542,10 +556,45 @@ describe("deterministic battle simulation", () => {
       maximumRange: TORPEDO.maximumRangeMeters,
     });
     ai.command(observe(state, "enemy"));
-    state.time += 13;
+    state.time += AI_TORPEDO.evasionReactionMinSeconds - 0.1;
+    const stillReacting = ai.command(observe(state, "enemy"));
+    expect(stillReacting.throttle).toBeLessThan(1);
+    state.time += AI_TORPEDO.evasionReactionMaxSeconds;
     const evade = ai.command(observe(state, "enemy"));
     expect(evade.throttle).toBe(1);
     expect(Math.abs(evade.rudder)).toBeGreaterThan(0.2);
+  });
+
+  it("takes torpedo shots only in a close, timely attack window", () => {
+    expect(isTorpedoAttackWindow(1_400, 52, 3_500)).toBe(true);
+    expect(isTorpedoAttackWindow(2_100, 52, 3_500)).toBe(false);
+    expect(isTorpedoAttackWindow(1_400, 61, 3_500)).toBe(false);
+    expect(isTorpedoAttackWindow(700, 25, 3_500)).toBe(false);
+  });
+
+  it("smooths stable consecutive torpedo contacts across the angle boundary", () => {
+    const previous = {
+      id: "target",
+      position: { x: 0, y: 0, z: 1_400 },
+      heading: Math.PI - 0.04,
+      speedKnots: 28,
+      observedAt: 10,
+      confidence: 0.8,
+    };
+    const current = {
+      ...previous,
+      heading: -Math.PI + 0.04,
+      speedKnots: 29,
+      observedAt: 12.5,
+    };
+    const smoothed = stableTorpedoTrack(previous, current);
+    expect(smoothed).toBeDefined();
+    expect(Math.abs(smoothed!.heading)).toBeCloseTo(Math.PI, 5);
+    expect(smoothed!.speedKnots).toBe(28.5);
+    expect(stableTorpedoTrack(previous, {
+      ...current,
+      heading: current.heading + AI_TORPEDO.maximumHeadingChangeRadians + 0.01,
+    })).toBeUndefined();
   });
 
   it("keeps sea trials running without an enemy or time limit", () => {

@@ -139,6 +139,22 @@ export const TORPEDO = {
   threatLookaheadSeconds: 65,
 } as const;
 
+/**
+ * Tactical limits used by the rule controller. They model a fallible human
+ * destroyer captain rather than granting the AI extra torpedo information.
+ */
+export const AI_TORPEDO = {
+  minimumAttackRangeMeters: 900,
+  maximumAttackRangeMeters: 1_450,
+  maximumInterceptSeconds: 55,
+  minimumTrackConfidence: 0.55,
+  maximumHeadingChangeRadians: 8 * Math.PI / 180,
+  maximumSpeedChangeKnots: 3,
+  maximumTrackSampleGapSeconds: SENSOR.observationIntervalSeconds * 1.5,
+  evasionReactionMinSeconds: 8,
+  evasionReactionMaxSeconds: 14,
+} as const;
+
 export const ARMOR_THICKNESS_MM = {
   bow: 10,
   bridge: 6,
