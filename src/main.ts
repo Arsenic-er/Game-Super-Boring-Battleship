@@ -117,6 +117,7 @@ const settings = loadGameSettings();
 function applyControlSettings(next: GameSettings): void {
   input.setSteeringSensitivity(next.steeringSensitivity);
   view.setAimSensitivity(next.aimSensitivity);
+  audio.configure(next.masterVolume, next.muted);
   saveGameSettings(next);
 }
 
@@ -219,6 +220,12 @@ view.engine.runRenderLoop(() => {
   } else {
     accumulator = 0;
   }
+
+  const playerForAudio = state.ships.find((ship) => ship.id === "player");
+  audio.sync(
+    playerForAudio,
+    started && !paused && state.status === "running",
+  );
 
   view.sync(
     state,

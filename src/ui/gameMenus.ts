@@ -72,8 +72,11 @@ export class GameMenus {
   private readonly settingsOverlay: HTMLElement;
   private readonly steering: HTMLInputElement;
   private readonly aim: HTMLInputElement;
+  private readonly masterVolume: HTMLInputElement;
+  private readonly muteAudio: HTMLButtonElement;
   private readonly steeringValue: HTMLOutputElement;
   private readonly aimValue: HTMLOutputElement;
+  private readonly masterVolumeValue: HTMLOutputElement;
   private readonly qualityButtons: HTMLButtonElement[];
   private readonly tabButtons: HTMLButtonElement[];
   private readonly panels: Record<StartTab, HTMLElement>;
@@ -183,13 +186,18 @@ export class GameMenus {
       <div class="game-menu-overlay settings-menu" hidden><section class="game-menu-card" role="dialog" aria-modal="true" aria-label="游戏设置"><p class="eyebrow">游戏设置</p><h2>操控与画面</h2><div class="settings-group"><label>操控灵敏度</label><div class="sensitivity-row"><span>转向</span><input class="menu-steering" type="range" min="35" max="100" step="5" /><output class="menu-steering-value">100%</output></div><div class="sensitivity-row"><span>瞄准</span><input class="menu-aim" type="range" min="50" max="200" step="10" /><output class="menu-aim-value">100%</output></div></div><div class="settings-group"><label>画面质量</label><div class="quality-options"><button class="quality-option" type="button" data-quality="low">低（推荐）</button><button class="quality-option" type="button" data-quality="medium">中</button></div></div><div class="menu-buttons"><button class="menu-button settings-back" type="button">返回暂停菜单</button></div></section></div>`;
     while (container.firstElementChild) parent.append(container.firstElementChild);
 
+    const audioSettings = document.createElement("div");
+    audioSettings.className = "settings-group audio-settings";
+    audioSettings.innerHTML = `<label>声音</label><div class="sensitivity-row"><span>主音量</span><input class="menu-master-volume" type="range" min="0" max="100" step="5" aria-label="主音量" /><output class="menu-master-volume-value">70%</output></div><div class="quality-options"><button class="quality-option menu-mute-audio" type="button" aria-pressed="false">静音：关</button></div>`;
+    parent.querySelector(".settings-menu .menu-buttons")?.before(audioSettings);
+
     const find = <T extends Element>(selector: string): T => {
       const element = parent.querySelector<T>(selector);
       if (!element) throw new Error(`Missing game menu element: ${selector}`);
       return element;
     };
     this.startOverlay = find(".start-menu"); this.pauseOverlay = find(".pause-menu"); this.settingsOverlay = find(".settings-menu");
-    this.steering = find(".menu-steering"); this.aim = find(".menu-aim"); this.steeringValue = find(".menu-steering-value"); this.aimValue = find(".menu-aim-value");
+    this.steering = find(".menu-steering"); this.aim = find(".menu-aim"); this.masterVolume = find(".menu-master-volume"); this.muteAudio = find(".menu-mute-audio"); this.steeringValue = find(".menu-steering-value"); this.aimValue = find(".menu-aim-value"); this.masterVolumeValue = find(".menu-master-volume-value");
     this.qualityButtons = Array.from(parent.querySelectorAll("[data-quality]")); this.tabButtons = Array.from(parent.querySelectorAll("[data-menu-tab]"));
     this.panels = { mission: find(".mission-panel"), store: find(".store-panel"), inventory: find(".inventory-panel"), dock: find(".dock-panel"), codex: find(".codex-panel") };
     this.commanderName = find(".commander-name"); this.credits = find(".profile-credits"); this.researchPoints = find(".profile-research"); this.supplyTokens = find(".profile-tokens"); this.materialSummary = find(".material-summary");
@@ -197,7 +205,7 @@ export class GameMenus {
     this.armoryGrid = find(".armory-grid"); this.armoryDetail = find(".armory-detail"); this.armoryNotice = find(".armory-notice");
     this.warehouseGrid = find(".warehouse-grid"); this.warehouseDetail = find(".warehouse-detail"); this.warehouseNotice = find(".warehouse-notice"); this.codexBody = find(".codex-table tbody");
     this.dockPreview = new DockPreview(find(".dock-preview"));
-    this.steering.value = String(Math.round(this.settings.steeringSensitivity * 100)); this.aim.value = String(Math.round(this.settings.aimSensitivity * 100)); this.commanderName.value = this.profile.commanderName;
+    this.steering.value = String(Math.round(this.settings.steeringSensitivity * 100)); this.aim.value = String(Math.round(this.settings.aimSensitivity * 100)); this.masterVolume.value = String(Math.round(this.settings.masterVolume * 100)); this.commanderName.value = this.profile.commanderName;
     this.renderStaticContent(); this.updateSensitivityLabels(); this.setQuality(initialQuality); this.renderProfile(); this.setStartTab("mission");
 
     find<HTMLButtonElement>(".start-battle").addEventListener("click", () => this.start("battle"));
@@ -211,6 +219,8 @@ export class GameMenus {
     this.commanderName.addEventListener("change", () => { this.profile = setCommanderName(this.profile, this.commanderName.value); this.commanderName.value = this.profile.commanderName; this.emitProfile(); });
     this.steering.addEventListener("input", () => { this.settings = { ...this.settings, steeringSensitivity: Number(this.steering.value) / 100 }; this.emitSettings(); });
     this.aim.addEventListener("input", () => { this.settings = { ...this.settings, aimSensitivity: Number(this.aim.value) / 100 }; this.emitSettings(); });
+    this.masterVolume.addEventListener("input", () => { this.settings = { ...this.settings, masterVolume: Number(this.masterVolume.value) / 100 }; this.emitSettings(); });
+    this.muteAudio.addEventListener("click", () => { this.settings = { ...this.settings, muted: !this.settings.muted }; this.emitSettings(); });
     for (const button of this.qualityButtons) button.addEventListener("click", () => { const quality = button.dataset.quality === "medium" ? "medium" : "low"; this.setQuality(quality); this.callbacks.onQualityChange(quality); });
   }
 
@@ -386,5 +396,5 @@ export class GameMenus {
   showStart(): void { this.pauseOverlay.hidden = true; this.settingsOverlay.hidden = true; this.startOverlay.hidden = false; this.pauseOpen = false; this.settingsOpen = false; this.setStartTab("mission"); }
   setQuality(quality: "low" | "medium"): void { for (const button of this.qualityButtons) button.classList.toggle("active", button.dataset.quality === quality); }
   private emitSettings(): void { this.updateSensitivityLabels(); this.callbacks.onSettingsChange({ ...this.settings }); }
-  private updateSensitivityLabels(): void { this.steeringValue.textContent = `${Math.round(this.settings.steeringSensitivity * 100)}%`; this.aimValue.textContent = `${Math.round(this.settings.aimSensitivity * 100)}%`; }
+  private updateSensitivityLabels(): void { this.steeringValue.textContent = `${Math.round(this.settings.steeringSensitivity * 100)}%`; this.aimValue.textContent = `${Math.round(this.settings.aimSensitivity * 100)}%`; this.masterVolumeValue.textContent = `${Math.round(this.settings.masterVolume * 100)}%`; this.muteAudio.textContent = this.settings.muted ? "静音：开" : "静音：关"; this.muteAudio.setAttribute("aria-pressed", String(this.settings.muted)); this.muteAudio.classList.toggle("active", this.settings.muted); }
 }

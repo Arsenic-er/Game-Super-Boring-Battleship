@@ -1,11 +1,15 @@
 export interface GameSettings {
   steeringSensitivity: number;
   aimSensitivity: number;
+  masterVolume: number;
+  muted: boolean;
 }
 
 export const DEFAULT_GAME_SETTINGS: GameSettings = {
   steeringSensitivity: 1,
   aimSensitivity: 1,
+  masterVolume: 0.7,
+  muted: false,
 };
 
 const STORAGE_KEY = "grey-sea-game-settings-v1";
@@ -25,9 +29,18 @@ export function normalizeGameSettings(value: unknown): GameSettings {
     && Number.isFinite(candidate.aimSensitivity)
     ? candidate.aimSensitivity
     : DEFAULT_GAME_SETTINGS.aimSensitivity;
+  const masterVolume = typeof candidate.masterVolume === "number"
+    && Number.isFinite(candidate.masterVolume)
+    ? candidate.masterVolume
+    : DEFAULT_GAME_SETTINGS.masterVolume;
+  const muted = typeof candidate.muted === "boolean"
+    ? candidate.muted
+    : DEFAULT_GAME_SETTINGS.muted;
   return {
     steeringSensitivity: clamp(steering, 0.35, 1),
     aimSensitivity: clamp(aim, 0.5, 2),
+    masterVolume: clamp(masterVolume, 0, 1),
+    muted,
   };
 }
 
