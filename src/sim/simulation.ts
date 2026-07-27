@@ -33,7 +33,11 @@ import { DEFAULT_TORPEDO_ID, getTorpedo } from "../ships/torpedoes";
 import type { TorpedoId } from "../ships/torpedoes";
 import { getSecondaryGun } from "../ships/secondaryGuns";
 import type { SecondaryGunId } from "../ships/secondaryGuns";
-import { getMainBattery } from "../ships/mainBatteries";
+import {
+  getMainBattery,
+  MAIN_BATTERY_TRAVERSE_LIMIT_RADIANS,
+  mainBatteryMountRestHeading,
+} from "../ships/mainBatteries";
 import { classArmorThickness } from "../ships/armorProfiles";
 import { effectiveTorpedoDetectionRange } from "./detection";
 import type {
@@ -149,6 +153,23 @@ function createSecondaryMounts(
   });
 }
 
+function createMainBatteryMounts(
+  shipClassId: ShipClassId,
+  mainGunId: MainGunId,
+  equippedMounts: number,
+  shipHeading: number,
+): ShipState["mainBatteryMounts"] {
+  const battery = getMainBattery(shipClassId, mainGunId, equippedMounts);
+  return battery.mounts.map((mount, mountIndex) => ({
+    mountIndex,
+    restHeadingOffset: mainBatteryMountRestHeading(mount),
+    heading: wrapAngle(shipHeading + mainBatteryMountRestHeading(mount)),
+    reloadRemaining: 0,
+    health: 100,
+    maxHealth: 100,
+  }));
+}
+
 function createShip(
   id: string,
   team: Team,
@@ -199,6 +220,12 @@ function createShip(
     mainGunId,
     torpedoId,
     mainGunMounts: Math.max(1, mainGunMounts),
+    mainBatteryMounts: createMainBatteryMounts(
+      shipClassId,
+      mainGunId,
+      Math.max(1, mainGunMounts),
+      heading,
+    ),
     torpedoLauncherMounts: Math.max(0, torpedoLauncherMounts),
     depthChargeMounts: Math.max(0, depthChargeMounts),
     secondaryMounts: createSecondaryMounts(secondaryGunIds, heading, shipClassId),
@@ -361,37 +388,51 @@ function applyHullDamage(ship: ShipState, damage: number, permanentFraction: num
   );
 }
 
-function desiredTurretHeading(ship: ShipState): { heading: number; blocked: boolean } {
+function desiredTurretHeading(
+  ship: ShipState,
+  mountIndex = 0,
+): { heading: number; blocked: boolean } {
   const desiredHeading = Math.atan2(
     ship.aimPoint.x - ship.position.x,
     ship.aimPoint.z - ship.position.z,
   );
-  const desiredRelative = wrapAngle(desiredHeading - ship.heading);
-  const blocked = Math.abs(desiredRelative) > FRONT_TURRET_TRAVERSE_LIMIT_RADIANS;
-  const safeRelative = clamp(
-    desiredRelative,
-    -FRONT_TURRET_TRAVERSE_LIMIT_RADIANS,
-    FRONT_TURRET_TRAVERSE_LIMIT_RADIANS,
+  const mount = ship.mainBatteryMounts[mountIndex];
+  const restHeading = mount?.restHeadingOffset ?? 0;
+  const traverseLimit = mount
+    ? MAIN_BATTERY_TRAVERSE_LIMIT_RADIANS
+    : FRONT_TURRET_TRAVERSE_LIMIT_RADIANS;
+  const desiredRelativeFromRest = wrapAngle(desiredHeading - ship.heading - restHeading);
+  const blocked = Math.abs(desiredRelativeFromRest) > traverseLimit;
+  const safeRelative = restHeading + clamp(
+    desiredRelativeFromRest,
+    -traverseLimit,
+    traverseLimit,
   );
   return { heading: wrapAngle(ship.heading + safeRelative), blocked };
 }
 
-export function turretAlignmentError(ship: ShipState): number {
-  return wrapAngle(desiredTurretHeading(ship).heading - ship.turretHeading);
+export function turretAlignmentError(ship: ShipState, mountIndex = 0): number {
+  const mount = ship.mainBatteryMounts[mountIndex];
+  return wrapAngle(desiredTurretHeading(ship, mountIndex).heading - (mount?.heading ?? ship.turretHeading));
 }
 
 export function isGunBearingBlocked(ship: ShipState): boolean {
-  return desiredTurretHeading(ship).blocked;
+  return ship.mainBatteryMounts.every((mount) =>
+    mount.health <= 0 || desiredTurretHeading(ship, mount.mountIndex).blocked
+  );
 }
 
 export function isGunFireBlocked(ship: ShipState): boolean {
-  const actualRelative = Math.abs(wrapAngle(ship.turretHeading - ship.heading));
-  return isGunBearingBlocked(ship)
-    || actualRelative > FRONT_TURRET_TRAVERSE_LIMIT_RADIANS + 0.5 * Math.PI / 180;
+  return ship.modules.gun.health <= 0
+    || ship.mainBatteryMounts.every((mount) => mount.health <= 0);
 }
 
 export function isTurretAligned(ship: ShipState): boolean {
-  return Math.abs(turretAlignmentError(ship)) <= TURRET.fireToleranceRadians;
+  return ship.mainBatteryMounts.some((mount) =>
+    mount.health > 0
+    && !desiredTurretHeading(ship, mount.mountIndex).blocked
+    && Math.abs(turretAlignmentError(ship, mount.mountIndex)) <= TURRET.fireToleranceRadians
+  );
 }
 
 function desiredTorpedoLauncherHeading(ship: ShipState): number {
@@ -433,10 +474,11 @@ function moveShip(ship: ShipState, command: ControlCommand, dt: number): void {
     ship.pendingAmmoType = command.ammoType;
     const gunDefinition = getMainBattery(ship.shipClassId, ship.mainGunId, ship.mainGunMounts);
     const gunRatio = Math.max(0.25, moduleRatio(ship, "gun"));
-    ship.reloadRemaining = Math.max(
-      ship.reloadRemaining,
-      gunDefinition.reloadSeconds * ship.performance.reloadMultiplier / gunRatio,
-    );
+    const switchDuration = gunDefinition.reloadSeconds * ship.performance.reloadMultiplier / gunRatio;
+    for (const mount of ship.mainBatteryMounts) {
+      mount.reloadRemaining = Math.max(mount.reloadRemaining, switchDuration);
+    }
+    ship.reloadRemaining = Math.max(ship.reloadRemaining, switchDuration);
   }
 
   const engineRatio = moduleRatio(ship, "engine");
@@ -482,12 +524,20 @@ function moveShip(ship: ShipState, command: ControlCommand, dt: number): void {
   const traverseRate = gunRatio <= 0
     ? 0
     : gunDefinition.traverseDegreesPerSecond * Math.PI / 180 * (0.3 + gunRatio * 0.7);
-  const turretTarget = desiredTurretHeading(ship);
-  ship.gunTraverseBlocked = turretTarget.blocked;
-  const alignmentError = turretAlignmentError(ship);
-  ship.turretHeading = wrapAngle(
-    ship.turretHeading + clamp(alignmentError, -traverseRate * dt, traverseRate * dt),
-  );
+  let anyMountCanBear = false;
+  for (const mount of ship.mainBatteryMounts) {
+    const turretTarget = desiredTurretHeading(ship, mount.mountIndex);
+    if (!turretTarget.blocked && mount.health > 0) anyMountCanBear = true;
+    if (mount.health <= 0) continue;
+    const alignmentError = wrapAngle(turretTarget.heading - mount.heading);
+    const mountRatio = mount.health / mount.maxHealth;
+    const mountTraverseRate = traverseRate * (0.25 + mountRatio * 0.75);
+    mount.heading = wrapAngle(
+      mount.heading + clamp(alignmentError, -mountTraverseRate * dt, mountTraverseRate * dt),
+    );
+  }
+  ship.gunTraverseBlocked = !anyMountCanBear;
+  ship.turretHeading = ship.mainBatteryMounts[0]?.heading ?? ship.turretHeading;
   const tubeRatio = moduleRatio(ship, "torpedoTubes");
   const launcherRate = tubeRatio <= 0
     ? 0
@@ -497,12 +547,19 @@ function moveShip(ship: ShipState, command: ControlCommand, dt: number): void {
     ship.torpedoLauncherHeading
       + clamp(launcherError, -launcherRate * dt, launcherRate * dt),
   );
-  ship.reloadRemaining = Math.max(0, ship.reloadRemaining - dt);
+  let maximumMainBatteryReload = 0;
+  let allMainBatteryMountsLoaded = true;
+  for (const mount of ship.mainBatteryMounts) {
+    mount.reloadRemaining = Math.max(0, mount.reloadRemaining - dt);
+    maximumMainBatteryReload = Math.max(maximumMainBatteryReload, mount.reloadRemaining);
+    if (mount.reloadRemaining > 0) allMainBatteryMountsLoaded = false;
+  }
+  ship.reloadRemaining = maximumMainBatteryReload;
   ship.depthChargeReloadRemaining = Math.max(0, ship.depthChargeReloadRemaining - dt);
   for (const mount of ship.secondaryMounts) {
     mount.reloadRemaining = Math.max(0, mount.reloadRemaining - dt);
   }
-  if (ship.reloadRemaining <= 0 && ship.pendingAmmoType) {
+  if (allMainBatteryMountsLoaded && ship.pendingAmmoType) {
     ship.ammoType = ship.pendingAmmoType;
     ship.pendingAmmoType = undefined;
   }
@@ -582,27 +639,33 @@ export function gunMuzzleOrigin(ship: ShipState): Vec3 {
 }
 
 export function gunMuzzleOrigins(ship: ShipState): Vec3[] {
+  const battery = getMainBattery(ship.shipClassId, ship.mainGunId, ship.mainGunMounts);
+  return battery.mounts.flatMap((_, mountIndex) => gunMuzzleOriginsForMount(ship, mountIndex));
+}
+
+function gunMuzzleOriginsForMount(ship: ShipState, mountIndex: number): Vec3[] {
   const hull = getShipClass(ship.shipClassId);
   const gunDefinition = getMainBattery(ship.shipClassId, ship.mainGunId, ship.mainGunMounts);
+  const mount = gunDefinition.mounts[mountIndex];
+  if (!mount) return [];
+  const turretHeading = ship.mainBatteryMounts[mountIndex]?.heading ?? ship.turretHeading;
   const barrelScale = hull.renderScale.x;
   const barrelDistance = gunDefinition.visual.barrelLength * .88 * hull.renderScale.z;
-  return gunDefinition.mounts.flatMap((mount) => {
-    const longitudinal = mount.longitudinalFraction * hull.length;
-    const offsets = Array.from(
-      { length: mount.barrelCount },
-      (_, index) => (index - (mount.barrelCount - 1) / 2) * gunDefinition.visual.barrelSpacing,
-    );
-    const center = {
-      x: ship.position.x + Math.sin(ship.heading) * longitudinal + Math.sin(ship.turretHeading) * barrelDistance,
-      y: GUN.muzzleHeight * hull.renderScale.y,
-      z: ship.position.z + Math.cos(ship.heading) * longitudinal + Math.cos(ship.turretHeading) * barrelDistance,
-    };
-    return offsets.map((offset) => ({
-      x: center.x + Math.cos(ship.turretHeading) * offset * barrelScale,
-      y: center.y,
-      z: center.z - Math.sin(ship.turretHeading) * offset * barrelScale,
-    }));
-  });
+  const longitudinal = mount.longitudinalFraction * hull.length;
+  const offsets = Array.from(
+    { length: mount.barrelCount },
+    (_, index) => (index - (mount.barrelCount - 1) / 2) * gunDefinition.visual.barrelSpacing,
+  );
+  const center = {
+    x: ship.position.x + Math.sin(ship.heading) * longitudinal + Math.sin(turretHeading) * barrelDistance,
+    y: GUN.muzzleHeight * hull.renderScale.y,
+    z: ship.position.z + Math.cos(ship.heading) * longitudinal + Math.cos(turretHeading) * barrelDistance,
+  };
+  return offsets.map((offset) => ({
+    x: center.x + Math.cos(turretHeading) * offset * barrelScale,
+    y: center.y,
+    z: center.z - Math.sin(turretHeading) * offset * barrelScale,
+  }));
 }
 
 export function turretAimPoint(ship: ShipState, origin = gunMuzzleOrigin(ship)): Vec3 {
@@ -648,45 +711,64 @@ function dispersedAimPoint(
 }
 
 function fireGun(state: BattleState, ship: ShipState): void {
-  if (ship.reloadRemaining > 0 || ship.modules.gun.health <= 0 || isGunFireBlocked(ship)) return;
+  if (ship.modules.gun.health <= 0) return;
   const gunDefinition = getMainBattery(ship.shipClassId, ship.mainGunId, ship.mainGunMounts);
-  const origins = gunMuzzleOrigins(ship);
   const damagePerShell = gunDefinition.damagePerShell;
   let firedShells = 0;
-  for (const origin of origins) {
-    const barrelAimPoint = turretAimPoint(ship, origin);
-    const actualAimPoint = dispersedAimPoint(state, ship, origin, barrelAimPoint);
-    const velocity = ballisticVelocity(origin, actualAimPoint, gunDefinition.muzzleVelocity);
-    if (!velocity) continue;
-    state.projectiles.push({
-      id: state.nextEntityId++,
-      ownerId: ship.id,
-      team: ship.team,
-      kind: "shell",
-      ammoType: ship.ammoType,
-      weaponSource: "mainGun",
-      shellProfile: gunDefinition.shellProfile,
-      position: copyVec(origin),
-      previousPosition: copyVec(origin),
-      velocity,
-      damage: damagePerShell,
-      age: 0,
-    });
-    state.shots.push({
-      id: state.nextEntityId++,
-      ownerId: ship.id,
-      team: ship.team,
-      kind: "shell",
-      ammoType: ship.ammoType,
-      weaponSource: "mainGun",
-      position: copyVec(origin),
-    });
-    firedShells += 1;
+  const gunRatio = Math.max(0.25, moduleRatio(ship, "gun"));
+  const reloadDuration = gunDefinition.reloadSeconds * ship.performance.reloadMultiplier / gunRatio;
+  for (const mount of ship.mainBatteryMounts) {
+    if (mount.reloadRemaining > 0 || mount.health <= 0) continue;
+    const origins = gunMuzzleOriginsForMount(ship, mount.mountIndex);
+    const turretHeading = mount.heading;
+    let mountFiredShells = 0;
+    for (const origin of origins) {
+      const range = Math.max(1, Math.hypot(ship.aimPoint.x - origin.x, ship.aimPoint.z - origin.z));
+      const barrelAimPoint = {
+        x: origin.x + Math.sin(turretHeading) * range,
+        y: ship.aimPoint.y,
+        z: origin.z + Math.cos(turretHeading) * range,
+      };
+      const actualAimPoint = dispersedAimPoint(state, ship, origin, barrelAimPoint);
+      const velocity = ballisticVelocity(origin, actualAimPoint, gunDefinition.muzzleVelocity);
+      if (!velocity) continue;
+      state.projectiles.push({
+        id: state.nextEntityId++,
+        ownerId: ship.id,
+        team: ship.team,
+        kind: "shell",
+        ammoType: ship.ammoType,
+        weaponSource: "mainGun",
+        shellProfile: gunDefinition.shellProfile,
+        position: copyVec(origin),
+        previousPosition: copyVec(origin),
+        velocity,
+        damage: damagePerShell,
+        age: 0,
+      });
+      state.shots.push({
+        id: state.nextEntityId++,
+        ownerId: ship.id,
+        team: ship.team,
+        kind: "shell",
+        ammoType: ship.ammoType,
+        weaponSource: "mainGun",
+        position: copyVec(origin),
+      });
+      mountFiredShells += 1;
+      firedShells += 1;
+    }
+    if (mountFiredShells > 0) {
+      mount.reloadRemaining = reloadDuration;
+      mount.lastFiredAt = state.time;
+    }
   }
   if (firedShells === 0) return;
   ship.lastMainGunFiredAt = state.time;
-  const gunRatio = Math.max(0.25, moduleRatio(ship, "gun"));
-  ship.reloadRemaining = gunDefinition.reloadSeconds * ship.performance.reloadMultiplier / gunRatio;
+  ship.reloadRemaining = ship.mainBatteryMounts.reduce(
+    (maximum, mount) => Math.max(maximum, mount.reloadRemaining),
+    0,
+  );
 }
 
 export function secondaryMountOrigin(
@@ -1542,6 +1624,17 @@ function damageModule(
   const moduleDamage = baseDamage * (0.42 + random(state) * 0.28) * riskMultiplier;
   module.health = Math.max(0, module.health - moduleDamage);
 
+  if (moduleId === "gun" && ship.mainBatteryMounts.length > 0) {
+    const mountIndex = ship.mainBatteryMounts.length === 1
+      ? 0
+      : Math.min(
+        ship.mainBatteryMounts.length - 1,
+        Math.floor(random(state) * ship.mainBatteryMounts.length),
+      );
+    const mount = ship.mainBatteryMounts[mountIndex];
+    if (mount) mount.health = Math.max(0, mount.health - moduleDamage);
+  }
+
   if (moduleId === "magazine") {
     applyHullDamage(ship, baseDamage * 0.35, 0.72);
   } else if (moduleId === "torpedoTubes" && riskMultiplier > 1) {
@@ -2017,6 +2110,7 @@ function repairModule(ship: ShipState, allocation: number, dt: number): void {
   const module = ship.modules[moduleId];
   const crewRatio = moduleRatio(ship, "crew");
   const crewFactor = moduleId === "crew" ? 1 : 0.15 + 0.85 * crewRatio;
+  const previousHealth = module.health;
   module.health = Math.min(
     module.maxHealth,
     module.health
@@ -2025,6 +2119,17 @@ function repairModule(ship: ShipState, allocation: number, dt: number): void {
       * treatmentMultiplier(allocation)
       * dt,
   );
+  if (moduleId === "gun") {
+    const damagedMount = ship.mainBatteryMounts
+      .filter((mount) => mount.health < mount.maxHealth)
+      .sort((left, right) => left.health / left.maxHealth - right.health / right.maxHealth)[0];
+    if (damagedMount) {
+      damagedMount.health = Math.min(
+        damagedMount.maxHealth,
+        damagedMount.health + (module.health - previousHealth),
+      );
+    }
+  }
 }
 
 function updateDamageControl(

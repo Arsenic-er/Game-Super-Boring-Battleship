@@ -532,6 +532,9 @@ export class RuleBasedAi implements Controller {
     const suppressMainGun = activateSmoke
       || observation.self.smokeDeploymentRemaining > 0
       || concealmentRetreat;
+    const mainGunBearingAllowed = Math.abs(
+      wrapAngle(bearingToTarget - observation.self.heading),
+    ) <= 145 * Math.PI / 180;
 
     return {
       throttle: damaged ? Math.min(tacticalThrottle, 0.52) : tacticalThrottle,
@@ -556,6 +559,7 @@ export class RuleBasedAi implements Controller {
           && observation.time <= this.fireWindowUntil
           && range >= GUN.minAimRange
           && range <= mainBatteryRange
+          && mainGunBearingAllowed
       ),
     };
   }

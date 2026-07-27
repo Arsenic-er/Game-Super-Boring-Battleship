@@ -662,19 +662,35 @@ export class Hud {
     const reloadDuration = gunDefinition.reloadSeconds
       * player.performance.reloadMultiplier
       / Math.max(0.25, gunRatio);
-    const reloadPercent = Math.round(
-      Math.max(0, Math.min(1, 1 - player.reloadRemaining / reloadDuration)) * 100,
+    const functionalMounts = player.mainBatteryMounts.filter((mount) => mount.health > 0);
+    const readyMounts = functionalMounts.filter((mount) => mount.reloadRemaining <= 0);
+    const reloadPercent = Math.round(functionalMounts.length > 0
+      ? functionalMounts.reduce(
+        (sum, mount) => sum + clamp(1 - mount.reloadRemaining / reloadDuration, 0, 1),
+        0,
+      ) / functionalMounts.length * 100
+      : 0);
+    const nextReload = functionalMounts.reduce(
+      (minimum, mount) => mount.reloadRemaining > 0
+        ? Math.min(minimum, mount.reloadRemaining)
+        : minimum,
+      Number.POSITIVE_INFINITY,
     );
-    const traverseError = Math.abs(turretAlignmentError(player)) * 180 / Math.PI;
+    const traverseError = functionalMounts.reduce(
+      (minimum, mount) => Math.min(
+        minimum,
+        Math.abs(turretAlignmentError(player, mount.mountIndex)) * 180 / Math.PI,
+      ),
+      Number.POSITIVE_INFINITY,
+    );
     const fireBlocked = isGunFireBlocked(player);
-    this.reload.textContent = player.modules.gun.health <= 0
-      ? "已摧毁 · 0%"
-      : player.reloadRemaining > 0
-        ? `装填 ${reloadPercent}% · ${player.reloadRemaining.toFixed(1)} s${player.pendingAmmoType ? ` · 切换至 ${ammoLabels[player.pendingAmmoType]}` : ""}${fireBlocked ? " · 射界受阻" : ""}`
-        : fireBlocked
-          ? "射界受阻 · 禁止开火"
-          : `火炮就绪 · 100%${traverseError > 2.5 ? ` · 炮管差 ${traverseError.toFixed(1)}°` : ""}`;
-    const barrelOffset = wrapAngle(player.turretHeading - aimBearing) * 180 / Math.PI;
+    this.reload.textContent = fireBlocked
+      ? "主炮塔全部损坏 · 0%"
+      : readyMounts.length > 0
+        ? `可开火 ${readyMounts.length}/${functionalMounts.length} 座 · 平均装填 ${reloadPercent}%${Number.isFinite(traverseError) && traverseError > 2.5 ? ` · 最近炮塔差 ${traverseError.toFixed(1)}°` : ""}`
+        : `装填 ${reloadPercent}% · ${Number.isFinite(nextReload) ? `${nextReload.toFixed(1)} s 后首座就绪` : "已停止"}${player.pendingAmmoType ? ` · 切换至 ${ammoLabels[player.pendingAmmoType]}` : ""}`;
+    const primaryHeading = player.mainBatteryMounts[0]?.heading ?? player.turretHeading;
+    const barrelOffset = wrapAngle(primaryHeading - aimBearing) * 180 / Math.PI;
     this.scopeBarrelMarker.style.left = `calc(50% + ${clamp(barrelOffset * 4.2, -230, 230).toFixed(1)}px)`;
     this.scopeBarrelMarker.classList.toggle("blocked", fireBlocked);
     this.scopeBearing.textContent = `${relativeBearing >= 0 ? "+" : ""}${relativeBearing.toFixed(1)}°`;

@@ -166,6 +166,7 @@ export class DeveloperPanel {
         else if (field === "heading") {
           ship.heading = value * Math.PI / 180;
           ship.turretHeading = ship.heading;
+          for (const mount of ship.mainBatteryMounts) mount.heading = ship.heading;
           ship.torpedoLauncherHeading = ship.heading + Math.PI / 2;
         }
         ship.recoverableHull = Math.max(ship.hull, ship.recoverableHull);
@@ -287,6 +288,7 @@ export class DeveloperPanel {
         player.previousPosition = { ...player.position };
         player.heading = 0;
         player.turretHeading = 0;
+        for (const mount of player.mainBatteryMounts) mount.heading = 0;
         player.torpedoLauncherHeading = Math.PI / 2;
         player.speedKnots = 26;
         player.throttle = 1;
@@ -294,6 +296,7 @@ export class DeveloperPanel {
         target.previousPosition = { ...target.position };
         target.heading = Math.PI / 2;
         target.turretHeading = target.heading;
+        for (const mount of target.mainBatteryMounts) mount.heading = target.heading;
         target.torpedoLauncherHeading = target.heading + Math.PI / 2;
         target.speedKnots = 0;
         target.throttle = 0;
@@ -308,6 +311,7 @@ export class DeveloperPanel {
         ship.fireIntensity = 52;
         ship.flooding = 38;
         for (const module of Object.values(ship.modules)) module.health = module.maxHealth * 0.34;
+        for (const mount of ship.mainBatteryMounts) mount.health = mount.maxHealth * 0.34;
       }
       if (action === "sink") ship.hull = 0;
     }
@@ -329,6 +333,11 @@ export class DeveloperPanel {
     ship.ammoType = "he";
     ship.pendingAmmoType = undefined;
     ship.reloadRemaining = 0;
+    for (const mount of ship.mainBatteryMounts) {
+      mount.reloadRemaining = 0;
+      mount.health = mount.maxHealth;
+      mount.lastFiredAt = undefined;
+    }
     ship.torpedoesLoaded = 2;
     ship.torpedoReserveSalvos = torpedo.reserveSalvos;
     ship.torpedoReloadRemaining = 0;
@@ -431,7 +440,10 @@ export class DeveloperPanel {
       : "副炮 · 未安装";
     const armor = getShipArmorProfile(ship.shipClassId);
     const battery = getMainBattery(ship.shipClassId, ship.mainGunId, ship.mainGunMounts);
-    this.armorStatus.textContent = `装甲 · ${armor.scheme} · 侧舷 艏/机舱/弹药库 ${armor.zones.side.bow}/${armor.zones.side.engineRoom}/${armor.zones.side.magazine} mm · 甲板 ${armor.zones.deck.magazine} mm · ${battery.caliberMm} mm 主炮 HE穿深 ${battery.shellProfile.hePenetrationMm} mm / AP炮口 ${Math.round(battery.shellProfile.apMuzzlePenetrationMm)} mm`;
+    const mainTurrets = ship.mainBatteryMounts.map((mount) =>
+      `#${mount.mountIndex + 1} ${Math.round(mount.health / mount.maxHealth * 100)}%/${mount.reloadRemaining.toFixed(1)}s`
+    ).join(" · ");
+    this.armorStatus.textContent = `装甲 · ${armor.scheme} · 侧舷 艏/机舱/弹药库 ${armor.zones.side.bow}/${armor.zones.side.engineRoom}/${armor.zones.side.magazine} mm · 甲板 ${armor.zones.deck.magazine} mm · ${battery.caliberMm} mm 主炮 HE穿深 ${battery.shellProfile.hePenetrationMm} mm / AP炮口 ${Math.round(battery.shellProfile.apMuzzlePenetrationMm)} mm · 炮塔 ${mainTurrets}`;
     const telemetry = ship.perception;
     if (!telemetry) {
       this.perception.textContent = "感知：玩家/无 AI 遥测";

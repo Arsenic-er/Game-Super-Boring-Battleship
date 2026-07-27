@@ -701,7 +701,10 @@ export class GameView implements AimProvider {
           - ship.turnRateRadians * 1.4
           + ship.flooding * 0.0008 * (ship.team === "player" ? 1 : -1)
         : 0.08;
-      for (const turret of visual.turrets) turret.rotation.y = wrapAngle(ship.turretHeading - ship.heading);
+      for (const [index, turret] of visual.turrets.entries()) {
+        const mount = ship.mainBatteryMounts[index];
+        turret.rotation.y = wrapAngle((mount?.heading ?? ship.turretHeading) - ship.heading);
+      }
       const muzzle = gunMuzzleOrigin(ship);
       const elevationPath = predictTrajectory(
         muzzle,

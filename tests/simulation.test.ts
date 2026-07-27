@@ -405,8 +405,11 @@ describe("deterministic battle simulation", () => {
       ...idle(player.position.x, player.position.z - 2_000),
       fire: true,
     };
-    for (let tick = 0; tick < 1_000; tick += 1) {
-      stepSimulation(state, new Map([["player", command]]), FIXED_STEP);
+    stepSimulation(state, new Map([["player", command]]), FIXED_STEP);
+    expect(state.projectiles).toHaveLength(1);
+    expect(state.projectiles[0]!.velocity.z).toBeGreaterThan(0);
+    for (let tick = 1; tick < 1_000; tick += 1) {
+      stepSimulation(state, new Map([["player", { ...command, fire: false }]]), FIXED_STEP);
     }
     const relativeTurret = Math.atan2(
       Math.sin(player.turretHeading - player.heading),
@@ -416,7 +419,6 @@ describe("deterministic battle simulation", () => {
     expect(Math.abs(relativeTurret)).toBeLessThanOrEqual(
       FRONT_TURRET_TRAVERSE_LIMIT_RADIANS + 0.001,
     );
-    expect(state.projectiles).toHaveLength(0);
   });
 
   it("slows turret traverse when the gun module is damaged", () => {
@@ -789,6 +791,7 @@ describe("deterministic battle simulation", () => {
     const player = state.ships[0]!;
     player.heading = 0;
     player.turretHeading = Math.PI / 2;
+    player.mainBatteryMounts[0]!.heading = Math.PI / 2;
     const origin = gunMuzzleOrigin(player);
     // A WWII 127 mm destroyer barrel projects roughly eight metres from the
     // mount; the previous 14 m threshold encoded the oversized prototype art.

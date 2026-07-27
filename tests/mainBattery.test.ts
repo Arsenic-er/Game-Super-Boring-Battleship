@@ -50,6 +50,47 @@ describe("historical main batteries", () => {
     expect(player.reloadRemaining).toBeCloseTo(battery.reloadSeconds, 1);
   });
 
+  it("tracks traverse and reload independently for every turret", () => {
+    const state = createInitialState(43, "sea-trials", "mk1-single", armament(4), undefined, "cleveland");
+    const player = state.ships[0]!;
+    const broadsideCommand: ControlCommand = {
+      throttle: 0,
+      rudder: 0,
+      aimPoint: { x: player.position.x + 2_000, y: 0, z: player.position.z },
+      fire: false,
+    };
+    stepSimulation(state, new Map([[player.id, broadsideCommand]]), 1);
+    expect(player.mainBatteryMounts).toHaveLength(4);
+    expect(player.mainBatteryMounts[0]!.heading).not.toBeCloseTo(
+      player.mainBatteryMounts[3]!.heading,
+      3,
+    );
+
+    const fireCommand = { ...broadsideCommand, fire: true };
+    stepSimulation(state, new Map([[player.id, fireCommand]]), FIXED_STEP);
+    expect(state.projectiles).toHaveLength(12);
+    player.mainBatteryMounts[0]!.reloadRemaining = 0;
+    stepSimulation(state, new Map([[player.id, fireCommand]]), FIXED_STEP);
+    expect(state.projectiles).toHaveLength(15);
+    expect(player.mainBatteryMounts[0]!.reloadRemaining).toBeGreaterThan(0);
+    expect(player.mainBatteryMounts.slice(1).every((mount) => mount.reloadRemaining > 0)).toBe(true);
+  });
+
+  it("lets loaded turrets fire along their current barrel headings before alignment", () => {
+    const state = createInitialState(44, "sea-trials", "mk1-single", armament(3), undefined, "north-carolina");
+    const player = state.ships[0]!;
+    const command: ControlCommand = {
+      throttle: 0,
+      rudder: 0,
+      aimPoint: { x: player.position.x + 2_000, y: 0, z: player.position.z },
+      fire: true,
+    };
+    stepSimulation(state, new Map([[player.id, command]]), FIXED_STEP);
+    expect(state.projectiles).toHaveLength(9);
+    const shellBearings = state.projectiles.map((shell) => Math.atan2(shell.velocity.x, shell.velocity.z));
+    expect(Math.max(...shellBearings) - Math.min(...shellBearings)).toBeGreaterThan(2);
+  });
+
   it("preserves the King George V 4-2-4 muzzle groups", () => {
     const state = createInitialState(42, "sea-trials", "mk1-single", armament(3), undefined, "king-george-v");
     const player = state.ships[0]!;

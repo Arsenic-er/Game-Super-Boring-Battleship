@@ -125,6 +125,19 @@ export interface SecondaryMountState {
   reloadRemaining: number;
 }
 
+export interface MainBatteryMountState {
+  /** Index into the effective main-battery mount layout. */
+  mountIndex: number;
+  /** Absolute world heading of this turret. */
+  heading: number;
+  /** Bow-relative neutral heading, cached to keep the simulation hot path allocation-free. */
+  restHeadingOffset: number;
+  reloadRemaining: number;
+  health: number;
+  maxHealth: number;
+  lastFiredAt?: number;
+}
+
 export interface ShipState {
   id: string;
   team: Team;
@@ -146,6 +159,7 @@ export interface ShipState {
   mainGunId: MainGunId;
   torpedoId: TorpedoId;
   mainGunMounts: number;
+  mainBatteryMounts: MainBatteryMountState[];
   torpedoLauncherMounts: number;
   depthChargeMounts: number;
   secondaryMounts: SecondaryMountState[];

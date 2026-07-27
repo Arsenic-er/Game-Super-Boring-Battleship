@@ -10,6 +10,16 @@ export interface MainBatteryMountDefinition {
   barrelCount: 1 | 2 | 3 | 4;
 }
 
+/**
+ * Turrets forward of amidships rest toward the bow; aft turrets rest toward
+ * the stern. Both retain a 35 degree safety cone over the ship behind them.
+ */
+export function mainBatteryMountRestHeading(mount: MainBatteryMountDefinition): number {
+  return mount.longitudinalFraction >= 0 ? 0 : Math.PI;
+}
+
+export const MAIN_BATTERY_TRAVERSE_LIMIT_RADIANS = 145 * Math.PI / 180;
+
 export interface EffectiveMainBatteryDefinition {
   id: string;
   name: string;

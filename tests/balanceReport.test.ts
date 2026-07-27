@@ -17,8 +17,8 @@ describe.skipIf(!enabled)("balance report", () => {
       simulationWallSeconds: Math.round(elapsedSeconds * 100) / 100,
       ...report,
     }, null, 2));
-  // Five hundred full ten-minute, 60 Hz simulations take roughly 135 seconds
-  // on the reference GPU server. Keep a real guard while allowing the default
+  // Five hundred full ten-minute, 60 Hz simulations take roughly 170 seconds
+  // with independent main-battery mounts. Keep a real guard while allowing the default
   // balance command to complete instead of timing out after producing a report.
-  }, 180_000);
+  }, 240_000);
 });
