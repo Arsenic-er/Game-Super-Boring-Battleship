@@ -13,8 +13,57 @@ import { recommendedAmmoForTarget } from "../src/controllers/ruleBasedAi";
 import { FIXED_STEP } from "../src/sim/config";
 import type { ControlCommand } from "../src/sim/types";
 import { SHIP_CLASSES } from "../src/ships/classes";
+import { SHIP_ARMOR_PROFILES } from "../src/ships/armorProfiles";
+import { getMainBattery } from "../src/ships/mainBatteries";
 
 describe("ammunition and armor interaction", () => {
+  it("defines distinct gameplay armor schemes for every historical ship class", () => {
+    expect(Object.keys(SHIP_ARMOR_PROFILES)).toHaveLength(15);
+    expect(SHIP_ARMOR_PROFILES["north-carolina"].zones.side.magazine)
+      .toBeGreaterThan(SHIP_ARMOR_PROFILES.cleveland.zones.side.magazine);
+    expect(SHIP_ARMOR_PROFILES.cleveland.zones.side.magazine)
+      .toBeGreaterThan(SHIP_ARMOR_PROFILES.fletcher.zones.side.magazine);
+    expect(SHIP_ARMOR_PROFILES.richelieu.zones.side.bow)
+      .toBeLessThan(SHIP_ARMOR_PROFILES.richelieu.zones.side.magazine);
+  });
+
+  it("derives WoWS-style HE penetration and AP overmatch from main-gun caliber", () => {
+    const cleveland = getMainBattery("cleveland", "mk1-single", 4).shellProfile;
+    const nurnberg = getMainBattery("nurnberg", "mk1-single", 3).shellProfile;
+    const northCarolina = getMainBattery("north-carolina", "mk1-single", 3).shellProfile;
+    expect(cleveland.hePenetrationMm).toBe(25);
+    expect(nurnberg.hePenetrationMm).toBe(38);
+    expect(northCarolina.apOvermatchArmorMm).toBeCloseTo(406 / 14.3, 5);
+    expect(northCarolina.apFuseArmingArmorMm).toBeCloseTo(406 / 6, 5);
+  });
+
+  it("lets battleship AP defeat a broadside belt nearby but lose penetration with flight time", () => {
+    const shell = getMainBattery("north-carolina", "mk1-single", 3).shellProfile;
+    expect(resolveArmorInteraction("ap", 305, 0, 2, 30, .5, shell).result)
+      .toBe("penetration");
+    expect(resolveArmorInteraction("ap", 305, 0, 8, 30, .5, shell).result)
+      .toBe("shatter");
+  });
+
+  it("overmatches thin bow plating but overpenetrates instead of deleting a destroyer", () => {
+    const shell = getMainBattery("north-carolina", "mk1-single", 3).shellProfile;
+    const result = resolveArmorInteraction("ap", 26, 80, 1, 20, 0, shell);
+    expect(result.result).toBe("overpenetration");
+    expect(result.damageMultiplier).toBe(.1);
+  });
+
+  it("keeps battleship HE out of the main belt and armored deck but lets it hit superstructure", () => {
+    const shell = getMainBattery("yamato", "mk1-single", 3).shellProfile;
+    expect(resolveArmorInteraction("he", 410, 0, 1, 30, .5, shell).result).toBe("shatter");
+    expect(resolveArmorInteraction("he", 230, 0, 1, 30, .5, shell).result).toBe("shatter");
+    expect(resolveArmorInteraction("he", 50, 0, 1, 30, .5, shell).result).toBe("penetration");
+  });
+
+  it("still ricochets 460 mm AP from an extremely angled heavy belt", () => {
+    const shell = getMainBattery("yamato", "mk1-single", 3).shellProfile;
+    expect(resolveArmorInteraction("ap", 410, 70, 1, 30, 0, shell).result).toBe("ricochet");
+  });
+
   it("lets HE ignore impact angle but respects nominal penetration", () => {
     expect(resolveArmorInteraction("he", 21, 82, 3).result).toBe("penetration");
     const shatter = resolveArmorInteraction("he", 22, 0, 1);
@@ -84,8 +133,8 @@ describe("ammunition and armor interaction", () => {
     ship.position = { x: 0, y: 0, z: 0 };
     ship.heading = 0;
     const contact = projectileHitContact({
-      previousPosition: { x: -100, y: 5, z: 0 },
-      position: { x: 100, y: 5, z: 0 },
+      previousPosition: { x: -100, y: 3, z: 0 },
+      position: { x: 100, y: 3, z: 0 },
     }, ship);
     expect(contact).not.toBeNull();
     expect(contact?.armorZone).toBe("side");
@@ -93,13 +142,25 @@ describe("ammunition and armor interaction", () => {
     expect(contact?.surfaceNormal.x).toBeCloseTo(-1, 5);
   });
 
+  it("separates high side hits into the lightly armored superstructure", () => {
+    const ship = createInitialState(204, "sea-trials").ships[0]!;
+    ship.position = { x: 0, y: 0, z: 0 };
+    ship.heading = 0;
+    const contact = projectileHitContact({
+      previousPosition: { x: -100, y: 7, z: 0 },
+      position: { x: 100, y: 7, z: 0 },
+    }, ship);
+    expect(contact?.armorZone).toBe("superstructure");
+    expect(armorThicknessFor("engineRoom", "superstructure", "fletcher")).toBe(16);
+  });
+
   it("keeps continuous collision correct for a rotated hull", () => {
     const ship = createInitialState(205, "sea-trials").ships[0]!;
     ship.position = { x: 0, y: 0, z: 0 };
     ship.heading = Math.PI / 2;
     const contact = projectileHitContact({
-      previousPosition: { x: 0, y: 5, z: -100 },
-      position: { x: 0, y: 5, z: 100 },
+      previousPosition: { x: 0, y: 3, z: -100 },
+      position: { x: 0, y: 3, z: 100 },
     }, ship);
     expect(contact).not.toBeNull();
     expect(contact?.armorZone).toBe("side");
@@ -175,6 +236,7 @@ describe("ammunition and armor interaction", () => {
     stepSimulation(state, new Map([["player", command]]), FIXED_STEP);
     expect(state.projectiles).toHaveLength(1);
     expect(state.projectiles[0]?.ammoType).toBe("ap");
+    expect(state.projectiles[0]?.shellProfile?.caliberMm).toBe(127);
     expect(state.shots[0]?.ammoType).toBe("ap");
   });
 

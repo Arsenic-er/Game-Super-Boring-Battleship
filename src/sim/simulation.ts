@@ -34,6 +34,7 @@ import type { TorpedoId } from "../ships/torpedoes";
 import { getSecondaryGun } from "../ships/secondaryGuns";
 import type { SecondaryGunId } from "../ships/secondaryGuns";
 import { getMainBattery } from "../ships/mainBatteries";
+import { classArmorThickness } from "../ships/armorProfiles";
 import { effectiveTorpedoDetectionRange } from "./detection";
 import type {
   AmmoType,
@@ -52,6 +53,7 @@ import type {
   Vec3,
   ShipPerformanceModifiers,
   SensorContact,
+  ShellPenetrationProfile,
   TorpedoLaunchSolution,
   TorpedoSpreadMode,
   TorpedoThreat,
@@ -663,6 +665,7 @@ function fireGun(state: BattleState, ship: ShipState): void {
       kind: "shell",
       ammoType: ship.ammoType,
       weaponSource: "mainGun",
+      shellProfile: gunDefinition.shellProfile,
       position: copyVec(origin),
       previousPosition: copyVec(origin),
       velocity,
@@ -1360,19 +1363,24 @@ export function projectileHitContact(
       + (projectile.position.z - projectile.previousPosition.z) * enter,
   };
   const localPoint = shipLocalPoint(ship, point);
+  const impactHeight = point.y - ship.position.y;
+  const armorZone = entryAxis.armorZone === "side"
+    && impactHeight > hullDefinition.deckHeight * .58
+    ? "superstructure"
+    : entryAxis.armorZone;
   return {
     point,
     localPoint: {
       longitudinal: localPoint.longitudinal,
       lateral: localPoint.lateral,
-      height: point.y - ship.position.y,
+      height: impactHeight,
     },
     surfaceNormal: {
       x: entryAxis.normal.x * entryNormalSign,
       y: entryAxis.normal.y * entryNormalSign,
       z: entryAxis.normal.z * entryNormalSign,
     },
-    armorZone: entryAxis.armorZone,
+    armorZone,
     distanceFraction: enter,
   };
 }
@@ -1392,7 +1400,9 @@ export function armorThicknessFor(
   armorZone: ArmorZoneId = "side",
   hullId: HullId | ShipClassId = DEFAULT_HULL_ID,
 ): number {
+  if (isShipClassId(hullId)) return classArmorThickness(hullId, compartment, armorZone);
   const multiplier = isShipClassId(hullId) ? getShipClass(hullId).armorMultiplier : getHull(hullId).armorMultiplier;
+  if (armorZone === "superstructure") return 8 * multiplier;
   if (armorZone === "deck") return 10 * multiplier;
   if (armorZone === "end") return 12 * multiplier;
   return ARMOR_THICKNESS_MM[compartment] * multiplier;
@@ -1405,12 +1415,13 @@ export function resolveArmorInteraction(
   flightSeconds: number,
   internalPathMeters = Number.POSITIVE_INFINITY,
   ricochetRoll = 0.5,
+  shellProfile?: ShellPenetrationProfile,
 ): ArmorResolution {
   const safeArmor = Math.max(0.1, armorThicknessMm);
   const safeAngle = clamp(impactAngleDegrees, 0, 89.9);
 
   if (ammoType === "he") {
-    const penetrationMm = AMMUNITION.he.penetrationMm;
+    const penetrationMm = shellProfile?.hePenetrationMm ?? AMMUNITION.he.penetrationMm;
     const penetrated = penetrationMm >= safeArmor;
     return {
       result: penetrated ? "penetration" : "shatter",
@@ -1429,18 +1440,22 @@ export function resolveArmorInteraction(
   }
 
   const penetrationMm = Math.max(
-    AMMUNITION.ap.minimumPenetrationMm,
-    AMMUNITION.ap.muzzlePenetrationMm
-      - Math.max(0, flightSeconds) * AMMUNITION.ap.penetrationLossMmPerSecond,
+    shellProfile?.apMinimumPenetrationMm ?? AMMUNITION.ap.minimumPenetrationMm,
+    (shellProfile?.apMuzzlePenetrationMm ?? AMMUNITION.ap.muzzlePenetrationMm)
+      - Math.max(0, flightSeconds)
+        * (shellProfile?.apPenetrationLossMmPerSecond ?? AMMUNITION.ap.penetrationLossMmPerSecond),
   );
-  const overmatched = safeArmor <= AMMUNITION.ap.overmatchArmorMm;
+  const overmatched = safeArmor <= (shellProfile?.apOvermatchArmorMm ?? AMMUNITION.ap.overmatchArmorMm);
   const ricochetChance = safeAngle <= AMMUNITION.ap.ricochetStartDegrees
     ? 0
     : safeAngle >= AMMUNITION.ap.ricochetGuaranteedDegrees
       ? 1
       : (safeAngle - AMMUNITION.ap.ricochetStartDegrees)
         / (AMMUNITION.ap.ricochetGuaranteedDegrees - AMMUNITION.ap.ricochetStartDegrees);
-  const normalizedAngle = Math.max(0, safeAngle - AMMUNITION.ap.normalizationDegrees);
+  const normalizedAngle = Math.max(
+    0,
+    safeAngle - (shellProfile?.apNormalizationDegrees ?? AMMUNITION.ap.normalizationDegrees),
+  );
   const cosine = Math.max(0.08, Math.cos(normalizedAngle * Math.PI / 180));
   const effectiveArmorMm = safeArmor / cosine;
   if (!overmatched && ricochetRoll < ricochetChance) {
@@ -1465,8 +1480,8 @@ export function resolveArmorInteraction(
       floodingChanceMultiplier: 0,
     };
   }
-  const overpenetrated = safeArmor < AMMUNITION.ap.fuseArmingArmorMm
-    || internalPathMeters < AMMUNITION.ap.fuseTravelMeters;
+  const overpenetrated = safeArmor < (shellProfile?.apFuseArmingArmorMm ?? AMMUNITION.ap.fuseArmingArmorMm)
+    || internalPathMeters < (shellProfile?.apFuseTravelMeters ?? AMMUNITION.ap.fuseTravelMeters);
   return {
     result: overpenetrated ? "overpenetration" : "penetration",
     penetrationMm,
@@ -1573,7 +1588,11 @@ function projectileInternalPathMeters(
     ? hullDefinition.beam
     : contact.armorZone === "end"
       ? hullDefinition.length * 0.42
-      : hullDefinition.deckHeight * 0.62;
+      : contact.armorZone === "superstructure"
+        ? ship.hullId === "destroyer"
+          ? hullDefinition.beam
+          : Math.max(5, hullDefinition.beam * .35)
+        : hullDefinition.deckHeight * 0.62;
   return directPath / normalComponent;
 }
 
@@ -1618,6 +1637,7 @@ function applyHit(
       projectile.age,
       projectileInternalPathMeters(projectile, contact, ship),
       random(state),
+      projectile.shellProfile,
     );
   const compartmentHealth = ship.compartments[compartment];
   const saturationMultiplier = projectile.kind === "shell"
@@ -1672,6 +1692,7 @@ function applyHit(
     ammoType: projectile.ammoType,
     penetrationResult: armor.result,
     armorThicknessMm,
+    penetrationMm: armor.penetrationMm,
     effectiveArmorMm: armor.effectiveArmorMm,
     impactAngleDegrees,
     armorZone: contact.armorZone,

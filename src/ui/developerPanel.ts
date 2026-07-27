@@ -4,6 +4,8 @@ import { torpedoLauncherAlignmentError } from "../sim/simulation";
 import type { BattleState, CompartmentId, ModuleId, ShipState } from "../sim/types";
 import { getTorpedo } from "../ships/torpedoes";
 import { getSecondaryGun } from "../ships/secondaryGuns";
+import { getShipArmorProfile } from "../ships/armorProfiles";
+import { getMainBattery } from "../ships/mainBatteries";
 
 export type CursorStyle = "neon-arrow" | "neon-hand" | "crosshair";
 
@@ -41,6 +43,7 @@ export class DeveloperPanel {
   private readonly perception: HTMLElement;
   private readonly torpedoStatus: HTMLElement;
   private readonly secondaryStatus: HTMLElement;
+  private readonly armorStatus: HTMLElement;
   private open = false;
 
   constructor(
@@ -58,6 +61,7 @@ export class DeveloperPanel {
       <div class="dev-perception" data-role="perception">感知：无遥测</div>
       <div class="dev-perception" data-role="torpedo">鱼雷：等待状态</div>
       <div class="dev-perception" data-role="secondary">副炮：等待状态</div>
+      <div class="dev-perception" data-role="armor">装甲：等待状态</div>
       <section class="dev-section">
         <h3>船体与运动</h3>
         ${this.field("hull", "当前生命", 0, 1000, 1)}
@@ -77,7 +81,7 @@ export class DeveloperPanel {
         ${(Object.keys(moduleLabels) as ModuleId[]).map((id) => this.percentField("module", id, moduleLabels[id])).join("")}
       </section>
       <section class="dev-section">
-        <h3>装甲分区</h3>
+        <h3>舱段生命（非装甲厚度）</h3>
         ${(Object.keys(compartmentLabels) as CompartmentId[]).map((id) => this.percentField("compartment", id, compartmentLabels[id])).join("")}
       </section>
       <section class="dev-section dev-options">
@@ -112,12 +116,14 @@ export class DeveloperPanel {
     const perception = this.element.querySelector<HTMLElement>('[data-role="perception"]');
     const torpedoStatus = this.element.querySelector<HTMLElement>('[data-role="torpedo"]');
     const secondaryStatus = this.element.querySelector<HTMLElement>('[data-role="secondary"]');
-    if (!shipSelect || !live || !perception || !torpedoStatus || !secondaryStatus) throw new Error("Missing developer panel controls");
+    const armorStatus = this.element.querySelector<HTMLElement>('[data-role="armor"]');
+    if (!shipSelect || !live || !perception || !torpedoStatus || !secondaryStatus || !armorStatus) throw new Error("Missing developer panel controls");
     this.shipSelect = shipSelect;
     this.live = live;
     this.perception = perception;
     this.torpedoStatus = torpedoStatus;
     this.secondaryStatus = secondaryStatus;
+    this.armorStatus = armorStatus;
     this.bindControls();
   }
 
@@ -423,6 +429,9 @@ export class DeveloperPanel {
     this.secondaryStatus.textContent = ship.secondaryMounts.length > 0
       ? `副炮 · ${ship.secondaryBatteryStatus} · 目标 ${ship.secondaryTargetId ?? "无"} · 确认 ${ship.secondaryAcquisitionSamples} 次 · 左/右装填 ${Number.isFinite(portReload) ? portReload.toFixed(1) : "-"}/${Number.isFinite(starboardReload) ? starboardReload.toFixed(1) : "-"} s · ${[...new Set(secondaryReloads.map((mount) => mount.model))].join(" / ")}`
       : "副炮 · 未安装";
+    const armor = getShipArmorProfile(ship.shipClassId);
+    const battery = getMainBattery(ship.shipClassId, ship.mainGunId, ship.mainGunMounts);
+    this.armorStatus.textContent = `装甲 · ${armor.scheme} · 侧舷 艏/机舱/弹药库 ${armor.zones.side.bow}/${armor.zones.side.engineRoom}/${armor.zones.side.magazine} mm · 甲板 ${armor.zones.deck.magazine} mm · ${battery.caliberMm} mm 主炮 HE穿深 ${battery.shellProfile.hePenetrationMm} mm / AP炮口 ${Math.round(battery.shellProfile.apMuzzlePenetrationMm)} mm`;
     const telemetry = ship.perception;
     if (!telemetry) {
       this.perception.textContent = "感知：玩家/无 AI 遥测";

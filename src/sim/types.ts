@@ -25,12 +25,24 @@ export type DepthChargeFireRejectReason =
 export type ProjectileKind = "shell" | "torpedo";
 export type AmmoType = "he" | "ap";
 export type PenetrationResult = "penetration" | "overpenetration" | "ricochet" | "shatter";
-export type ArmorZoneId = "side" | "end" | "deck";
+export type ArmorZoneId = "side" | "end" | "deck" | "superstructure";
 export type DamageControlPriority = "balanced" | "fire" | "flood" | "module";
 export type PerceptionMode = "unaware" | "acquiring" | "tracking" | "lost" | "searching";
 export type SecondaryBatteryStatus =
   | "unavailable" | "disabled" | "searching" | "acquiring"
   | "out-of-range" | "sector" | "traversing" | "reloading" | "firing";
+
+export interface ShellPenetrationProfile {
+  caliberMm: number;
+  hePenetrationMm: number;
+  apMuzzlePenetrationMm: number;
+  apMinimumPenetrationMm: number;
+  apPenetrationLossMmPerSecond: number;
+  apOvermatchArmorMm: number;
+  apFuseArmingArmorMm: number;
+  apFuseTravelMeters: number;
+  apNormalizationDegrees: number;
+}
 
 export interface DamageControlAllocation {
   fire: number;
@@ -199,6 +211,7 @@ export interface ProjectileState {
   kind: ProjectileKind;
   ammoType?: AmmoType;
   weaponSource?: "mainGun" | "secondary";
+  shellProfile?: ShellPenetrationProfile;
   position: Vec3;
   previousPosition: Vec3;
   velocity: Vec3;
@@ -259,6 +272,7 @@ export interface ImpactEvent {
   ammoType?: AmmoType;
   penetrationResult?: PenetrationResult;
   armorThicknessMm?: number;
+  penetrationMm?: number;
   effectiveArmorMm?: number;
   impactAngleDegrees?: number;
   armorZone?: ArmorZoneId;

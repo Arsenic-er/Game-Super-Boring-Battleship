@@ -392,12 +392,15 @@ export class Hud {
       const armorResult = impact.penetrationResult
         ? ` · ${impact.ammoType ? ammoLabels[impact.ammoType].split(" ")[0] : ""}${penetrationLabels[impact.penetrationResult]}`
         : "";
+      const armorDetail = impact.penetrationMm !== undefined && impact.armorThicknessMm !== undefined
+        ? ` · 穿深 ${Math.round(impact.penetrationMm)}/${Math.round(impact.armorThicknessMm)} mm`
+        : "";
       const element = document.createElement("div");
       element.className = `combat-message${incoming ? " incoming" : ""}`;
       const collision = impact.kind === "collision";
       element.textContent = incoming
-        ? `${collision ? "碰撞" : "中弹"} · ${compartmentLabels[impact.compartment]}${armorResult}${moduleText}${hazard} · -${Math.round(impact.damage ?? 0)}`
-        : `${collision ? "敌舰碰撞" : "命中敌舰"}${compartmentLabels[impact.compartment]}${armorResult}${moduleText}${hazard} · ${Math.round(impact.damage ?? 0)}`;
+        ? `${collision ? "碰撞" : "中弹"} · ${compartmentLabels[impact.compartment]}${armorResult}${armorDetail}${moduleText}${hazard} · -${Math.round(impact.damage ?? 0)}`
+        : `${collision ? "敌舰碰撞" : "命中敌舰"}${compartmentLabels[impact.compartment]}${armorResult}${armorDetail}${moduleText}${hazard} · ${Math.round(impact.damage ?? 0)}`;
       this.feedback.prepend(element);
       while (this.feedback.children.length > 4) this.feedback.lastElementChild?.remove();
       window.setTimeout(() => element.remove(), 2_800);

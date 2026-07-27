@@ -4,6 +4,7 @@ import { createInitialState, gunMuzzleOrigins, stepSimulation } from "../src/sim
 import type { ControlCommand, ShipPerformanceModifiers } from "../src/sim/types";
 import { MAIN_GUNS } from "../src/ships/components";
 import type { ShipClassId } from "../src/ships/classes";
+import { getShipClass } from "../src/ships/classes";
 import { getMainBattery, mainBatteryBarrelCount } from "../src/ships/mainBatteries";
 
 const layouts: Record<ShipClassId, readonly number[]> = {
@@ -84,5 +85,16 @@ describe("historical main batteries", () => {
     expect(battery.damagePerShell * 2).toBe(MAIN_GUNS["mk2-twin"].damage);
     expect(battery.reloadSeconds).toBe(MAIN_GUNS["mk2-twin"].reloadSeconds);
   });
-});
 
+  it("caps a perfect same-class penetration salvo below one quarter hull", () => {
+    for (const shipClassId of [
+      "cleveland", "edinburgh", "nurnberg", "agano", "dido",
+      "north-carolina", "king-george-v", "bismarck", "yamato", "richelieu",
+    ] as const) {
+      const mountCount = layouts[shipClassId].length;
+      const battery = getMainBattery(shipClassId, "mk1-single", mountCount);
+      const penetratingDamage = battery.damagePerShell * mainBatteryBarrelCount(battery) * .33;
+      expect(penetratingDamage).toBeLessThan(getShipClass(shipClassId).maxHull * .25);
+    }
+  });
+});

@@ -1,4 +1,5 @@
 import { GUN } from "../sim/config";
+import type { ShellPenetrationProfile } from "../sim/types";
 import type { MainGunId, MainGunVisualDefinition } from "./components";
 import { getMainGun } from "./components";
 import type { ShipClassId } from "./classes";
@@ -20,11 +21,12 @@ export interface EffectiveMainBatteryDefinition {
   dispersionMultiplier: number;
   muzzleVelocity: number;
   maximumRangeMeters: number;
+  shellProfile: ShellPenetrationProfile;
   mounts: MainBatteryMountDefinition[];
   visual: MainGunVisualDefinition;
 }
 
-interface HistoricalMainBatteryDefinition extends Omit<EffectiveMainBatteryDefinition, "mounts"> {
+interface HistoricalMainBatteryDefinition extends Omit<EffectiveMainBatteryDefinition, "mounts" | "shellProfile"> {
   mounts: readonly MainBatteryMountDefinition[];
 }
 
@@ -125,6 +127,53 @@ function genericMounts(count: number, barrelCount: 1 | 2 | 3 | 4): MainBatteryMo
   }));
 }
 
+export function mainBatteryShellProfile(
+  shipClassId: ShipClassId,
+  caliberMm: number,
+): ShellPenetrationProfile {
+  if (caliberMm === 127) {
+    return {
+      caliberMm,
+      hePenetrationMm: 21,
+      apMuzzlePenetrationMm: 72,
+      apMinimumPenetrationMm: 42,
+      apPenetrationLossMmPerSecond: 5,
+      apOvermatchArmorMm: 8.9,
+      apFuseArmingArmorMm: 8,
+      apFuseTravelMeters: 8.5,
+      apNormalizationDegrees: 10,
+    };
+  }
+  const quarterCaliberHe = shipClassId === "nurnberg"
+    || shipClassId === "bismarck"
+    || shipClassId === "king-george-v";
+  const apValues: Partial<Record<ShipClassId, readonly [number, number, number]>> = {
+    cleveland: [155, 78, 6],
+    edinburgh: [150, 76, 6],
+    nurnberg: [155, 80, 6],
+    agano: [140, 72, 6],
+    dido: [115, 60, 5],
+    "north-carolina": [520, 270, 28],
+    "king-george-v": [440, 220, 18],
+    bismarck: [500, 250, 27],
+    yamato: [610, 310, 30],
+    richelieu: [520, 260, 28],
+  };
+  const [apMuzzlePenetrationMm, apMinimumPenetrationMm, apPenetrationLossMmPerSecond]
+    = apValues[shipClassId] ?? [caliberMm * 1.1, caliberMm * .68, caliberMm * .05];
+  return {
+    caliberMm,
+    hePenetrationMm: Math.round(caliberMm / (quarterCaliberHe ? 4 : 6)),
+    apMuzzlePenetrationMm,
+    apMinimumPenetrationMm,
+    apPenetrationLossMmPerSecond,
+    apOvermatchArmorMm: caliberMm / 14.3,
+    apFuseArmingArmorMm: caliberMm / 6,
+    apFuseTravelMeters: Math.min(14, Math.max(8.5, caliberMm * .032)),
+    apNormalizationDegrees: caliberMm >= 283 ? 6 : caliberMm >= 203 ? 7 : 8.5,
+  };
+}
+
 export function getMainBattery(
   shipClassId: ShipClassId,
   upgradeId: MainGunId,
@@ -144,6 +193,7 @@ export function getMainBattery(
       dispersionMultiplier: gun.dispersionMultiplier,
       muzzleVelocity: gun.muzzleVelocity,
       maximumRangeMeters: GUN.maxAimRange,
+      shellProfile: mainBatteryShellProfile(shipClassId, 127),
       mounts: genericMounts(equippedMounts, gun.visual.barrelCount),
       visual: gun.visual,
     };
@@ -159,6 +209,7 @@ export function getMainBattery(
     traverseDegreesPerSecond: historical.traverseDegreesPerSecond * modifier.traverse,
     dispersionMultiplier: historical.dispersionMultiplier * modifier.dispersion,
     muzzleVelocity: historical.muzzleVelocity * modifier.velocity,
+    shellProfile: mainBatteryShellProfile(shipClassId, historical.caliberMm),
     mounts: historical.mounts.slice(0, mountCount),
   };
 }
