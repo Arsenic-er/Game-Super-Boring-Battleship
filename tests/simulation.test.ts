@@ -37,7 +37,7 @@ import {
 import type { ControlCommand, ShipState } from "../src/sim/types";
 import { getTorpedo } from "../src/ships/torpedoes";
 import type { TorpedoId } from "../src/ships/torpedoes";
-import { HULLS } from "../src/ships/hulls";
+import { SHIP_CLASSES } from "../src/ships/classes";
 
 const idle = (x: number, z: number): ControlCommand => ({
   throttle: 0,
@@ -137,7 +137,10 @@ describe("deterministic battle simulation", () => {
     expect(Math.hypot(
       (state.shots[0]?.position.x ?? 0) - (state.shots[1]?.position.x ?? 0),
       (state.shots[0]?.position.z ?? 0) - (state.shots[1]?.position.z ?? 0),
-    )).toBeCloseTo(MAIN_GUNS["mk2-twin"].visual.barrelSpacing, 5);
+    )).toBeCloseTo(
+      MAIN_GUNS["mk2-twin"].visual.barrelSpacing * SHIP_CLASSES.fletcher.renderScale.x,
+      5,
+    );
     expect(player.reloadRemaining).toBeCloseTo(MAIN_GUNS["mk2-twin"].reloadSeconds, 1);
   });
 
@@ -613,27 +616,31 @@ describe("deterministic battle simulation", () => {
   it("creates distinct destroyer, cruiser and battleship performance envelopes", () => {
     const destroyer = createInitialState(302, "sea-trials").ships[0]!;
     const cruiser = createInitialState(
-      302, "sea-trials", undefined, undefined, undefined, "lightCruiser",
+      302, "sea-trials", undefined, undefined, undefined, "cleveland",
     ).ships[0]!;
     const battleship = createInitialState(
-      302, "sea-trials", undefined, undefined, undefined, "battleship",
+      302, "sea-trials", undefined, undefined, undefined, "north-carolina",
     ).ships[0]!;
-    expect(destroyer.maxHull).toBe(HULLS.destroyer.maxHull);
-    expect(cruiser.maxHull).toBe(HULLS.lightCruiser.maxHull);
-    expect(battleship.maxHull).toBe(HULLS.battleship.maxHull);
+    expect(destroyer.maxHull).toBe(SHIP_CLASSES.fletcher.maxHull);
+    expect(cruiser.maxHull).toBe(SHIP_CLASSES.cleveland.maxHull);
+    expect(battleship.maxHull).toBe(SHIP_CLASSES["north-carolina"].maxHull);
     expect(destroyer.maxHull).toBeLessThan(cruiser.maxHull);
     expect(cruiser.maxHull).toBeLessThan(battleship.maxHull);
     expect(destroyer.torpedoesLoaded).toBe(2);
-    expect(cruiser.torpedoesLoaded).toBe(2);
+    expect(cruiser.torpedoesLoaded).toBe(0);
     expect(battleship.torpedoesLoaded).toBe(0);
     expect(battleship.torpedoReserveSalvos).toBe(0);
+    const torpedoCruiser = createInitialState(
+      302, "sea-trials", undefined, undefined, undefined, "edinburgh",
+    ).ships[0]!;
+    expect(torpedoCruiser.torpedoesLoaded).toBe(2);
   });
 
   it("makes larger hulls accelerate and turn more slowly", () => {
     const states = [
       createInitialState(303, "sea-trials"),
-      createInitialState(303, "sea-trials", undefined, undefined, undefined, "lightCruiser"),
-      createInitialState(303, "sea-trials", undefined, undefined, undefined, "battleship"),
+      createInitialState(303, "sea-trials", undefined, undefined, undefined, "cleveland"),
+      createInitialState(303, "sea-trials", undefined, undefined, undefined, "north-carolina"),
     ];
     for (const state of states) {
       const ship = state.ships[0]!;

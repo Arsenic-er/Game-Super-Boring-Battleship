@@ -1,5 +1,7 @@
 import type { MainGunId } from "../ships/components";
 import type { HullId } from "../ships/hulls";
+import { SHIP_CLASSES } from "../ships/classes";
+import type { ShipClassId } from "../ships/classes";
 import { getTorpedo } from "../ships/torpedoes";
 import type { TorpedoId } from "../ships/torpedoes";
 
@@ -7,7 +9,7 @@ export type { HullId } from "../ships/hulls";
 
 export type EquipmentRarity = "common" | "purple" | "gold" | "redGold";
 export type EquipmentCategory =
-  | "mainGun" | "torpedo" | "antiAir" | "sideGun"
+  | "mainGun" | "torpedo" | "antiAir" | "sideGun" | "depthCharge"
   | "magazine" | "engine" | "steering";
 
 export interface EquipmentDefinition {
@@ -26,6 +28,7 @@ export interface EquipmentDefinition {
   purchaseCost: { credits: number; steel: number; parts: number };
   sellCredits: number;
   salvageParts: number;
+  availableInSupply?: boolean;
 }
 
 export const RARITY_META: Record<EquipmentRarity, { label: string; color: string; guarantee: number }> = {
@@ -40,6 +43,7 @@ export const CATEGORY_META: Record<EquipmentCategory, { label: string; icon: str
   torpedo: { label: "鱼雷", icon: "fa-solid fa-rocket", slot: "双管发射器槽 ×1" },
   antiAir: { label: "防空炮", icon: "fa-solid fa-crosshairs", slot: "防空槽 ×2" },
   sideGun: { label: "侧炮", icon: "fa-solid fa-shield-halved", slot: "侧炮槽" },
+  depthCharge: { label: "深水炸弹", icon: "fa-solid fa-water", slot: "反潜投放组" },
   magazine: { label: "弹药库", icon: "fa-solid fa-boxes-stacked", slot: "弹药库槽 ×1" },
   engine: { label: "引擎", icon: "fa-solid fa-gears", slot: "引擎槽 ×1" },
   steering: { label: "转向机", icon: "fa-solid fa-dharmachakra", slot: "转向槽 ×1" },
@@ -160,6 +164,28 @@ const historicalModels: Record<EquipmentCategory, Record<EquipmentRarity, Histor
       description: "美制轻巡洋舰三联主炮系统，在大型舰体上提供高射速与密集舷侧火力。",
     },
   },
+  depthCharge: {
+    common: {
+      name: "Mk VII 深水炸弹 / 艉轨组",
+      origin: "英国 · 二战驱逐舰反潜装备",
+      description: "舰艉投放轨与基础定深深水炸弹。当前版本尚无水下目标，因此水面战中不可使用。",
+    },
+    purple: {
+      name: "九五式深水炸弹 / 投射机组",
+      origin: "日本 · 驱逐舰反潜装备",
+      description: "以投射机扩大覆盖宽度的反潜配置。当前版本尚无水下目标，因此水面战中不可使用。",
+    },
+    gold: {
+      name: "Mk 6 深水炸弹 / K-gun组",
+      origin: "美国 · 舰队驱逐舰反潜装备",
+      description: "由舷侧 K-gun 与艉轨形成连续投放阵列。当前版本尚无水下目标，因此水面战中不可使用。",
+    },
+    redGold: {
+      name: "Hedgehog Mk 10 前投反潜炮",
+      origin: "盟军 · 战争后期反潜装备",
+      description: "保持声呐接触时向舰首前方投射弹幕。当前版本尚无水下目标，因此水面战中不可使用。",
+    },
+  },
   magazine: {
     common: {
       name: "Mk IX QF定装弹处理间",
@@ -255,7 +281,11 @@ export const EQUIPMENT_CATALOG: EquipmentDefinition[] = categories.flatMap((cate
       name: historicalModels[category][rarity].name,
       origin: historicalModels[category][rarity].origin,
       description: historicalModels[category][rarity].description,
-      compatibleHulls: category === "sideGun" ? ["lightCruiser", "battleship"] : ["destroyer", "lightCruiser", "battleship"],
+      compatibleHulls: category === "sideGun"
+        ? ["lightCruiser", "battleship"]
+        : category === "depthCharge"
+          ? ["destroyer"]
+          : ["destroyer", "lightCruiser", "battleship"],
       mainGunId: category === "mainGun" ? gunByRarity[rarity] : undefined,
       torpedoId: category === "torpedo" ? torpedoByRarity[rarity] : undefined,
       bonus: bonuses[rarity],
@@ -272,6 +302,7 @@ export const EQUIPMENT_CATALOG: EquipmentDefinition[] = categories.flatMap((cate
       },
       sellCredits: Math.floor(economy.credits * 0.5),
       salvageParts: economy.salvageParts,
+      availableInSupply: category !== "depthCharge",
     };
   }),
 );
@@ -285,6 +316,7 @@ export const DESTROYER_SLOT_COUNTS: Record<EquipmentCategory, number> = {
   torpedo: 1,
   antiAir: 2,
   sideGun: 0,
+  depthCharge: 2,
   magazine: 1,
   engine: 1,
   steering: 1,
@@ -297,6 +329,7 @@ export const HULL_SLOT_COUNTS: Record<HullId, Record<EquipmentCategory, number>>
     torpedo: 1,
     antiAir: 3,
     sideGun: 2,
+    depthCharge: 0,
     magazine: 1,
     engine: 1,
     steering: 1,
@@ -306,11 +339,27 @@ export const HULL_SLOT_COUNTS: Record<HullId, Record<EquipmentCategory, number>>
     torpedo: 0,
     antiAir: 4,
     sideGun: 4,
+    depthCharge: 0,
     magazine: 1,
     engine: 1,
     steering: 1,
   },
 };
+
+export const SHIP_CLASS_SLOT_COUNTS: Record<ShipClassId, Record<EquipmentCategory, number>> = Object.fromEntries(
+  Object.entries(SHIP_CLASSES).map(([id, shipClass]) => [id, {
+    ...shipClass.slotCounts,
+    magazine: 1,
+    engine: 1,
+    steering: 1,
+  }]),
+) as Record<ShipClassId, Record<EquipmentCategory, number>>;
+
+export function isEquipmentCompatible(item: EquipmentDefinition, shipClassId: ShipClassId): boolean {
+  const shipClass = SHIP_CLASSES[shipClassId];
+  return item.compatibleHulls.includes(shipClass.hullId)
+    && SHIP_CLASS_SLOT_COUNTS[shipClassId][item.category] > 0;
+}
 
 export function equipmentFor(category: EquipmentCategory, rarity: EquipmentRarity): EquipmentDefinition {
   return EQUIPMENT_BY_ID[`${category}-${rarity}`];

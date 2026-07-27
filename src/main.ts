@@ -34,7 +34,7 @@ let state: BattleState = createInitialState(
   initialEquipment.mainGunId,
   initialEquipment,
   initialEquipment.torpedoId,
-  initialEquipment.hullId,
+  initialEquipment.shipClassId,
 );
 let view: GameView;
 let input: PlayerInput;
@@ -60,7 +60,7 @@ function startMode(mode: GameMode): void {
     equipment.mainGunId,
     equipment,
     equipment.torpedoId,
-    equipment.hullId,
+    equipment.shipClassId,
   );
   input.reset();
   view.resetTransient();
@@ -99,7 +99,7 @@ function returnToMainMenu(): void {
     equipment.mainGunId,
     equipment,
     equipment.torpedoId,
-    equipment.hullId,
+    equipment.shipClassId,
   );
   playerPerception.reset();
   view.resetTransient();

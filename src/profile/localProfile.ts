@@ -1,7 +1,9 @@
 import { DEFAULT_MAIN_GUN_ID } from "../ships/components";
 import type { MainGunId } from "../ships/components";
-import { DEFAULT_HULL_ID, HULLS, isHullId } from "../ships/hulls";
+import { DEFAULT_HULL_ID, isHullId } from "../ships/hulls";
 import type { HullId } from "../ships/hulls";
+import { DEFAULT_SHIP_CLASS_ID, SHIP_CLASS_IDS, getShipClass, isShipClassId } from "../ships/classes";
+import type { ShipClassId } from "../ships/classes";
 import { DEFAULT_TORPEDO_ID } from "../ships/torpedoes";
 import type { TorpedoId } from "../ships/torpedoes";
 import type { BattleStatus } from "../sim/types";
@@ -9,13 +11,16 @@ import {
   CATEGORY_META,
   EQUIPMENT_BY_ID,
   EQUIPMENT_CATALOG,
-  HULL_SLOT_COUNTS,
+  SHIP_CLASS_SLOT_COUNTS,
   equipmentFor,
+  isEquipmentCompatible,
 } from "./equipmentCatalog";
 import type { EquipmentCategory, EquipmentRarity } from "./equipmentCatalog";
 
+export type SlotLoadout = Record<EquipmentCategory, (string | null)[]>;
+
 export interface LocalProfile {
-  version: 4;
+  version: 5;
   commanderName: string;
   credits: number;
   researchPoints: number;
@@ -27,8 +32,9 @@ export interface LocalProfile {
   unlockedEquipment: Record<string, boolean>;
   recentDraws: SupplyDrawResult[];
   hullId: HullId;
+  shipClassId: ShipClassId;
   loadout: Record<EquipmentCategory, string | null>;
-  loadoutsByHull: Record<HullId, Record<EquipmentCategory, string | null>>;
+  slotLoadoutsByShipClass: Record<ShipClassId, SlotLoadout>;
 }
 
 export interface ArmoryTransaction {
@@ -56,6 +62,7 @@ export interface SupplyDrawResult {
 
 export interface BattleLoadout {
   hullId: HullId;
+  shipClassId: ShipClassId;
   mainGunId: MainGunId;
   torpedoId: TorpedoId;
   maxSpeedMultiplier: number;
@@ -63,24 +70,43 @@ export interface BattleLoadout {
   turnMultiplier: number;
   reloadMultiplier: number;
   magazineRiskMultiplier: number;
+  mainGunMounts: number;
+  torpedoLauncherMounts: number;
 }
 
-const STORAGE_KEY = "grey-sea-local-profile-v4";
-const LEGACY_STORAGE_KEYS = ["grey-sea-local-profile-v3", "grey-sea-local-profile-v1"] as const;
+const STORAGE_KEY = "grey-sea-local-profile-v5";
+const LEGACY_STORAGE_KEYS = ["grey-sea-local-profile-v4", "grey-sea-local-profile-v3", "grey-sea-local-profile-v1"] as const;
 const categories = Object.keys(CATEGORY_META) as EquipmentCategory[];
+const weaponCategories = ["mainGun", "torpedo", "antiAir", "sideGun", "depthCharge"] as const;
 
-function baseLoadout(hullId: HullId): LocalProfile["loadout"] {
+function baseSlotLoadout(shipClassId: ShipClassId): SlotLoadout {
+  const shipClass = getShipClass(shipClassId);
+  const counts = SHIP_CLASS_SLOT_COUNTS[shipClassId];
+  return Object.fromEntries(categories.map((category) => {
+    const weaponCategory = weaponCategories.find((entry) => entry === category);
+    const installed = weaponCategory ? shipClass.starterSlots[weaponCategory] : counts[category] > 0 ? 1 : 0;
+    return [category, Array.from({ length: counts[category] }, (_, index) => (
+      index < installed ? equipmentFor(category, "common").id : null
+    ))];
+  })) as SlotLoadout;
+}
+
+function primaryLoadout(slots: SlotLoadout): LocalProfile["loadout"] {
   return Object.fromEntries(categories.map((category) => [
     category,
-    HULL_SLOT_COUNTS[hullId][category] > 0
-      ? equipmentFor(category, "common").id
-      : null,
+    slots[category].find((item): item is string => typeof item === "string") ?? null,
   ])) as LocalProfile["loadout"];
 }
 
 function baseInventory(): Record<string, number> {
-  return Object.fromEntries(categories
-    .map((category) => [equipmentFor(category, "common").id, 1]));
+  const inventory: Record<string, number> = {};
+  for (const shipClassId of SHIP_CLASS_IDS) {
+    const slots = baseSlotLoadout(shipClassId);
+    for (const category of categories) {
+      for (const id of slots[category]) if (id) inventory[id] = (inventory[id] ?? 0) + 1;
+    }
+  }
+  return inventory;
 }
 
 function baseUnlocks(): Record<string, boolean> {
@@ -90,11 +116,12 @@ function baseUnlocks(): Record<string, boolean> {
 }
 
 export function createDefaultLocalProfile(): LocalProfile {
-  const loadoutsByHull = Object.fromEntries(
-    (Object.keys(HULLS) as HullId[]).map((hullId) => [hullId, baseLoadout(hullId)]),
-  ) as LocalProfile["loadoutsByHull"];
+  const slotLoadoutsByShipClass = Object.fromEntries(
+    SHIP_CLASS_IDS.map((shipClassId) => [shipClassId, baseSlotLoadout(shipClassId)]),
+  ) as LocalProfile["slotLoadoutsByShipClass"];
+  const loadout = primaryLoadout(slotLoadoutsByShipClass[DEFAULT_SHIP_CLASS_ID]);
   return {
-    version: 4,
+    version: 5,
     commanderName: "本地舰长",
     credits: 12_000,
     researchPoints: 220,
@@ -106,15 +133,23 @@ export function createDefaultLocalProfile(): LocalProfile {
     unlockedEquipment: baseUnlocks(),
     recentDraws: [],
     hullId: DEFAULT_HULL_ID,
-    loadout: { ...loadoutsByHull[DEFAULT_HULL_ID] },
-    loadoutsByHull,
+    shipClassId: DEFAULT_SHIP_CLASS_ID,
+    loadout,
+    slotLoadoutsByShipClass,
   };
 }
 
 export function normalizeLocalProfile(value: unknown): LocalProfile {
   const defaults = createDefaultLocalProfile();
   const candidate = value && typeof value === "object" ? value as Record<string, unknown> : {};
-  const hullId = isHullId(candidate.hullId) ? candidate.hullId : DEFAULT_HULL_ID;
+  const legacyHullId = isHullId(candidate.hullId) ? candidate.hullId : DEFAULT_HULL_ID;
+  const legacyDefaultClass: Record<HullId, ShipClassId> = {
+    destroyer: "fletcher", lightCruiser: "cleveland", battleship: "north-carolina",
+  };
+  const shipClassId = isShipClassId(candidate.shipClassId)
+    ? candidate.shipClassId
+    : legacyDefaultClass[legacyHullId];
+  const hullId = getShipClass(shipClassId).hullId;
   const oldLoadout = candidate.loadout && typeof candidate.loadout === "object"
     ? candidate.loadout as Record<string, unknown>
     : {};
@@ -138,49 +173,53 @@ export function normalizeLocalProfile(value: unknown): LocalProfile {
   const legacyMainGun = oldLoadout.mainGun === "mk2-twin" ? "mainGun-purple" : "mainGun-common";
   inventory[legacyMainGun] = Math.max(1, inventory[legacyMainGun] ?? 0);
   unlockedEquipment[legacyMainGun] = true;
-  const storedLoadouts = candidate.loadoutsByHull && typeof candidate.loadoutsByHull === "object"
-    ? candidate.loadoutsByHull as Partial<Record<HullId, unknown>>
+  const storedSlotLoadouts = candidate.slotLoadoutsByShipClass && typeof candidate.slotLoadoutsByShipClass === "object"
+    ? candidate.slotLoadoutsByShipClass as Partial<Record<ShipClassId, unknown>>
     : {};
-  const normalizedLoadout = (
-    targetHullId: HullId,
+  const normalizedSlots = (
+    targetShipClassId: ShipClassId,
     source: unknown,
-  ): LocalProfile["loadout"] => {
-    const loadout = baseLoadout(targetHullId);
-    const requestedLoadout = source && typeof source === "object"
+  ): SlotLoadout => {
+    const slots = baseSlotLoadout(targetShipClassId);
+    const requestedSlots = source && typeof source === "object"
       ? source as Record<string, unknown>
       : {};
     for (const category of categories) {
-      const requested = requestedLoadout[category];
-      const item = typeof requested === "string" ? EQUIPMENT_BY_ID[requested] : undefined;
-      if (
-        HULL_SLOT_COUNTS[targetHullId][category] > 0
-        && item?.category === category
-        && item.compatibleHulls.includes(targetHullId)
-        && (inventory[item.id] ?? 0) > 0
-      ) loadout[category] = item.id;
+      const requested = requestedSlots[category];
+      if (!Array.isArray(requested)) continue;
+      slots[category] = slots[category].map((fallback, index) => {
+        const id = requested[index];
+        if (id === null) return null;
+        const item = typeof id === "string" ? EQUIPMENT_BY_ID[id] : undefined;
+        return item?.category === category
+          && isEquipmentCompatible(item, targetShipClassId)
+          && (inventory[item.id] ?? 0) > 0 ? item.id : fallback;
+      });
     }
-    if (
-      targetHullId === DEFAULT_HULL_ID
-      && (!requestedLoadout.mainGun || String(requestedLoadout.mainGun).startsWith("mk"))
-    ) loadout.mainGun = legacyMainGun;
-    return loadout;
+    return slots;
   };
-  const loadoutsByHull = Object.fromEntries(
-    (Object.keys(HULLS) as HullId[]).map((targetHullId) => [
-      targetHullId,
-      normalizedLoadout(
-        targetHullId,
-        targetHullId === hullId ? oldLoadout : storedLoadouts[targetHullId],
-      ),
-    ]),
-  ) as LocalProfile["loadoutsByHull"];
-  const loadout = { ...loadoutsByHull[hullId] };
-  loadoutsByHull[hullId] = { ...loadout };
+  const slotLoadoutsByShipClass = Object.fromEntries(SHIP_CLASS_IDS.map((targetShipClassId) => [
+    targetShipClassId,
+    normalizedSlots(targetShipClassId, storedSlotLoadouts[targetShipClassId]),
+  ])) as LocalProfile["slotLoadoutsByShipClass"];
+  // Migrate the previously selected v4 component into the first compatible slot.
+  if (!candidate.slotLoadoutsByShipClass) {
+    const targetSlots = slotLoadoutsByShipClass[shipClassId];
+    for (const category of categories) {
+      const requested = oldLoadout[category];
+      const item = typeof requested === "string" ? EQUIPMENT_BY_ID[requested] : undefined;
+      if (item && targetSlots[category].length && isEquipmentCompatible(item, shipClassId)) {
+        targetSlots[category][0] = item.id;
+      }
+    }
+    if (!oldLoadout.mainGun || String(oldLoadout.mainGun).startsWith("mk")) targetSlots.mainGun[0] = legacyMainGun;
+  }
+  const loadout = primaryLoadout(slotLoadoutsByShipClass[shipClassId]);
   const recent = Array.isArray(candidate.recentDraws)
     ? candidate.recentDraws.filter((entry) => entry && typeof entry === "object").slice(0, 10) as SupplyDrawResult[]
     : [];
   return {
-    version: 4,
+    version: 5,
     commanderName: requestedName || defaults.commanderName,
     credits: finiteInt(candidate.credits, defaults.credits, 999_999),
     researchPoints: finiteInt(candidate.researchPoints, defaults.researchPoints, 999_999),
@@ -195,8 +234,9 @@ export function normalizeLocalProfile(value: unknown): LocalProfile {
     unlockedEquipment,
     recentDraws: recent,
     hullId,
+    shipClassId,
     loadout,
-    loadoutsByHull,
+    slotLoadoutsByShipClass,
   };
 }
 
@@ -239,7 +279,7 @@ export function drawSupplies(
       results.push({ kind: "material", rarity: "common", material, amount });
       continue;
     }
-    const pool = EQUIPMENT_CATALOG.filter((item) => item.rarity === rarity);
+    const pool = EQUIPMENT_CATALOG.filter((item) => item.rarity === rarity && item.availableInSupply !== false);
     const item = pool[Math.min(pool.length - 1, Math.floor(random() * pool.length))];
     profile.inventory[item.id] = (profile.inventory[item.id] ?? 0) + 1;
     results.push({ kind: "equipment", rarity, itemId: item.id });
@@ -283,11 +323,18 @@ export function purchaseComponent(source: LocalProfile, itemId: string): ArmoryT
   return { profile: normalizeLocalProfile(profile), success: true, reason: "ok" };
 }
 
-function availableCopies(profile: LocalProfile, itemId: string): number {
+export function installedCopies(profile: LocalProfile, itemId: string): number {
   const item = EQUIPMENT_BY_ID[itemId];
   if (!item) return 0;
-  const installed = profile.loadout[item.category] === itemId ? 1 : 0;
-  return Math.max(0, (profile.inventory[itemId] ?? 0) - installed);
+  let installed = 0;
+  for (const loadout of Object.values(profile.slotLoadoutsByShipClass)) {
+    installed += loadout[item.category].filter((id) => id === itemId).length;
+  }
+  return installed;
+}
+
+function availableCopies(profile: LocalProfile, itemId: string): number {
+  return Math.max(0, (profile.inventory[itemId] ?? 0) - installedCopies(profile, itemId));
 }
 
 export function sellComponent(source: LocalProfile, itemId: string): ArmoryTransaction {
@@ -351,19 +398,28 @@ export function equipComponent(source: LocalProfile, itemId: string): LocalProfi
   if (
     !item
     || (profile.inventory[itemId] ?? 0) < 1
-    || HULL_SLOT_COUNTS[profile.hullId][item.category] <= 0
-    || !item.compatibleHulls.includes(profile.hullId)
+    || !isEquipmentCompatible(item, profile.shipClassId)
   ) return profile;
-  return normalizeLocalProfile({ ...profile, loadout: { ...profile.loadout, [item.category]: itemId } });
+  const slotLoadoutsByShipClass = structuredClone(profile.slotLoadoutsByShipClass);
+  const slots = slotLoadoutsByShipClass[profile.shipClassId][item.category];
+  const emptyIndex = slots.findIndex((id) => id === null);
+  if (slots.includes(itemId) && emptyIndex >= 0) {
+    if (availableCopies(profile, itemId) <= 0) return profile;
+    slots[emptyIndex] = itemId;
+  } else {
+    if (slots[0] !== itemId && availableCopies(profile, itemId) <= 0) return profile;
+    slots[0] = itemId;
+  }
+  return normalizeLocalProfile({ ...profile, slotLoadoutsByShipClass });
 }
 
-export function selectHull(source: LocalProfile, hullId: HullId): LocalProfile {
+export function selectShipClass(source: LocalProfile, shipClassId: ShipClassId): LocalProfile {
   const profile = normalizeLocalProfile(source);
-  if (!isHullId(hullId) || hullId === profile.hullId) return profile;
+  if (!isShipClassId(shipClassId) || shipClassId === profile.shipClassId) return profile;
   return normalizeLocalProfile({
     ...profile,
-    hullId,
-    loadout: { ...profile.loadoutsByHull[hullId] },
+    shipClassId,
+    hullId: getShipClass(shipClassId).hullId,
   });
 }
 
@@ -380,6 +436,7 @@ export function battleLoadout(profileSource: LocalProfile): BattleLoadout {
   const magazine = equipped("magazine");
   return {
     hullId: profile.hullId,
+    shipClassId: profile.shipClassId,
     mainGunId: gun?.mainGunId ?? DEFAULT_MAIN_GUN_ID,
     torpedoId: torpedo?.torpedoId ?? DEFAULT_TORPEDO_ID,
     maxSpeedMultiplier: 1 + (engine?.bonus ?? 0),
@@ -387,6 +444,8 @@ export function battleLoadout(profileSource: LocalProfile): BattleLoadout {
     turnMultiplier: 1 + (steering?.bonus ?? 0),
     reloadMultiplier: 1 - (magazine?.bonus ?? 0) * 0.72,
     magazineRiskMultiplier: (1 + (magazine?.drawback ?? 0)) * (1 + (torpedo?.drawback ?? 0)),
+    mainGunMounts: profile.slotLoadoutsByShipClass[profile.shipClassId].mainGun.filter(Boolean).length,
+    torpedoLauncherMounts: profile.slotLoadoutsByShipClass[profile.shipClassId].torpedo.filter(Boolean).length,
   };
 }
 

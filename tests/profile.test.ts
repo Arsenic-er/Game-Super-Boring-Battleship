@@ -10,11 +10,12 @@ import {
   researchComponent,
   salvageComponent,
   sellComponent,
-  selectHull,
+  selectShipClass,
   setCommanderName,
 } from "../src/profile/localProfile";
-import { EQUIPMENT_CATALOG } from "../src/profile/equipmentCatalog";
+import { EQUIPMENT_CATALOG, SHIP_CLASS_SLOT_COUNTS } from "../src/profile/equipmentCatalog";
 import { getTorpedo } from "../src/ships/torpedoes";
+import { SHIP_CLASSES, SHIP_CLASS_IDS } from "../src/ships/classes";
 
 describe("local commander profile", () => {
   it("migrates the legacy main gun loadout into component inventory", () => {
@@ -23,7 +24,7 @@ describe("local commander profile", () => {
     expect(profile.credits).toBe(0);
     expect(profile.inventory["mainGun-purple"]).toBeGreaterThanOrEqual(1);
     expect(profile.loadout.mainGun).toBe("mainGun-purple");
-    expect(profile.version).toBe(4);
+    expect(profile.version).toBe(5);
     expect(profile.unlockedEquipment["mainGun-purple"]).toBe(true);
   });
 
@@ -123,12 +124,12 @@ describe("local commander profile", () => {
     expect(installedSale.success).toBe(false);
     const spare = normalizeLocalProfile({
       ...base,
-      inventory: { ...base.inventory, "engine-common": 2, "engine-purple": 2 },
+      inventory: { ...base.inventory, "engine-common": base.inventory["engine-common"] + 1, "engine-purple": 2 },
       unlockedEquipment: { ...base.unlockedEquipment, "engine-purple": true },
     });
     const sold = sellComponent(spare, "engine-common");
     expect(sold.success).toBe(true);
-    expect(sold.profile.inventory["engine-common"]).toBe(1);
+    expect(sold.profile.inventory["engine-common"]).toBe(base.inventory["engine-common"]);
     const salvaged = salvageComponent(spare, "engine-purple");
     expect(salvaged.success).toBe(true);
     expect(salvaged.profile.materials.parts).toBe(base.materials.parts + 18);
@@ -154,21 +155,56 @@ describe("local commander profile", () => {
     expect(profile.loadout.mainGun).toBe("mainGun-common");
   });
 
-  it("preserves an independent loadout while switching among all three hulls", () => {
+  it("preserves independent slot loadouts while switching historical ship classes", () => {
     const destroyer = createDefaultLocalProfile();
-    const cruiser = selectHull(destroyer, "lightCruiser");
+    const cruiser = selectShipClass(destroyer, "cleveland");
     expect(cruiser.hullId).toBe("lightCruiser");
+    expect(cruiser.shipClassId).toBe("cleveland");
     expect(battleLoadout(cruiser).hullId).toBe("lightCruiser");
-    const battleship = selectHull(cruiser, "battleship");
+    const battleship = selectShipClass(cruiser, "bismarck");
     expect(battleship.loadout.torpedo).toBeNull();
     expect(battleship.loadout.sideGun).toBe("sideGun-common");
-    const restored = selectHull(battleship, "destroyer");
+    const restored = selectShipClass(battleship, "fletcher");
     expect(restored.loadout).toEqual(destroyer.loadout);
   });
 
   it("rejects torpedoes on a battleship without a torpedo slot", () => {
-    const battleship = selectHull(createDefaultLocalProfile(), "battleship");
+    const battleship = selectShipClass(createDefaultLocalProfile(), "north-carolina");
     const attempted = equipComponent(battleship, "torpedo-common");
     expect(attempted.loadout.torpedo).toBeNull();
+  });
+
+  it("provides five historical classes per hull family with truthful starter gaps", () => {
+    expect(SHIP_CLASS_IDS).toHaveLength(15);
+    for (const hullId of ["destroyer", "lightCruiser", "battleship"] as const) {
+      expect(SHIP_CLASS_IDS.filter((id) => SHIP_CLASSES[id].hullId === hullId)).toHaveLength(5);
+    }
+    const profile = createDefaultLocalProfile();
+    for (const id of SHIP_CLASS_IDS) {
+      const definition = SHIP_CLASSES[id];
+      const slots = profile.slotLoadoutsByShipClass[id];
+      expect(slots.mainGun.filter(Boolean)).toHaveLength(definition.starterSlots.mainGun);
+      expect(Object.values(definition.starterSlots).reduce((sum, count) => sum + count, 0))
+        .toBeLessThan(Object.values(definition.slotCounts).reduce((sum, count) => sum + count, 0));
+      expect(slots.mainGun).toHaveLength(SHIP_CLASS_SLOT_COUNTS[id].mainGun);
+    }
+  });
+
+  it("keeps depth charges exclusive to destroyers and visibly unfilled for upgrades", () => {
+    const profile = createDefaultLocalProfile();
+    for (const id of SHIP_CLASS_IDS) {
+      const definition = SHIP_CLASSES[id];
+      expect(definition.slotCounts.depthCharge).toBe(definition.hullId === "destroyer" ? 2 : 0);
+    }
+    const destroyer = equipComponent(normalizeLocalProfile({
+      ...profile,
+      inventory: {
+        ...profile.inventory,
+        "depthCharge-common": profile.inventory["depthCharge-common"] + 1,
+      },
+    }), "depthCharge-common");
+    expect(destroyer.slotLoadoutsByShipClass.fletcher.depthCharge.filter(Boolean)).toHaveLength(2);
+    const cruiser = selectShipClass(profile, "agano");
+    expect(equipComponent(cruiser, "depthCharge-common")).toEqual(cruiser);
   });
 });

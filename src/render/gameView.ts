@@ -31,8 +31,9 @@ import {
   turretAimPoint,
 } from "../sim/simulation";
 import { getMainGun } from "../ships/components";
-import { getHull } from "../ships/hulls";
 import type { HullId } from "../ships/hulls";
+import { getShipClass } from "../ships/classes";
+import type { ShipClassId } from "../ships/classes";
 import { getTorpedo } from "../ships/torpedoes";
 import {
   createDestroyerHull,
@@ -65,9 +66,10 @@ import type {
 
 interface ShipVisual {
   hullId: HullId;
+  shipClassId: ShipClassId;
   root: TransformNode;
-  turret: TransformNode;
-  gunCradle: TransformNode;
+  turrets: TransformNode[];
+  gunCradles: TransformNode[];
   gunBarrels: Mesh[];
   gunBarrelRestZ: number[];
   torpedoLauncher: TransformNode;
@@ -455,7 +457,7 @@ export class GameView implements AimProvider {
 
   private createShip(ship: ShipState): ShipVisual {
     const root = new TransformNode(`${ship.id}-root`, this.scene);
-    const hullDefinition = getHull(ship.hullId);
+    const hullDefinition = getShipClass(ship.shipClassId);
     root.scaling.set(
       hullDefinition.renderScale.x,
       hullDefinition.renderScale.y,
@@ -480,9 +482,14 @@ export class GameView implements AimProvider {
     });
 
     const motion = createDestroyerV3Superstructure(this.scene, root, ship.id, palette);
-    createHullClassSilhouette(this.scene, root, ship.id, ship.hullId, palette);
+    createHullClassSilhouette(this.scene, root, ship.id, ship.hullId, palette, hullDefinition.visualVariant);
     const gunDefinition = getMainGun(ship.mainGunId);
-    const gun = createMainGunVisual(this.scene, root, ship.id, gunDefinition, palette);
+    const mountCount = Math.max(1, ship.mainGunMounts);
+    const guns = Array.from({ length: mountCount }, (_, index) => {
+      const gun = createMainGunVisual(this.scene, root, `${ship.id}-mount-${index}`, gunDefinition, palette);
+      gun.root.position.z = mountCount === 1 ? 31 : 33 - index * (70 / (mountCount - 1));
+      return gun;
+    });
     const torpedoDefinition = getTorpedo(ship.torpedoId);
     const torpedo = createTorpedoLauncherVisual(
       this.scene,
@@ -491,7 +498,7 @@ export class GameView implements AimProvider {
       torpedoDefinition,
       palette,
     );
-    torpedo.root.setEnabled(hullDefinition.supportsTorpedoes);
+    torpedo.root.setEnabled(hullDefinition.slotCounts.torpedo > 0 && ship.torpedoLauncherMounts > 0);
 
     const wakeMaterial = this.material(`${ship.id}-wake-material`, new Color3(0.72, 0.86, 0.88));
     wakeMaterial.alpha = 0.3;
@@ -560,11 +567,12 @@ export class GameView implements AimProvider {
 
     return {
       hullId: ship.hullId,
+      shipClassId: ship.shipClassId,
       root,
-      turret: gun.root,
-      gunCradle: gun.cradle,
-      gunBarrels: gun.barrels,
-      gunBarrelRestZ: gun.barrelRestZ,
+      turrets: guns.map((gun) => gun.root),
+      gunCradles: guns.map((gun) => gun.cradle),
+      gunBarrels: guns.flatMap((gun) => gun.barrels),
+      gunBarrelRestZ: guns.flatMap((gun) => gun.barrelRestZ),
       torpedoLauncher: torpedo.root,
       rudder: motion.rudder,
       propellers: motion.propellers,
@@ -619,7 +627,7 @@ export class GameView implements AimProvider {
   private syncShips(state: BattleState, perceivedTarget?: PlayerTargetView): void {
     for (const ship of state.ships) {
       let visual = this.ships.get(ship.id);
-      if (visual && visual.hullId !== ship.hullId) {
+      if (visual && visual.shipClassId !== ship.shipClassId) {
         visual.root.dispose(false, true);
         this.ships.delete(ship.id);
         visual = undefined;
@@ -646,7 +654,7 @@ export class GameView implements AimProvider {
           - ship.turnRateRadians * 1.4
           + ship.flooding * 0.0008 * (ship.team === "player" ? 1 : -1)
         : 0.08;
-      visual.turret.rotation.y = wrapAngle(ship.turretHeading - ship.heading);
+      for (const turret of visual.turrets) turret.rotation.y = wrapAngle(ship.turretHeading - ship.heading);
       const muzzle = gunMuzzleOrigin(ship);
       const elevationPath = predictTrajectory(
         muzzle,
@@ -660,7 +668,7 @@ export class GameView implements AimProvider {
         if (first && second) {
           const rise = second.y - first.y;
           const run = Math.hypot(second.x - first.x, second.z - first.z);
-          visual.gunCradle.rotation.x = -Math.min(0.34, Math.max(0, Math.atan2(rise, run)));
+          for (const cradle of visual.gunCradles) cradle.rotation.x = -Math.min(0.34, Math.max(0, Math.atan2(rise, run)));
         }
       }
       const recoilElapsed = ship.lastMainGunFiredAt === undefined
@@ -1331,7 +1339,7 @@ export class GameView implements AimProvider {
     this.objectiveMaterial.emissiveColor.copyFrom(objectiveColor.scale(0.36));
     const player = state.ships.find((ship) => ship.team === "player");
     if (player) {
-      const playerHull = getHull(player.hullId);
+      const playerHull = getShipClass(player.shipClassId);
       const cameraScale = Math.sqrt(playerHull.length / 112);
       for (const [index, waves] of this.waveLayers.entries()) {
         const drift = state.time * (index === 0 ? 2.4 : -1.35);

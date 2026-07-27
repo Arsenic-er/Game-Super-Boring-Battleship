@@ -12,6 +12,7 @@ import {
 import { recommendedAmmoForTarget } from "../src/controllers/ruleBasedAi";
 import { FIXED_STEP } from "../src/sim/config";
 import type { ControlCommand } from "../src/sim/types";
+import { SHIP_CLASSES } from "../src/ships/classes";
 
 describe("ammunition and armor interaction", () => {
   it("lets HE ignore impact angle but respects nominal penetration", () => {
@@ -88,7 +89,7 @@ describe("ammunition and armor interaction", () => {
     }, ship);
     expect(contact).not.toBeNull();
     expect(contact?.armorZone).toBe("side");
-    expect(contact?.point.x).toBeCloseTo(-7.5, 5);
+    expect(contact?.point.x).toBeCloseTo(-(SHIP_CLASSES.fletcher.beam / 2 + 2), 5);
     expect(contact?.surfaceNormal.x).toBeCloseTo(-1, 5);
   });
 
@@ -102,7 +103,7 @@ describe("ammunition and armor interaction", () => {
     }, ship);
     expect(contact).not.toBeNull();
     expect(contact?.armorZone).toBe("side");
-    expect(contact?.point.z).toBeCloseTo(-7.5, 5);
+    expect(contact?.point.z).toBeCloseTo(-(SHIP_CLASSES.fletcher.beam / 2 + 2), 5);
   });
 
   it("does not hit when a shell passes above the hull box", () => {
@@ -123,7 +124,7 @@ describe("ammunition and armor interaction", () => {
       undefined,
       undefined,
       undefined,
-      "battleship",
+      "north-carolina",
     ).ships[0]!;
     destroyer.position = { x: 0, y: 0, z: 0 };
     battleship.position = { x: 0, y: 0, z: 0 };

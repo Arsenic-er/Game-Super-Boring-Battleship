@@ -7,8 +7,8 @@ import { TransformNode } from "@babylonjs/core/Meshes/transformNode";
 import { Scene } from "@babylonjs/core/scene";
 import { getMainGun } from "../ships/components";
 import type { MainGunId } from "../ships/components";
-import { DEFAULT_HULL_ID, getHull } from "../ships/hulls";
-import type { HullId } from "../ships/hulls";
+import { DEFAULT_SHIP_CLASS_ID, getShipClass } from "../ships/classes";
+import type { ShipClassId } from "../ships/classes";
 import { DEFAULT_TORPEDO_ID, getTorpedo } from "../ships/torpedoes";
 import type { TorpedoId } from "../ships/torpedoes";
 import {
@@ -29,9 +29,10 @@ export class DockPreview {
   private readonly palette: PixelShipPalette;
   private readonly propellers: TransformNode[];
   private classDetailRoot?: TransformNode;
-  private hullId: HullId = DEFAULT_HULL_ID;
-  private turret?: TransformNode;
-  private gunCradle?: TransformNode;
+  private shipClassId: ShipClassId = DEFAULT_SHIP_CLASS_ID;
+  private turrets: TransformNode[] = [];
+  private gunCradles: TransformNode[] = [];
+  private mainGunId: MainGunId = "mk1-single";
   private torpedoLauncher?: TransformNode;
 
   constructor(canvas: HTMLCanvasElement) {
@@ -59,7 +60,7 @@ export class DockPreview {
     this.propellers = motion.propellers;
     this.setMainGun("mk1-single");
     this.setTorpedo(DEFAULT_TORPEDO_ID);
-    this.setHull(DEFAULT_HULL_ID);
+    this.setShipClass(DEFAULT_SHIP_CLASS_ID);
     let lastRender = 0;
     this.engine.runRenderLoop(() => {
       const now = Date.now();
@@ -67,8 +68,8 @@ export class DockPreview {
         const seconds = now / 1000;
         this.shipRoot.position.y = Math.sin(seconds * 0.65) * 0.08;
         this.shipRoot.rotation.z = Math.sin(seconds * 0.46) * 0.004;
-        if (this.turret) this.turret.rotation.y = Math.sin(seconds * 0.22) * 0.32;
-        if (this.gunCradle) this.gunCradle.rotation.x = -0.05 - Math.sin(seconds * 0.31) * 0.025;
+        for (const turret of this.turrets) turret.rotation.y = Math.sin(seconds * 0.22) * 0.32;
+        for (const cradle of this.gunCradles) cradle.rotation.x = -0.05 - Math.sin(seconds * 0.31) * 0.025;
         for (const [index, propeller] of this.propellers.entries()) {
           propeller.rotation.z = seconds * (index === 0 ? 2.2 : -2.2);
         }
@@ -90,17 +91,18 @@ export class DockPreview {
   }
 
   setMainGun(id: MainGunId): void {
-    this.turret?.dispose(false, true);
+    for (const turret of this.turrets) turret.dispose(false, true);
+    this.turrets = [];
+    this.gunCradles = [];
+    this.mainGunId = id;
     const definition = getMainGun(id);
-    const visual = createMainGunVisual(
-      this.scene,
-      this.shipRoot,
-      "dock",
-      definition,
-      this.palette,
-    );
-    this.turret = visual.root;
-    this.gunCradle = visual.cradle;
+    const count = getShipClass(this.shipClassId).starterSlots.mainGun;
+    for (let index = 0; index < count; index += 1) {
+      const visual = createMainGunVisual(this.scene, this.shipRoot, `dock-mount-${index}`, definition, this.palette);
+      visual.root.position.z = count === 1 ? 31 : 33 - index * (70 / (count - 1));
+      this.turrets.push(visual.root);
+      this.gunCradles.push(visual.cradle);
+    }
   }
 
   setTorpedo(id: TorpedoId): void {
@@ -115,12 +117,12 @@ export class DockPreview {
     );
     this.torpedoLauncher = visual.root;
     this.torpedoLauncher.rotation.y = Math.PI / 2;
-    this.torpedoLauncher.setEnabled(getHull(this.hullId).supportsTorpedoes);
+    this.torpedoLauncher.setEnabled(getShipClass(this.shipClassId).slotCounts.torpedo > 0);
   }
 
-  setHull(id: HullId): void {
-    this.hullId = id;
-    const hull = getHull(id);
+  setShipClass(id: ShipClassId): void {
+    this.shipClassId = id;
+    const hull = getShipClass(id);
     this.shipRoot.scaling.set(hull.renderScale.x, hull.renderScale.y, hull.renderScale.z);
     this.classDetailRoot?.dispose(false, true);
     this.classDetailRoot = new TransformNode(`dock-${id}-class-details`, this.scene);
@@ -129,10 +131,12 @@ export class DockPreview {
       this.scene,
       this.classDetailRoot,
       `dock-${id}`,
-      id,
+      hull.hullId,
       this.palette,
+      hull.visualVariant,
     );
-    this.torpedoLauncher?.setEnabled(hull.supportsTorpedoes);
+    this.torpedoLauncher?.setEnabled(hull.slotCounts.torpedo > 0);
+    this.setMainGun(this.mainGunId);
     const radius = 158 * Math.sqrt(hull.renderScale.z);
     this.camera.radius = radius;
     this.camera.lowerRadiusLimit = radius * 0.72;

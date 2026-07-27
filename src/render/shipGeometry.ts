@@ -79,8 +79,8 @@ export function createHullClassSilhouette(
   name: string,
   hullId: HullId,
   palette: DestroyerV3Palette,
+  variant = 0,
 ): void {
-  if (hullId === "destroyer") return;
   const box = (
     suffix: string,
     width: number,
@@ -115,6 +115,19 @@ export function createHullClassSilhouette(
     mesh.parent = parent;
     return mesh;
   };
+  if (hullId === "destroyer") {
+    if (variant === 1) box("j-class-aft-shelter", 5.6, 2.1, 8, 0, 6.1, -27, palette.structure);
+    if (variant === 2) box("kagero-long-forecastle", 6.2, 1.2, 18, 0, 5.9, 29, palette.deck);
+    if (variant === 3) {
+      box("z23-raised-bow", 7, 1.7, 21, 0, 6.1, 28, palette.structure);
+      box("z23-rangefinder", 4.8, 1.1, 2.2, 0, 17.5, 7, palette.accent);
+    }
+    if (variant === 4) {
+      box("tashkent-long-bridge", 7.4, 3.4, 11.5, 0, 8.1, 10, palette.structure);
+      funnel("tashkent-second-funnel", 0, 11.4, -23, 3.3, 8.6);
+    }
+    return;
+  }
   if (hullId === "lightCruiser") {
     box("cruiser-forward-deckhouse", 6.8, 3.2, 9.5, 0, 7.2, 11, palette.structure);
     box("cruiser-armored-bridge", 5.2, 4.8, 6.4, 0, 10.8, 7.5, palette.structure);
@@ -123,6 +136,10 @@ export function createHullClassSilhouette(
     funnel("cruiser-funnel-aft", 0, 10.2, -14, 3.3, 8.2);
     box("cruiser-port-bulge", 1.1, 1.4, 54, -5.6, 2.2, -5, palette.dark);
     box("cruiser-starboard-bulge", 1.1, 1.4, 54, 5.6, 2.2, -5, palette.dark);
+    if (variant === 1) box("edinburgh-aft-control", 4.8, 3.5, 5.4, 0, 9.1, -30, palette.structure);
+    if (variant === 2) box("nurnberg-forward-rangefinder", 5.8, 1.1, 2.2, 0, 15.3, 10, palette.accent);
+    if (variant === 3) box("agano-flag-bridge", 7.2, 2.5, 7.4, 0, 13.6, 6, palette.structure);
+    if (variant === 4) box("dido-aa-director", 6.6, 1.3, 3.4, 0, 16, 4, palette.accent);
     return;
   }
   box("battleship-forecastle", 8.8, 2.8, 22, 0, 6.8, 18, palette.structure);
@@ -133,6 +150,10 @@ export function createHullClassSilhouette(
   funnel("battleship-funnel-aft", 0, 12.4, -20, 4.8, 11);
   box("battleship-port-bulge", 1.8, 2.1, 72, -5.9, 1.8, -3, palette.dark);
   box("battleship-starboard-bulge", 1.8, 2.1, 72, 5.9, 1.8, -3, palette.dark);
+  if (variant === 1) box("kgv-square-tower", 7.2, 5.8, 7.2, 0, 18, 9, palette.structure);
+  if (variant === 2) box("bismarck-rangefinder", 9.4, 1.6, 3.4, 0, 19, 7, palette.accent);
+  if (variant === 3) box("yamato-pagoda", 8.4, 7.5, 7.8, 0, 21, 9, palette.structure);
+  if (variant === 4) box("richelieu-forward-tower", 7.6, 6.2, 8.2, 0, 18.5, 16, palette.structure);
 }
 
 /** Shared modular WWII destroyer fittings used by both battle and dock views. */

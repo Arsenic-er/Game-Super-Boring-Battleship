@@ -1,5 +1,6 @@
 import type { MainGunId } from "../ships/components";
 import type { HullId } from "../ships/hulls";
+import type { ShipClassId } from "../ships/classes";
 import type { TorpedoId } from "../ships/torpedoes";
 
 export interface Vec3 {
@@ -102,6 +103,7 @@ export interface ShipState {
   id: string;
   team: Team;
   hullId: HullId;
+  shipClassId: ShipClassId;
   position: Vec3;
   previousPosition: Vec3;
   heading: number;
@@ -117,6 +119,8 @@ export interface ShipState {
   modules: Record<ModuleId, ModuleState>;
   mainGunId: MainGunId;
   torpedoId: TorpedoId;
+  mainGunMounts: number;
+  torpedoLauncherMounts: number;
   performance: ShipPerformanceModifiers;
   gunTraverseBlocked: boolean;
   reloadRemaining: number;
