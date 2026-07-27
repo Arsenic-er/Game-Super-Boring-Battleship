@@ -14,7 +14,6 @@ import {
   KNOT_TO_MPS,
   MODULE_MAX_HEALTH,
   OBJECTIVE,
-  SHIP,
   SENSOR,
   TURRET,
   TORPEDO,
@@ -26,6 +25,8 @@ import {
   getMainGun,
 } from "../ships/components";
 import type { MainGunId } from "../ships/components";
+import { DEFAULT_HULL_ID, getHull } from "../ships/hulls";
+import type { HullId } from "../ships/hulls";
 import { DEFAULT_TORPEDO_ID, getTorpedo } from "../ships/torpedoes";
 import type { TorpedoId } from "../ships/torpedoes";
 import { effectiveTorpedoDetectionRange } from "./detection";
@@ -135,10 +136,19 @@ function createShip(
     reloadMultiplier: 1,
     magazineRiskMultiplier: 1,
   },
+  hullId: HullId = DEFAULT_HULL_ID,
 ): ShipState {
+  const hullDefinition = getHull(hullId);
+  const compartments = Object.fromEntries(
+    Object.entries(COMPARTMENT_MAX_HEALTH).map(([id, health]) => [
+      id,
+      health * hullDefinition.compartmentHealthMultiplier,
+    ]),
+  ) as ShipState["compartments"];
   return {
     id,
     team,
+    hullId,
     position: { x, y: 0, z },
     previousPosition: { x, y: 0, z },
     heading,
@@ -147,10 +157,10 @@ function createShip(
     throttle: 0.55,
     rudderCommand: 0,
     rudder: 0,
-    hull: SHIP.maxHull,
-    maxHull: SHIP.maxHull,
-    recoverableHull: SHIP.maxHull,
-    compartments: { ...COMPARTMENT_MAX_HEALTH },
+    hull: hullDefinition.maxHull,
+    maxHull: hullDefinition.maxHull,
+    recoverableHull: hullDefinition.maxHull,
+    compartments,
     modules: createModules(),
     mainGunId,
     torpedoId,
@@ -160,8 +170,10 @@ function createShip(
     torpedoReloadRemaining: 0,
     torpedoReloadDuration: getTorpedo(torpedoId).reloadSeconds,
     torpedoLauncherHeading: wrapAngle(heading + Math.PI / 2),
-    torpedoesLoaded: 2,
-    torpedoReserveSalvos: getTorpedo(torpedoId).reserveSalvos,
+    torpedoesLoaded: hullDefinition.supportsTorpedoes ? 2 : 0,
+    torpedoReserveSalvos: hullDefinition.supportsTorpedoes
+      ? getTorpedo(torpedoId).reserveSalvos
+      : 0,
     torpedoSpreadMode: "narrow",
     aimPoint: { x, y: 0, z: z + Math.cos(heading) * 1_800 },
     ammoType: "he",
@@ -188,6 +200,7 @@ export function createInitialState(
   playerMainGunId: MainGunId = DEFAULT_MAIN_GUN_ID,
   playerPerformance?: Partial<ShipPerformanceModifiers>,
   playerTorpedoId: TorpedoId = DEFAULT_TORPEDO_ID,
+  playerHullId: HullId = DEFAULT_HULL_ID,
 ): BattleState {
   const player = createShip("player", "player", 0, -900, 0, playerMainGunId, playerTorpedoId, {
     maxSpeedMultiplier: playerPerformance?.maxSpeedMultiplier ?? 1,
@@ -195,8 +208,18 @@ export function createInitialState(
     turnMultiplier: playerPerformance?.turnMultiplier ?? 1,
     reloadMultiplier: playerPerformance?.reloadMultiplier ?? 1,
     magazineRiskMultiplier: playerPerformance?.magazineRiskMultiplier ?? 1,
-  });
-  const testTarget = createShip("test-target", "enemy", 0, -460, Math.PI / 2);
+  }, playerHullId);
+  const testTarget = createShip(
+    "test-target",
+    "enemy",
+    0,
+    -460,
+    Math.PI / 2,
+    DEFAULT_MAIN_GUN_ID,
+    DEFAULT_TORPEDO_ID,
+    undefined,
+    playerHullId,
+  );
   testTarget.speedKnots = 0;
   testTarget.throttle = 0;
   testTarget.isTestTarget = true;
@@ -213,7 +236,17 @@ export function createInitialState(
       scores: { player: 0, enemy: 0 },
     },
     ships: mode === "battle"
-      ? [player, createShip("enemy", "enemy", 180, 1_250, Math.PI)]
+      ? [player, createShip(
+        "enemy",
+        "enemy",
+        180,
+        1_250,
+        Math.PI,
+        DEFAULT_MAIN_GUN_ID,
+        DEFAULT_TORPEDO_ID,
+        undefined,
+        playerHullId,
+      )]
       : [player, testTarget],
     projectiles: [],
     shots: [],
@@ -300,6 +333,7 @@ export function torpedoLauncherAlignmentError(ship: ShipState): number {
 }
 
 function moveShip(ship: ShipState, command: ControlCommand, dt: number): void {
+  const hullDefinition = getHull(ship.hullId);
   ship.previousPosition = copyVec(ship.position);
   ship.throttle = clamp(command.throttle, -0.25, 1);
   ship.rudderCommand = clamp(command.rudder, -1, 1);
@@ -325,30 +359,32 @@ function moveShip(ship: ShipState, command: ControlCommand, dt: number): void {
   const steeringRatio = moduleRatio(ship, "steering");
   const rudderShiftRate = steeringRatio <= 0
     ? 0
-    : SHIP.rudderShiftPerSecond * (0.18 + steeringRatio * 0.82);
+    : hullDefinition.rudderShiftPerSecond * (0.18 + steeringRatio * 0.82);
   ship.rudder += clamp(
     ship.rudderCommand - ship.rudder,
     -rudderShiftRate * dt,
     rudderShiftRate * dt,
   );
   const floodingSpeedFactor = 1 - clamp(ship.flooding / 100, 0, 1) * 0.32;
-  const equippedMaxSpeed = SHIP.maxSpeedKnots * ship.performance.maxSpeedMultiplier;
+  const equippedMaxSpeed = hullDefinition.maxSpeedKnots * ship.performance.maxSpeedMultiplier;
   const effectiveMaxSpeed = equippedMaxSpeed * engineRatio * floodingSpeedFactor * Math.max(0, ship.throttle);
   const reverseTarget = ship.throttle < 0 ? equippedMaxSpeed * ship.throttle * 0.28 : effectiveMaxSpeed;
   const orderedSpeed = ship.throttle < 0 ? reverseTarget : effectiveMaxSpeed;
-  const turningSpeedFactor = 1 - Math.abs(ship.rudder) * SHIP.maximumTurningSpeedLoss;
+  const turningSpeedFactor = 1
+    - Math.abs(ship.rudder) * hullDefinition.maximumTurningSpeedLoss;
   const targetSpeed = orderedSpeed * turningSpeedFactor;
   const propulsionResponse = engineRatio <= 0 ? 0 : 0.2 + engineRatio * 0.8;
   const rate = (targetSpeed >= ship.speedKnots
-    ? SHIP.accelerationKnotsPerSecond * propulsionResponse
-    : SHIP.brakingKnotsPerSecond * (0.45 + engineRatio * 0.55))
+    ? hullDefinition.accelerationKnotsPerSecond * propulsionResponse
+    : hullDefinition.brakingKnotsPerSecond * (0.45 + engineRatio * 0.55))
     * ship.performance.accelerationMultiplier;
   ship.speedKnots += clamp(targetSpeed - ship.speedKnots, -rate * dt, rate * dt);
 
   const speedRatio = clamp(Math.abs(ship.speedKnots) / equippedMaxSpeed, 0, 1);
   const turnAuthority = steeringRatio * (0.2 + 0.8 * speedRatio);
   const previousHeading = ship.heading;
-  ship.heading += ship.rudder * SHIP.maxTurnRateRadians * ship.performance.turnMultiplier * turnAuthority * dt;
+  ship.heading += ship.rudder * hullDefinition.maxTurnRateRadians
+    * ship.performance.turnMultiplier * turnAuthority * dt;
   ship.turnRateRadians = wrapAngle(ship.heading - previousHeading) / Math.max(dt, 0.0001);
 
   const metersPerSecond = ship.speedKnots * KNOT_TO_MPS;
@@ -450,13 +486,15 @@ export function dispersionAtRange(
 }
 
 export function gunMuzzleOrigin(ship: ShipState): Vec3 {
-  const mountDistance = 31;
-  const barrelDistance = getMainGun(ship.mainGunId).visual.barrelLength * 0.88;
+  const renderScale = getHull(ship.hullId).renderScale;
+  const mountDistance = 31 * renderScale.z;
+  const barrelDistance = getMainGun(ship.mainGunId).visual.barrelLength
+    * 0.88 * renderScale.z;
   return {
     x: ship.position.x
       + Math.sin(ship.heading) * mountDistance
       + Math.sin(ship.turretHeading) * barrelDistance,
-    y: GUN.muzzleHeight,
+    y: GUN.muzzleHeight * renderScale.y,
     z: ship.position.z
       + Math.cos(ship.heading) * mountDistance
       + Math.cos(ship.turretHeading) * barrelDistance,
@@ -469,10 +507,11 @@ export function gunMuzzleOrigins(ship: ShipState): Vec3[] {
   const offsets = gunDefinition.visual.barrelCount === 2
     ? [-gunDefinition.visual.barrelSpacing / 2, gunDefinition.visual.barrelSpacing / 2]
     : [0];
+  const barrelScale = getHull(ship.hullId).renderScale.x;
   return offsets.map((offset) => ({
-    x: center.x + Math.cos(ship.turretHeading) * offset,
+    x: center.x + Math.cos(ship.turretHeading) * offset * barrelScale,
     y: center.y,
-    z: center.z - Math.sin(ship.turretHeading) * offset,
+    z: center.z - Math.sin(ship.turretHeading) * offset * barrelScale,
   }));
 }
 
@@ -739,6 +778,7 @@ function rejectTorpedoFire(
 }
 
 function fireTorpedoes(state: BattleState, ship: ShipState): void {
+  const hullDefinition = getHull(ship.hullId);
   if (ship.modules.torpedoTubes.health <= 0) {
     rejectTorpedoFire(state, ship, "destroyed");
     return;
@@ -777,10 +817,13 @@ function fireTorpedoes(state: BattleState, ship: ShipState): void {
   ship.torpedoFireRejectedAt = undefined;
   const shipForwardX = Math.sin(ship.heading);
   const shipForwardZ = Math.cos(ship.heading);
+  const renderScale = hullDefinition.renderScale;
   const tubeCenter = {
-    x: ship.position.x + shipForwardX * TORPEDO.tubeLongitudinalOffset,
+    x: ship.position.x
+      + shipForwardX * TORPEDO.tubeLongitudinalOffset * renderScale.z,
     y: 0.35,
-    z: ship.position.z + shipForwardZ * TORPEDO.tubeLongitudinalOffset,
+    z: ship.position.z
+      + shipForwardZ * TORPEDO.tubeLongitudinalOffset * renderScale.z,
   };
   const halfSpread = ship.torpedoSpreadMode === "wide"
     ? TORPEDO.wideSpreadRadians
@@ -794,11 +837,11 @@ function fireTorpedoes(state: BattleState, ship: ShipState): void {
     const forwardZ = Math.cos(direction);
     const rightX = forwardZ;
     const rightZ = -forwardX;
-    const barrelOffset = (index - 0.5) * TORPEDO.tubeBarrelSpacing;
+    const barrelOffset = (index - 0.5) * TORPEDO.tubeBarrelSpacing * renderScale.x;
     const origin = {
-      x: tubeCenter.x + forwardX * 3 + rightX * barrelOffset,
+      x: tubeCenter.x + forwardX * 3 * renderScale.z + rightX * barrelOffset,
       y: 0.35,
-      z: tubeCenter.z + forwardZ * 3 + rightZ * barrelOffset,
+      z: tubeCenter.z + forwardZ * 3 * renderScale.z + rightZ * barrelOffset,
     };
     state.projectiles.push({
       id: state.nextEntityId++,
@@ -851,11 +894,15 @@ function shipLocalPoint(
   };
 }
 
-function compartmentAt(longitudinal: number): CompartmentId {
-  if (longitudinal > SHIP.length * 0.27) return "bow";
-  if (longitudinal > SHIP.length * 0.06) return "bridge";
-  if (longitudinal > -SHIP.length * 0.14) return "engineRoom";
-  if (longitudinal > -SHIP.length * 0.31) return "magazine";
+function compartmentAt(
+  longitudinal: number,
+  hullId: HullId = DEFAULT_HULL_ID,
+): CompartmentId {
+  const length = getHull(hullId).length;
+  if (longitudinal > length * 0.27) return "bow";
+  if (longitudinal > length * 0.06) return "bridge";
+  if (longitudinal > -length * 0.14) return "engineRoom";
+  if (longitudinal > -length * 0.31) return "magazine";
   return "stern";
 }
 
@@ -891,8 +938,9 @@ interface SlabAxis {
  */
 export function projectileHitContact(
   projectile: Pick<ProjectileState, "previousPosition" | "position">,
-  ship: Pick<ShipState, "position" | "heading">,
+  ship: Pick<ShipState, "position" | "heading" | "hullId">,
 ): ProjectileHitContact | null {
+  const hullDefinition = getHull(ship.hullId);
   const localStart = shipLocalPoint(ship, projectile.previousPosition);
   const localEnd = shipLocalPoint(ship, projectile.position);
   const startHeight = projectile.previousPosition.y - ship.position.y;
@@ -903,16 +951,16 @@ export function projectileHitContact(
     {
       start: localStart.longitudinal,
       delta: localEnd.longitudinal - localStart.longitudinal,
-      minimum: -SHIP.length / 2,
-      maximum: SHIP.length / 2,
+      minimum: -hullDefinition.length / 2,
+      maximum: hullDefinition.length / 2,
       normal: forward,
       armorZone: "end",
     },
     {
       start: localStart.lateral,
       delta: localEnd.lateral - localStart.lateral,
-      minimum: -SHIP.beam / 2 - 2,
-      maximum: SHIP.beam / 2 + 2,
+      minimum: -hullDefinition.beam / 2 - 2,
+      maximum: hullDefinition.beam / 2 + 2,
       normal: right,
       armorZone: "side",
     },
@@ -920,7 +968,7 @@ export function projectileHitContact(
       start: startHeight,
       delta: endHeight - startHeight,
       minimum: 0,
-      maximum: SHIP.deckHeight + 5,
+      maximum: hullDefinition.deckHeight + 5,
       normal: { x: 0, y: 1, z: 0 },
       armorZone: "deck",
     },
@@ -989,10 +1037,12 @@ export interface ArmorResolution {
 export function armorThicknessFor(
   compartment: CompartmentId,
   armorZone: ArmorZoneId = "side",
+  hullId: HullId = DEFAULT_HULL_ID,
 ): number {
-  if (armorZone === "deck") return 10;
-  if (armorZone === "end") return 12;
-  return ARMOR_THICKNESS_MM[compartment];
+  const multiplier = getHull(hullId).armorMultiplier;
+  if (armorZone === "deck") return 10 * multiplier;
+  if (armorZone === "end") return 12 * multiplier;
+  return ARMOR_THICKNESS_MM[compartment] * multiplier;
 }
 
 export function resolveArmorInteraction(
@@ -1135,11 +1185,13 @@ function damageModule(
 export function moduleForProjectileHit(
   compartment: CompartmentId,
   height: number,
+  hullId: HullId = DEFAULT_HULL_ID,
 ): ModuleId {
-  if (compartment === "bow") return height >= SHIP.deckHeight * 0.55 ? "gun" : "crew";
+  const deckHeight = getHull(hullId).deckHeight;
+  if (compartment === "bow") return height >= deckHeight * 0.55 ? "gun" : "crew";
   if (compartment === "bridge") return "crew";
   if (compartment === "engineRoom") {
-    return height >= SHIP.deckHeight * 0.55 ? "torpedoTubes" : "engine";
+    return height >= deckHeight * 0.55 ? "torpedoTubes" : "engine";
   }
   if (compartment === "magazine") return "magazine";
   return "steering";
@@ -1148,6 +1200,7 @@ export function moduleForProjectileHit(
 function projectileInternalPathMeters(
   projectile: ProjectileState,
   contact: ProjectileHitContact,
+  ship: ShipState,
 ): number {
   const speed = Math.max(
     0.0001,
@@ -1162,11 +1215,12 @@ function projectileInternalPathMeters(
       + projectile.velocity.y / speed * contact.surfaceNormal.y / normalLength
       + projectile.velocity.z / speed * contact.surfaceNormal.z / normalLength,
   ));
+  const hullDefinition = getHull(ship.hullId);
   const directPath = contact.armorZone === "side"
-    ? SHIP.beam
+    ? hullDefinition.beam
     : contact.armorZone === "end"
-      ? SHIP.length * 0.42
-      : SHIP.deckHeight * 0.62;
+      ? hullDefinition.length * 0.42
+      : hullDefinition.deckHeight * 0.62;
   return directPath / normalComponent;
 }
 
@@ -1186,7 +1240,12 @@ function applyHit(
   contact: ProjectileHitContact,
 ): void {
   const compartment = compartmentAt(contact.localPoint.longitudinal);
-  const armorThicknessMm = armorThicknessFor(compartment, contact.armorZone);
+  const hullDefinition = getHull(ship.hullId);
+  const armorThicknessMm = armorThicknessFor(
+    compartment,
+    contact.armorZone,
+    ship.hullId,
+  );
   const impactAngleDegrees = projectile.kind === "torpedo"
     ? 0 : projectileImpactAngleDegrees(projectile, contact.surfaceNormal);
   const armor = projectile.kind === "torpedo"
@@ -1204,7 +1263,7 @@ function applyHit(
       armorThicknessMm,
       impactAngleDegrees,
       projectile.age,
-      projectileInternalPathMeters(projectile, contact),
+      projectileInternalPathMeters(projectile, contact, ship),
       random(state),
     );
   const compartmentHealth = ship.compartments[compartment];
@@ -1212,7 +1271,8 @@ function applyHit(
     && armor.result !== "overpenetration"
     ? compartmentSaturationMultiplier(
       compartmentHealth,
-      COMPARTMENT_MAX_HEALTH[compartment],
+      COMPARTMENT_MAX_HEALTH[compartment]
+        * hullDefinition.compartmentHealthMultiplier,
     )
     : 1;
   const damage = Math.min(
@@ -1228,7 +1288,7 @@ function applyHit(
       ship,
       compartment,
       moduleBaseDamage,
-      moduleForProjectileHit(compartment, contact.localPoint.height),
+      moduleForProjectileHit(compartment, contact.localPoint.height, ship.hullId),
     )
     : undefined;
   const fireChance = compartment === "magazine" ? 0.48
@@ -1280,9 +1340,11 @@ function shipAxes(ship: ShipState): { forward: HorizontalAxis; right: Horizontal
 
 function projectionRadius(ship: ShipState, axis: HorizontalAxis): number {
   const axes = shipAxes(ship);
+  const hullDefinition = getHull(ship.hullId);
   const forwardDot = Math.abs(axes.forward.x * axis.x + axes.forward.z * axis.z);
   const rightDot = Math.abs(axes.right.x * axis.x + axes.right.z * axis.z);
-  return SHIP.length * 0.48 * forwardDot + SHIP.beam * 0.55 * rightDot;
+  return hullDefinition.length * 0.48 * forwardDot
+    + hullDefinition.beam * 0.55 * rightDot;
 }
 
 interface CollisionManifold {
@@ -1315,7 +1377,11 @@ function collisionManifold(left: ShipState, right: ShipState): CollisionManifold
 
 function collisionCompartment(ship: ShipState, other: ShipState): CompartmentId {
   const local = shipLocalPoint(ship, other.position);
-  return compartmentAt(clamp(local.longitudinal, -SHIP.length / 2, SHIP.length / 2));
+  const length = getHull(ship.hullId).length;
+  return compartmentAt(
+    clamp(local.longitudinal, -length / 2, length / 2),
+    ship.hullId,
+  );
 }
 
 function applyCollisionDamage(
@@ -1357,8 +1423,15 @@ function resolveShipCollisions(state: BattleState): void {
       const manifold = collisionManifold(left, right);
       if (!manifold) continue;
       const separation = manifold.penetration + 0.8;
-      const leftShare = right.isTestTarget ? 1 : left.isTestTarget ? 0 : 0.5;
-      const rightShare = left.isTestTarget ? 1 : right.isTestTarget ? 0 : 0.5;
+      const leftMass = getHull(left.hullId).massFactor;
+      const rightMass = getHull(right.hullId).massFactor;
+      const massTotal = leftMass + rightMass;
+      const leftShare = right.isTestTarget
+        ? 1
+        : left.isTestTarget ? 0 : rightMass / massTotal;
+      const rightShare = left.isTestTarget
+        ? 1
+        : right.isTestTarget ? 0 : leftMass / massTotal;
       left.position.x -= manifold.normal.x * separation * leftShare;
       left.position.z -= manifold.normal.z * separation * leftShare;
       right.position.x += manifold.normal.x * separation * rightShare;
@@ -1379,7 +1452,10 @@ function resolveShipCollisions(state: BattleState): void {
       if (baseDamage > 0.5 && ready) {
         const impactPosition = {
           x: (left.position.x + right.position.x) / 2,
-          y: SHIP.deckHeight * 0.45,
+          y: Math.min(
+            getHull(left.hullId).deckHeight,
+            getHull(right.hullId).deckHeight,
+          ) * 0.45,
           z: (left.position.z + right.position.z) / 2,
         };
         applyCollisionDamage(state, left, right, baseDamage, impactPosition);
@@ -1816,9 +1892,11 @@ export function observe(state: BattleState, shipId: string) {
         ) > cloud.radius);
       if (!smokeFiringReveal || separateSmokeWall) continue;
     }
+    const targetHull = getHull(target.hullId);
     const passiveDetectionRange = SENSOR.maximumDetectionMeters
+      + targetHull.detectionBonusMeters
       + target.fireIntensity / 100 * SENSOR.burningDetectionBonusMeters
-      + clamp(Math.abs(target.speedKnots) / SHIP.maxSpeedKnots, 0, 1)
+      + clamp(Math.abs(target.speedKnots) / targetHull.maxSpeedKnots, 0, 1)
         * SENSOR.highSpeedDetectionBonusMeters;
     const detectionRange = recentlyFiredMainGun
       ? Math.max(passiveDetectionRange, SENSOR.gunBloomDetectionMeters)

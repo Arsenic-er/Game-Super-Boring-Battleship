@@ -34,6 +34,7 @@ let state: BattleState = createInitialState(
   initialEquipment.mainGunId,
   initialEquipment,
   initialEquipment.torpedoId,
+  initialEquipment.hullId,
 );
 let view: GameView;
 let input: PlayerInput;
@@ -53,7 +54,14 @@ function startMode(mode: GameMode): void {
   currentMode = mode;
   battleRewarded = false;
   const equipment = battleLoadout(profile);
-  state = createInitialState(undefined, mode, equipment.mainGunId, equipment, equipment.torpedoId);
+  state = createInitialState(
+    undefined,
+    mode,
+    equipment.mainGunId,
+    equipment,
+    equipment.torpedoId,
+    equipment.hullId,
+  );
   input.reset();
   view.resetTransient();
   tacticalMap?.close();
@@ -91,6 +99,7 @@ function returnToMainMenu(): void {
     equipment.mainGunId,
     equipment,
     equipment.torpedoId,
+    equipment.hullId,
   );
   playerPerception.reset();
   view.resetTransient();

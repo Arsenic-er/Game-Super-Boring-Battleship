@@ -37,6 +37,7 @@ import {
 import type { ControlCommand, ShipState } from "../src/sim/types";
 import { getTorpedo } from "../src/ships/torpedoes";
 import type { TorpedoId } from "../src/ships/torpedoes";
+import { HULLS } from "../src/ships/hulls";
 
 const idle = (x: number, z: number): ControlCommand => ({
   throttle: 0,
@@ -607,6 +608,49 @@ describe("deterministic battle simulation", () => {
     state.time = BATTLE_DURATION_SECONDS + 30;
     stepSimulation(state, new Map([["player", idle(0, 1_000)]]), FIXED_STEP);
     expect(state.status).toBe("running");
+  });
+
+  it("creates distinct destroyer, cruiser and battleship performance envelopes", () => {
+    const destroyer = createInitialState(302, "sea-trials").ships[0]!;
+    const cruiser = createInitialState(
+      302, "sea-trials", undefined, undefined, undefined, "lightCruiser",
+    ).ships[0]!;
+    const battleship = createInitialState(
+      302, "sea-trials", undefined, undefined, undefined, "battleship",
+    ).ships[0]!;
+    expect(destroyer.maxHull).toBe(HULLS.destroyer.maxHull);
+    expect(cruiser.maxHull).toBe(HULLS.lightCruiser.maxHull);
+    expect(battleship.maxHull).toBe(HULLS.battleship.maxHull);
+    expect(destroyer.maxHull).toBeLessThan(cruiser.maxHull);
+    expect(cruiser.maxHull).toBeLessThan(battleship.maxHull);
+    expect(destroyer.torpedoesLoaded).toBe(2);
+    expect(cruiser.torpedoesLoaded).toBe(2);
+    expect(battleship.torpedoesLoaded).toBe(0);
+    expect(battleship.torpedoReserveSalvos).toBe(0);
+  });
+
+  it("makes larger hulls accelerate and turn more slowly", () => {
+    const states = [
+      createInitialState(303, "sea-trials"),
+      createInitialState(303, "sea-trials", undefined, undefined, undefined, "lightCruiser"),
+      createInitialState(303, "sea-trials", undefined, undefined, undefined, "battleship"),
+    ];
+    for (const state of states) {
+      const ship = state.ships[0]!;
+      ship.speedKnots = 12;
+      for (let tick = 0; tick < 1_200; tick += 1) {
+        stepSimulation(state, new Map([[ship.id, {
+          ...idle(ship.position.x + 1_000, ship.position.z + 1_000),
+          throttle: 1,
+          rudder: 1,
+        }]]), FIXED_STEP);
+      }
+    }
+    const [destroyer, cruiser, battleship] = states.map((state) => state.ships[0]!);
+    expect(destroyer.speedKnots).toBeGreaterThan(cruiser.speedKnots);
+    expect(cruiser.speedKnots).toBeGreaterThan(battleship.speedKnots);
+    expect(Math.abs(destroyer.heading)).toBeGreaterThan(Math.abs(cruiser.heading));
+    expect(Math.abs(cruiser.heading)).toBeGreaterThan(Math.abs(battleship.heading));
   });
 
   it("tracks ship performance telemetry deterministically", () => {

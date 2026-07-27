@@ -1,5 +1,7 @@
 import { DEFAULT_MAIN_GUN_ID } from "../ships/components";
 import type { MainGunId } from "../ships/components";
+import { DEFAULT_HULL_ID, HULLS, isHullId } from "../ships/hulls";
+import type { HullId } from "../ships/hulls";
 import { DEFAULT_TORPEDO_ID } from "../ships/torpedoes";
 import type { TorpedoId } from "../ships/torpedoes";
 import type { BattleStatus } from "../sim/types";
@@ -7,12 +9,13 @@ import {
   CATEGORY_META,
   EQUIPMENT_BY_ID,
   EQUIPMENT_CATALOG,
+  HULL_SLOT_COUNTS,
   equipmentFor,
 } from "./equipmentCatalog";
-import type { EquipmentCategory, EquipmentRarity, HullId } from "./equipmentCatalog";
+import type { EquipmentCategory, EquipmentRarity } from "./equipmentCatalog";
 
 export interface LocalProfile {
-  version: 3;
+  version: 4;
   commanderName: string;
   credits: number;
   researchPoints: number;
@@ -25,6 +28,7 @@ export interface LocalProfile {
   recentDraws: SupplyDrawResult[];
   hullId: HullId;
   loadout: Record<EquipmentCategory, string | null>;
+  loadoutsByHull: Record<HullId, Record<EquipmentCategory, string | null>>;
 }
 
 export interface ArmoryTransaction {
@@ -51,6 +55,7 @@ export interface SupplyDrawResult {
 }
 
 export interface BattleLoadout {
+  hullId: HullId;
   mainGunId: MainGunId;
   torpedoId: TorpedoId;
   maxSpeedMultiplier: number;
@@ -60,20 +65,21 @@ export interface BattleLoadout {
   magazineRiskMultiplier: number;
 }
 
-const STORAGE_KEY = "grey-sea-local-profile-v3";
-const LEGACY_STORAGE_KEYS = ["grey-sea-local-profile-v1"] as const;
+const STORAGE_KEY = "grey-sea-local-profile-v4";
+const LEGACY_STORAGE_KEYS = ["grey-sea-local-profile-v3", "grey-sea-local-profile-v1"] as const;
 const categories = Object.keys(CATEGORY_META) as EquipmentCategory[];
 
-function baseLoadout(): LocalProfile["loadout"] {
+function baseLoadout(hullId: HullId): LocalProfile["loadout"] {
   return Object.fromEntries(categories.map((category) => [
     category,
-    category === "sideGun" ? null : equipmentFor(category, "common").id,
+    HULL_SLOT_COUNTS[hullId][category] > 0
+      ? equipmentFor(category, "common").id
+      : null,
   ])) as LocalProfile["loadout"];
 }
 
 function baseInventory(): Record<string, number> {
   return Object.fromEntries(categories
-    .filter((category) => category !== "sideGun")
     .map((category) => [equipmentFor(category, "common").id, 1]));
 }
 
@@ -84,8 +90,11 @@ function baseUnlocks(): Record<string, boolean> {
 }
 
 export function createDefaultLocalProfile(): LocalProfile {
+  const loadoutsByHull = Object.fromEntries(
+    (Object.keys(HULLS) as HullId[]).map((hullId) => [hullId, baseLoadout(hullId)]),
+  ) as LocalProfile["loadoutsByHull"];
   return {
-    version: 3,
+    version: 4,
     commanderName: "本地舰长",
     credits: 12_000,
     researchPoints: 220,
@@ -96,14 +105,16 @@ export function createDefaultLocalProfile(): LocalProfile {
     inventory: baseInventory(),
     unlockedEquipment: baseUnlocks(),
     recentDraws: [],
-    hullId: "destroyer",
-    loadout: baseLoadout(),
+    hullId: DEFAULT_HULL_ID,
+    loadout: { ...loadoutsByHull[DEFAULT_HULL_ID] },
+    loadoutsByHull,
   };
 }
 
 export function normalizeLocalProfile(value: unknown): LocalProfile {
   const defaults = createDefaultLocalProfile();
   const candidate = value && typeof value === "object" ? value as Record<string, unknown> : {};
+  const hullId = isHullId(candidate.hullId) ? candidate.hullId : DEFAULT_HULL_ID;
   const oldLoadout = candidate.loadout && typeof candidate.loadout === "object"
     ? candidate.loadout as Record<string, unknown>
     : {};
@@ -127,19 +138,49 @@ export function normalizeLocalProfile(value: unknown): LocalProfile {
   const legacyMainGun = oldLoadout.mainGun === "mk2-twin" ? "mainGun-purple" : "mainGun-common";
   inventory[legacyMainGun] = Math.max(1, inventory[legacyMainGun] ?? 0);
   unlockedEquipment[legacyMainGun] = true;
-  const loadout = baseLoadout();
-  for (const category of categories) {
-    const requested = oldLoadout[category];
-    const item = typeof requested === "string" ? EQUIPMENT_BY_ID[requested] : undefined;
-    if (item?.category === category && item.compatibleHulls.includes("destroyer") && (inventory[item.id] ?? 0) > 0) loadout[category] = item.id;
-  }
-  if (!oldLoadout.mainGun || String(oldLoadout.mainGun).startsWith("mk")) loadout.mainGun = legacyMainGun;
-  loadout.sideGun = null;
+  const storedLoadouts = candidate.loadoutsByHull && typeof candidate.loadoutsByHull === "object"
+    ? candidate.loadoutsByHull as Partial<Record<HullId, unknown>>
+    : {};
+  const normalizedLoadout = (
+    targetHullId: HullId,
+    source: unknown,
+  ): LocalProfile["loadout"] => {
+    const loadout = baseLoadout(targetHullId);
+    const requestedLoadout = source && typeof source === "object"
+      ? source as Record<string, unknown>
+      : {};
+    for (const category of categories) {
+      const requested = requestedLoadout[category];
+      const item = typeof requested === "string" ? EQUIPMENT_BY_ID[requested] : undefined;
+      if (
+        HULL_SLOT_COUNTS[targetHullId][category] > 0
+        && item?.category === category
+        && item.compatibleHulls.includes(targetHullId)
+        && (inventory[item.id] ?? 0) > 0
+      ) loadout[category] = item.id;
+    }
+    if (
+      targetHullId === DEFAULT_HULL_ID
+      && (!requestedLoadout.mainGun || String(requestedLoadout.mainGun).startsWith("mk"))
+    ) loadout.mainGun = legacyMainGun;
+    return loadout;
+  };
+  const loadoutsByHull = Object.fromEntries(
+    (Object.keys(HULLS) as HullId[]).map((targetHullId) => [
+      targetHullId,
+      normalizedLoadout(
+        targetHullId,
+        targetHullId === hullId ? oldLoadout : storedLoadouts[targetHullId],
+      ),
+    ]),
+  ) as LocalProfile["loadoutsByHull"];
+  const loadout = { ...loadoutsByHull[hullId] };
+  loadoutsByHull[hullId] = { ...loadout };
   const recent = Array.isArray(candidate.recentDraws)
     ? candidate.recentDraws.filter((entry) => entry && typeof entry === "object").slice(0, 10) as SupplyDrawResult[]
     : [];
   return {
-    version: 3,
+    version: 4,
     commanderName: requestedName || defaults.commanderName,
     credits: finiteInt(candidate.credits, defaults.credits, 999_999),
     researchPoints: finiteInt(candidate.researchPoints, defaults.researchPoints, 999_999),
@@ -153,8 +194,9 @@ export function normalizeLocalProfile(value: unknown): LocalProfile {
     inventory,
     unlockedEquipment,
     recentDraws: recent,
-    hullId: "destroyer",
+    hullId,
     loadout,
+    loadoutsByHull,
   };
 }
 
@@ -306,8 +348,23 @@ export function awardBattleResult(
 export function equipComponent(source: LocalProfile, itemId: string): LocalProfile {
   const profile = normalizeLocalProfile(source);
   const item = EQUIPMENT_BY_ID[itemId];
-  if (!item || (profile.inventory[itemId] ?? 0) < 1 || !item.compatibleHulls.includes(profile.hullId)) return profile;
+  if (
+    !item
+    || (profile.inventory[itemId] ?? 0) < 1
+    || HULL_SLOT_COUNTS[profile.hullId][item.category] <= 0
+    || !item.compatibleHulls.includes(profile.hullId)
+  ) return profile;
   return normalizeLocalProfile({ ...profile, loadout: { ...profile.loadout, [item.category]: itemId } });
+}
+
+export function selectHull(source: LocalProfile, hullId: HullId): LocalProfile {
+  const profile = normalizeLocalProfile(source);
+  if (!isHullId(hullId) || hullId === profile.hullId) return profile;
+  return normalizeLocalProfile({
+    ...profile,
+    hullId,
+    loadout: { ...profile.loadoutsByHull[hullId] },
+  });
 }
 
 export function battleLoadout(profileSource: LocalProfile): BattleLoadout {
@@ -322,6 +379,7 @@ export function battleLoadout(profileSource: LocalProfile): BattleLoadout {
   const steering = equipped("steering");
   const magazine = equipped("magazine");
   return {
+    hullId: profile.hullId,
     mainGunId: gun?.mainGunId ?? DEFAULT_MAIN_GUN_ID,
     torpedoId: torpedo?.torpedoId ?? DEFAULT_TORPEDO_ID,
     maxSpeedMultiplier: 1 + (engine?.bonus ?? 0),

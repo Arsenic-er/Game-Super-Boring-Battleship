@@ -7,11 +7,14 @@ import { TransformNode } from "@babylonjs/core/Meshes/transformNode";
 import { Scene } from "@babylonjs/core/scene";
 import { getMainGun } from "../ships/components";
 import type { MainGunId } from "../ships/components";
+import { DEFAULT_HULL_ID, getHull } from "../ships/hulls";
+import type { HullId } from "../ships/hulls";
 import { DEFAULT_TORPEDO_ID, getTorpedo } from "../ships/torpedoes";
 import type { TorpedoId } from "../ships/torpedoes";
 import {
   createDestroyerHull,
   createDestroyerV3Superstructure,
+  createHullClassSilhouette,
   createMainGunVisual,
   createTorpedoLauncherVisual,
 } from "./shipGeometry";
@@ -21,9 +24,12 @@ import type { PixelShipPalette } from "./shipMaterials";
 export class DockPreview {
   private readonly engine: Engine;
   private readonly scene: Scene;
+  private readonly camera: ArcRotateCamera;
   private readonly shipRoot: TransformNode;
   private readonly palette: PixelShipPalette;
   private readonly propellers: TransformNode[];
+  private classDetailRoot?: TransformNode;
+  private hullId: HullId = DEFAULT_HULL_ID;
   private turret?: TransformNode;
   private gunCradle?: TransformNode;
   private torpedoLauncher?: TransformNode;
@@ -32,12 +38,12 @@ export class DockPreview {
     this.engine = new Engine(canvas, true, { preserveDrawingBuffer: true, stencil: false }, false);
     this.scene = new Scene(this.engine);
     this.scene.clearColor.set(0.015, 0.075, 0.1, 0);
-    const camera = new ArcRotateCamera("dock-camera", -1.08, 1.03, 158, new Vector3(0, 5, 0), this.scene);
-    camera.lowerRadiusLimit = 118;
-    camera.upperRadiusLimit = 220;
-    camera.angularSensibilityY = -1000;
-    camera.attachControl(canvas, true);
-    camera.panningSensibility = 0;
+    this.camera = new ArcRotateCamera("dock-camera", -1.08, 1.03, 158, new Vector3(0, 5, 0), this.scene);
+    this.camera.lowerRadiusLimit = 118;
+    this.camera.upperRadiusLimit = 360;
+    this.camera.angularSensibilityY = -1000;
+    this.camera.attachControl(canvas, true);
+    this.camera.panningSensibility = 0;
     new HemisphericLight("dock-hemi", new Vector3(0, 1, 0), this.scene).intensity = 0.8;
     const key = new DirectionalLight("dock-key", new Vector3(-0.4, -1, 0.35), this.scene);
     key.intensity = 1.25;
@@ -53,6 +59,7 @@ export class DockPreview {
     this.propellers = motion.propellers;
     this.setMainGun("mk1-single");
     this.setTorpedo(DEFAULT_TORPEDO_ID);
+    this.setHull(DEFAULT_HULL_ID);
     let lastRender = 0;
     this.engine.runRenderLoop(() => {
       const now = Date.now();
@@ -108,6 +115,28 @@ export class DockPreview {
     );
     this.torpedoLauncher = visual.root;
     this.torpedoLauncher.rotation.y = Math.PI / 2;
+    this.torpedoLauncher.setEnabled(getHull(this.hullId).supportsTorpedoes);
+  }
+
+  setHull(id: HullId): void {
+    this.hullId = id;
+    const hull = getHull(id);
+    this.shipRoot.scaling.set(hull.renderScale.x, hull.renderScale.y, hull.renderScale.z);
+    this.classDetailRoot?.dispose(false, true);
+    this.classDetailRoot = new TransformNode(`dock-${id}-class-details`, this.scene);
+    this.classDetailRoot.parent = this.shipRoot;
+    createHullClassSilhouette(
+      this.scene,
+      this.classDetailRoot,
+      `dock-${id}`,
+      id,
+      this.palette,
+    );
+    this.torpedoLauncher?.setEnabled(hull.supportsTorpedoes);
+    const radius = 158 * Math.sqrt(hull.renderScale.z);
+    this.camera.radius = radius;
+    this.camera.lowerRadiusLimit = radius * 0.72;
+    this.camera.target.y = 5 * hull.renderScale.y;
   }
 
   resize(): void { this.engine.resize(); }

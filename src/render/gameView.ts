@@ -31,10 +31,13 @@ import {
   turretAimPoint,
 } from "../sim/simulation";
 import { getMainGun } from "../ships/components";
+import { getHull } from "../ships/hulls";
+import type { HullId } from "../ships/hulls";
 import { getTorpedo } from "../ships/torpedoes";
 import {
   createDestroyerHull,
   createDestroyerV3Superstructure,
+  createHullClassSilhouette,
   createMainGunVisual,
   createTorpedoLauncherVisual,
 } from "./shipGeometry";
@@ -61,6 +64,7 @@ import type {
 } from "../sim/types";
 
 interface ShipVisual {
+  hullId: HullId;
   root: TransformNode;
   turret: TransformNode;
   gunCradle: TransformNode;
@@ -86,6 +90,7 @@ interface ProjectileTrail {
   plume?: Mesh;
   points: Vector3[];
   capacity: number;
+  wakePlanes?: Mesh[];
 }
 
 interface TimedMesh {
@@ -128,6 +133,7 @@ export class GameView implements AimProvider {
   private readonly effectPools = new Map<string, Mesh[]>();
   private readonly sharedEffectMaterials = new Map<string, StandardMaterial>();
   private readonly sharedVfxMaterials = new Map<PixelVfxKind, StandardMaterial>();
+  private torpedoWakeMaterial?: StandardMaterial;
   private readonly oceanTexture: Texture;
   private readonly oceanBumpTexture: Texture;
   private readonly waveLayers: Mesh[];
@@ -320,6 +326,31 @@ export class GameView implements AimProvider {
     return material;
   }
 
+  private getTorpedoWakeMaterial(): StandardMaterial {
+    if (this.torpedoWakeMaterial) return this.torpedoWakeMaterial;
+    const texture = new Texture(
+      `${import.meta.env.BASE_URL}assets/textures/torpedo-wake-pixel.png`,
+      this.scene,
+      false,
+      false,
+      Texture.NEAREST_SAMPLINGMODE,
+    );
+    texture.hasAlpha = true;
+    texture.wrapU = Texture.CLAMP_ADDRESSMODE;
+    texture.wrapV = Texture.CLAMP_ADDRESSMODE;
+    const material = new StandardMaterial("torpedo-wake-pixel-material", this.scene);
+    material.diffuseTexture = texture;
+    material.opacityTexture = texture;
+    material.useAlphaFromDiffuseTexture = true;
+    material.disableLighting = true;
+    material.backFaceCulling = false;
+    material.specularColor = Color3.Black();
+    material.emissiveColor = new Color3(0.68, 0.84, 0.86);
+    material.alpha = 0.82;
+    this.torpedoWakeMaterial = material;
+    return material;
+  }
+
   private smokeVolumeMaterial(): StandardMaterial {
     const existing = this.sharedEffectMaterials.get("smoke-volume");
     if (existing) return existing;
@@ -424,6 +455,12 @@ export class GameView implements AimProvider {
 
   private createShip(ship: ShipState): ShipVisual {
     const root = new TransformNode(`${ship.id}-root`, this.scene);
+    const hullDefinition = getHull(ship.hullId);
+    root.scaling.set(
+      hullDefinition.renderScale.x,
+      hullDefinition.renderScale.y,
+      hullDefinition.renderScale.z,
+    );
     const ally = ship.team === "player";
     const testTarget = Boolean(ship.isTestTarget);
     const palette = createPixelShipPalette(
@@ -443,6 +480,7 @@ export class GameView implements AimProvider {
     });
 
     const motion = createDestroyerV3Superstructure(this.scene, root, ship.id, palette);
+    createHullClassSilhouette(this.scene, root, ship.id, ship.hullId, palette);
     const gunDefinition = getMainGun(ship.mainGunId);
     const gun = createMainGunVisual(this.scene, root, ship.id, gunDefinition, palette);
     const torpedoDefinition = getTorpedo(ship.torpedoId);
@@ -453,6 +491,7 @@ export class GameView implements AimProvider {
       torpedoDefinition,
       palette,
     );
+    torpedo.root.setEnabled(hullDefinition.supportsTorpedoes);
 
     const wakeMaterial = this.material(`${ship.id}-wake-material`, new Color3(0.72, 0.86, 0.88));
     wakeMaterial.alpha = 0.3;
@@ -520,6 +559,7 @@ export class GameView implements AimProvider {
     collider.parent = root;
 
     return {
+      hullId: ship.hullId,
       root,
       turret: gun.root,
       gunCradle: gun.cradle,
@@ -579,6 +619,11 @@ export class GameView implements AimProvider {
   private syncShips(state: BattleState, perceivedTarget?: PlayerTargetView): void {
     for (const ship of state.ships) {
       let visual = this.ships.get(ship.id);
+      if (visual && visual.hullId !== ship.hullId) {
+        visual.root.dispose(false, true);
+        this.ships.delete(ship.id);
+        visual = undefined;
+      }
       if (!visual) {
         visual = this.createShip(ship);
         this.ships.set(ship.id, visual);
@@ -683,6 +728,7 @@ export class GameView implements AimProvider {
         this.projectileMeshes.delete(id);
         this.projectileTrails.get(id)?.core.dispose();
         this.projectileTrails.get(id)?.plume?.dispose();
+        for (const wake of this.projectileTrails.get(id)?.wakePlanes ?? []) wake.dispose();
         this.projectileTrails.delete(id);
       }
     }
@@ -764,7 +810,7 @@ export class GameView implements AimProvider {
         const wakeVisibility = projectile.kind === "torpedo"
           ? Math.min(1, Math.max(0.28, ((projectile.detectionRange ?? 500) - 280) / 370))
           : 1;
-        core.alpha = projectile.kind === "torpedo" ? 0.74 * wakeVisibility : 0.96;
+        core.alpha = projectile.kind === "torpedo" ? 0.26 * wakeVisibility : 0.96;
         const plume = this.quality === "medium"
           ? CreateTube(`trail-plume-${projectile.id}`, {
             path: points,
@@ -782,10 +828,23 @@ export class GameView implements AimProvider {
             projectile.kind === "torpedo"
               ? new Color3(0.03, 0.12, 0.14)
               : new Color3(0.22, 0.12, 0.03),
-            projectile.kind === "torpedo" ? 0.3 * wakeVisibility : 0.3,
+            projectile.kind === "torpedo" ? 0.14 * wakeVisibility : 0.3,
           );
         }
-        trail = { core, plume, points, capacity };
+        const wakePlanes = projectile.kind === "torpedo"
+          ? Array.from({ length: this.quality === "medium" ? 2 : 1 }, (_, index) => {
+            const wake = CreatePlane(`torpedo-wake-${projectile.id}-${index}`, {
+              width: index === 0 ? 10 : 7,
+              height: index === 0 ? 34 : 24,
+            }, this.scene);
+            wake.rotation.x = Math.PI / 2;
+            wake.material = this.getTorpedoWakeMaterial();
+            wake.isPickable = false;
+            wake.alphaIndex = 3;
+            return wake;
+          })
+          : undefined;
+        trail = { core, plume, points, capacity, wakePlanes };
         this.projectileTrails.set(projectile.id, trail);
       } else {
         trail.points.push(nextPoint);
@@ -801,6 +860,22 @@ export class GameView implements AimProvider {
             tessellation: 4,
             instance: trail.plume,
           }, this.scene);
+        }
+      }
+      if (projectile.kind === "torpedo" && trail.wakePlanes) {
+        const bearing = Math.atan2(projectile.velocity.x, projectile.velocity.z);
+        const wakeVisibility = Math.min(
+          1,
+          Math.max(0.28, ((projectile.detectionRange ?? 500) - 280) / 370),
+        );
+        for (const [index, wake] of trail.wakePlanes.entries()) {
+          const offset = 10 + index * 22;
+          wake.position.copyFrom(nextPoint.subtract(direction.scale(offset)));
+          wake.position.y = WATER_RENDER.surfaceY + 0.045 + index * 0.008;
+          wake.rotation.y = bearing;
+          wake.visibility = wakeVisibility * (index === 0 ? 0.9 : 0.46);
+          const pulse = 1 + Math.sin(projectile.age * 8 + index * 2.4) * 0.05;
+          wake.scaling.set(pulse, pulse, pulse);
         }
       }
     }
@@ -1256,6 +1331,8 @@ export class GameView implements AimProvider {
     this.objectiveMaterial.emissiveColor.copyFrom(objectiveColor.scale(0.36));
     const player = state.ships.find((ship) => ship.team === "player");
     if (player) {
+      const playerHull = getHull(player.hullId);
+      const cameraScale = Math.sqrt(playerHull.length / 112);
       for (const [index, waves] of this.waveLayers.entries()) {
         const drift = state.time * (index === 0 ? 2.4 : -1.35);
         waves.position.x = player.position.x + Math.sin(drift * 0.021 + index) * 32;
@@ -1270,12 +1347,13 @@ export class GameView implements AimProvider {
       const skyLook = Math.max(0, this.camera.beta - 1.42);
       const target = new Vector3(
         player.position.x + aimX / aimLength * scopeFocusDistance,
-        (this.aiming ? 7 : 4) + skyLook * (this.aiming ? 85 : 170),
+        (this.aiming ? 7 : 4) * playerHull.renderScale.y
+          + skyLook * (this.aiming ? 85 : 170),
         player.position.z + aimZ / aimLength * scopeFocusDistance,
       );
       if (state.time < 0.12) this.camera.target.copyFrom(target);
       else Vector3.LerpToRef(this.camera.target, target, 0.16, this.camera.target);
-      const targetRadius = this.aiming ? 78 : 205;
+      const targetRadius = (this.aiming ? 78 : 205) * cameraScale;
       this.camera.radius += (targetRadius - this.camera.radius) * 0.14;
       this.camera.fov += ((this.aiming ? 0.44 : 0.8) - this.camera.fov) * 0.14;
     }

@@ -115,6 +115,28 @@ describe("ammunition and armor interaction", () => {
     expect(contact).toBeNull();
   });
 
+  it("uses each hull class beam for projectile collision", () => {
+    const destroyer = createInitialState(301, "sea-trials").ships[0]!;
+    const battleship = createInitialState(
+      301,
+      "sea-trials",
+      undefined,
+      undefined,
+      undefined,
+      "battleship",
+    ).ships[0]!;
+    destroyer.position = { x: 0, y: 0, z: 0 };
+    battleship.position = { x: 0, y: 0, z: 0 };
+    const grazingPath = {
+      previousPosition: { x: 12, y: 5, z: -150 },
+      position: { x: 12, y: 5, z: 150 },
+    };
+    expect(projectileHitContact(grazingPath, destroyer)).toBeNull();
+    expect(projectileHitContact(grazingPath, battleship)).not.toBeNull();
+    expect(armorThicknessFor("engineRoom", "side", "battleship"))
+      .toBeGreaterThan(armorThicknessFor("engineRoom", "side", "destroyer"));
+  });
+
   it("requires a reload when changing shell type", () => {
     const state = createInitialState(202, "sea-trials");
     const player = state.ships.find((ship) => ship.id === "player")!;

@@ -1,12 +1,14 @@
 import type { MainGunId } from "../ships/components";
+import type { HullId } from "../ships/hulls";
 import { getTorpedo } from "../ships/torpedoes";
 import type { TorpedoId } from "../ships/torpedoes";
+
+export type { HullId } from "../ships/hulls";
 
 export type EquipmentRarity = "common" | "purple" | "gold" | "redGold";
 export type EquipmentCategory =
   | "mainGun" | "torpedo" | "antiAir" | "sideGun"
   | "magazine" | "engine" | "steering";
-export type HullId = "destroyer" | "lightCruiser" | "battleship";
 
 export interface EquipmentDefinition {
   id: string;
@@ -286,6 +288,28 @@ export const DESTROYER_SLOT_COUNTS: Record<EquipmentCategory, number> = {
   magazine: 1,
   engine: 1,
   steering: 1,
+};
+
+export const HULL_SLOT_COUNTS: Record<HullId, Record<EquipmentCategory, number>> = {
+  destroyer: DESTROYER_SLOT_COUNTS,
+  lightCruiser: {
+    mainGun: 1,
+    torpedo: 1,
+    antiAir: 3,
+    sideGun: 2,
+    magazine: 1,
+    engine: 1,
+    steering: 1,
+  },
+  battleship: {
+    mainGun: 1,
+    torpedo: 0,
+    antiAir: 4,
+    sideGun: 4,
+    magazine: 1,
+    engine: 1,
+    steering: 1,
+  },
 };
 
 export function equipmentFor(category: EquipmentCategory, rarity: EquipmentRarity): EquipmentDefinition {

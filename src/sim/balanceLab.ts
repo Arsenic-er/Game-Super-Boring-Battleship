@@ -163,6 +163,7 @@ export function battleStateFingerprint(state: BattleState): string {
       .sort((left, right) => left.id.localeCompare(right.id))
       .map((ship) => ({
         id: ship.id,
+        hullId: ship.hullId,
         position: {
           x: round(ship.position.x),
           y: round(ship.position.y),

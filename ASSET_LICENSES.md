@@ -30,3 +30,11 @@ Future imported art must record its author, original URL, license and modificati
 - Added: 2026-07-27.
 - Purpose: nearest-sampled overcast sky-dome texture and layered horizon backdrop.
 - Prompt summary: a seamless cool maritime pixel sky with broad cloud layers and a pale cyan-gray horizon, without land, aircraft, text or third-party artwork.
+
+## `public/assets/textures/torpedo-wake-pixel.png`
+
+- Origin: generated specifically for Grey Sea Action with OpenAI image generation, then converted from a flat green chroma-key background to an alpha PNG and resized to 128 × 192 with nearest-neighbour sampling.
+- Added: 2026-07-27.
+- Purpose: low-cost transparent surface wake layered above detected underwater torpedoes.
+- Prompt summary: a top-down WWII naval pixel-art torpedo wake with a narrow foamy head and tapered turbulent trail, isolated on a flat chroma-key background; no torpedo body, text, logos or third-party artwork.
+- Third-party source files: none.

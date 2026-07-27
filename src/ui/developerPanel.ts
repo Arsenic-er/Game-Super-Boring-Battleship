@@ -1,4 +1,5 @@
 import { COMPARTMENT_MAX_HEALTH, HYDRO, SMOKE } from "../sim/config";
+import { getHull } from "../ships/hulls";
 import { torpedoLauncherAlignmentError } from "../sim/simulation";
 import type { BattleState, CompartmentId, ModuleId, ShipState } from "../sim/types";
 import { getTorpedo } from "../ships/torpedoes";
@@ -174,7 +175,9 @@ export class DeveloperPanel {
         const ship = this.selectedShip();
         const id = input.dataset.compartment as CompartmentId | undefined;
         if (!ship || !id) return;
-        ship.compartments[id] = COMPARTMENT_MAX_HEALTH[id] * Number(input.value) / 100;
+        ship.compartments[id] = COMPARTMENT_MAX_HEALTH[id]
+          * getHull(ship.hullId).compartmentHealthMultiplier
+          * Number(input.value) / 100;
         this.updateOutput(input, "%");
       });
     }
@@ -320,7 +323,8 @@ export class DeveloperPanel {
     ship.torpedoReloadRemaining = 0;
     for (const module of Object.values(ship.modules)) module.health = module.maxHealth;
     for (const id of Object.keys(ship.compartments) as CompartmentId[]) {
-      ship.compartments[id] = COMPARTMENT_MAX_HEALTH[id];
+      ship.compartments[id] = COMPARTMENT_MAX_HEALTH[id]
+        * getHull(ship.hullId).compartmentHealthMultiplier;
     }
   }
 
@@ -349,7 +353,11 @@ export class DeveloperPanel {
     }
     for (const input of this.element.querySelectorAll<HTMLInputElement>("input[data-compartment]")) {
       const id = input.dataset.compartment as CompartmentId;
-      input.value = String(Math.round(ship.compartments[id] / COMPARTMENT_MAX_HEALTH[id] * 100));
+      input.value = String(Math.round(
+        ship.compartments[id]
+          / (COMPARTMENT_MAX_HEALTH[id] * getHull(ship.hullId).compartmentHealthMultiplier)
+          * 100,
+      ));
       this.updateOutput(input, "%");
     }
     const x = this.element.querySelector<HTMLInputElement>('input[data-number="x"]');

@@ -6,6 +6,7 @@ import { CreateCylinder } from "@babylonjs/core/Meshes/Builders/cylinderBuilder.
 import { TransformNode } from "@babylonjs/core/Meshes/transformNode";
 import type { Scene } from "@babylonjs/core/scene";
 import type { MainGunDefinition } from "../ships/components";
+import type { HullId } from "../ships/hulls";
 import type { TorpedoDefinition } from "../ships/torpedoes";
 
 interface WedgeSpec {
@@ -69,6 +70,69 @@ export interface MainGunVisual {
 
 export interface TorpedoLauncherVisual {
   root: TransformNode;
+}
+
+/** Adds class-specific massing without creating non-functional weapon mounts. */
+export function createHullClassSilhouette(
+  scene: Scene,
+  parent: TransformNode,
+  name: string,
+  hullId: HullId,
+  palette: DestroyerV3Palette,
+): void {
+  if (hullId === "destroyer") return;
+  const box = (
+    suffix: string,
+    width: number,
+    height: number,
+    depth: number,
+    x: number,
+    y: number,
+    z: number,
+    material: Material,
+  ): Mesh => {
+    const mesh = CreateBox(`${name}-${suffix}`, { width, height, depth }, scene);
+    mesh.position.set(x, y, z);
+    mesh.material = material;
+    mesh.parent = parent;
+    return mesh;
+  };
+  const funnel = (
+    suffix: string,
+    x: number,
+    y: number,
+    z: number,
+    diameter: number,
+    height: number,
+  ): Mesh => {
+    const mesh = CreateCylinder(`${name}-${suffix}`, {
+      diameter,
+      height,
+      tessellation: 8,
+    }, scene);
+    mesh.position.set(x, y, z);
+    mesh.material = palette.dark;
+    mesh.parent = parent;
+    return mesh;
+  };
+  if (hullId === "lightCruiser") {
+    box("cruiser-forward-deckhouse", 6.8, 3.2, 9.5, 0, 7.2, 11, palette.structure);
+    box("cruiser-armored-bridge", 5.2, 4.8, 6.4, 0, 10.8, 7.5, palette.structure);
+    box("cruiser-aft-deckhouse", 6.2, 2.4, 11, 0, 6.8, -23, palette.structure);
+    funnel("cruiser-funnel-forward", 0, 11.2, -4, 3.8, 9.5);
+    funnel("cruiser-funnel-aft", 0, 10.2, -14, 3.3, 8.2);
+    box("cruiser-port-bulge", 1.1, 1.4, 54, -5.6, 2.2, -5, palette.dark);
+    box("cruiser-starboard-bulge", 1.1, 1.4, 54, 5.6, 2.2, -5, palette.dark);
+    return;
+  }
+  box("battleship-forecastle", 8.8, 2.8, 22, 0, 6.8, 18, palette.structure);
+  box("battleship-armored-citadel", 9.2, 4.8, 28, 0, 8.3, -2, palette.structure);
+  box("battleship-command-tower", 6.4, 8.5, 8.5, 0, 13.4, 11, palette.structure);
+  box("battleship-aft-castle", 8.2, 3.4, 22, 0, 7.4, -31, palette.structure);
+  funnel("battleship-funnel-forward", 0, 13.2, -6, 5.2, 12.5);
+  funnel("battleship-funnel-aft", 0, 12.4, -20, 4.8, 11);
+  box("battleship-port-bulge", 1.8, 2.1, 72, -5.9, 1.8, -3, palette.dark);
+  box("battleship-starboard-bulge", 1.8, 2.1, 72, 5.9, 1.8, -3, palette.dark);
 }
 
 /** Shared modular WWII destroyer fittings used by both battle and dock views. */

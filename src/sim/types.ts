@@ -1,4 +1,5 @@
 import type { MainGunId } from "../ships/components";
+import type { HullId } from "../ships/hulls";
 import type { TorpedoId } from "../ships/torpedoes";
 
 export interface Vec3 {
@@ -100,6 +101,7 @@ export interface ShipPerformanceModifiers {
 export interface ShipState {
   id: string;
   team: Team;
+  hullId: HullId;
   position: Vec3;
   previousPosition: Vec3;
   heading: number;

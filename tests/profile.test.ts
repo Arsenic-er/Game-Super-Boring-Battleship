@@ -10,6 +10,7 @@ import {
   researchComponent,
   salvageComponent,
   sellComponent,
+  selectHull,
   setCommanderName,
 } from "../src/profile/localProfile";
 import { EQUIPMENT_CATALOG } from "../src/profile/equipmentCatalog";
@@ -22,7 +23,7 @@ describe("local commander profile", () => {
     expect(profile.credits).toBe(0);
     expect(profile.inventory["mainGun-purple"]).toBeGreaterThanOrEqual(1);
     expect(profile.loadout.mainGun).toBe("mainGun-purple");
-    expect(profile.version).toBe(3);
+    expect(profile.version).toBe(4);
     expect(profile.unlockedEquipment["mainGun-purple"]).toBe(true);
   });
 
@@ -151,5 +152,23 @@ describe("local commander profile", () => {
       loadout: { ...base.loadout, mainGun: "engine-purple" },
     });
     expect(profile.loadout.mainGun).toBe("mainGun-common");
+  });
+
+  it("preserves an independent loadout while switching among all three hulls", () => {
+    const destroyer = createDefaultLocalProfile();
+    const cruiser = selectHull(destroyer, "lightCruiser");
+    expect(cruiser.hullId).toBe("lightCruiser");
+    expect(battleLoadout(cruiser).hullId).toBe("lightCruiser");
+    const battleship = selectHull(cruiser, "battleship");
+    expect(battleship.loadout.torpedo).toBeNull();
+    expect(battleship.loadout.sideGun).toBe("sideGun-common");
+    const restored = selectHull(battleship, "destroyer");
+    expect(restored.loadout).toEqual(destroyer.loadout);
+  });
+
+  it("rejects torpedoes on a battleship without a torpedo slot", () => {
+    const battleship = selectHull(createDefaultLocalProfile(), "battleship");
+    const attempted = equipComponent(battleship, "torpedo-common");
+    expect(attempted.loadout.torpedo).toBeNull();
   });
 });
