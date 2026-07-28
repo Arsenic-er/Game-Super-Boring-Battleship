@@ -225,6 +225,7 @@ export interface ProjectileState {
   kind: ProjectileKind;
   ammoType?: AmmoType;
   weaponSource?: "mainGun" | "secondary";
+  salvoId?: number;
   shellProfile?: ShellPenetrationProfile;
   position: Vec3;
   previousPosition: Vec3;
@@ -268,6 +269,7 @@ export interface ShotEvent {
   kind: ProjectileKind | "depthCharge";
   ammoType?: AmmoType;
   weaponSource?: "mainGun" | "secondary";
+  salvoId?: number;
   position: Vec3;
 }
 
@@ -275,6 +277,9 @@ export interface ImpactEvent {
   id: number;
   kind: "hit" | "splash" | "collision" | "underwater-explosion";
   position: Vec3;
+  sourceId?: string;
+  sourceTeam?: Team;
+  salvoId?: number;
   targetId?: string;
   damage?: number;
   compartment?: CompartmentId;

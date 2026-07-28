@@ -55,6 +55,52 @@ const penetrationLabels: Record<PenetrationResult, string> = {
   shatter: "未穿透",
 };
 
+export interface CombatSalvoSummary {
+  salvoId: number;
+  hits: number;
+  penetration: number;
+  overpenetration: number;
+  ricochet: number;
+  shatter: number;
+  fires: number;
+  floods: number;
+  modules: number;
+  damage: number;
+}
+
+const emptySalvoSummary = (salvoId: number): CombatSalvoSummary => ({
+  salvoId, hits: 0, penetration: 0, overpenetration: 0, ricochet: 0,
+  shatter: 0, fires: 0, floods: 0, modules: 0, damage: 0,
+});
+
+export function summarizePlayerSalvos(
+  impacts: readonly ImpactEvent[],
+  sourceId = "player",
+): CombatSalvoSummary[] {
+  const summaries = new Map<number, CombatSalvoSummary>();
+  for (const impact of impacts) {
+    if (
+      impact.kind !== "hit"
+      || impact.sourceId !== sourceId
+      || impact.targetId === sourceId
+      || impact.weaponSource !== "mainGun"
+    ) continue;
+    const salvoId = impact.salvoId ?? impact.id;
+    let summary = summaries.get(salvoId);
+    if (!summary) {
+      summary = emptySalvoSummary(salvoId);
+      summaries.set(salvoId, summary);
+    }
+    summary.hits += 1;
+    if (impact.penetrationResult) summary[impact.penetrationResult] += 1;
+    if (impact.startedFire) summary.fires += 1;
+    if (impact.startedFlooding) summary.floods += 1;
+    if (impact.module && (impact.moduleDamage ?? 0) > 0) summary.modules += 1;
+    summary.damage += Math.max(0, impact.damage ?? 0);
+  }
+  return [...summaries.values()];
+}
+
 const damageControlPriorityLabels: Record<DamageControlPriority, string> = {
   balanced: "均衡调度",
   fire: "灭火优先",
@@ -128,11 +174,19 @@ export class Hud {
   private readonly result: HTMLElement;
   private readonly resultDetail: HTMLElement;
   private readonly feedback: HTMLElement;
+  private readonly salvoRibbonList: HTMLElement;
+  private readonly damageCounter: HTMLElement;
   private readonly qualityButton: HTMLButtonElement;
   private readonly weaponBar: HTMLElement;
   private readonly weaponButtons: HTMLButtonElement[];
+  private readonly salvoRibbonVisuals = new Map<number, {
+    summary: CombatSalvoSummary;
+    element: HTMLElement;
+    timeout: number;
+  }>();
   private weaponSelectHandler?: (slot: WeaponSlot) => void;
   private maxObservedSpeed = 0;
+  private playerDamageDealt = 0;
 
   constructor(
     root: HTMLElement,
@@ -207,6 +261,10 @@ export class Hud {
           <div class="metric-row"><span>舵令 / 实际舵角</span><strong data-telemetry="rudder">0% / 0%</strong></div>
           <div class="metric-row"><span>水下训练靶</span><strong data-telemetry="asw-target">未探测</strong></div>
           <small>无攻击 AI · 静止碰撞靶船 · 水下训练靶 · 无时间限制</small>
+        </section>
+        <section id="salvo-ribbons" class="salvo-ribbons" aria-live="polite">
+          <strong id="damage-counter">累计伤害 0</strong>
+          <div id="salvo-ribbon-list" class="salvo-ribbon-list"></div>
         </section>
         <section id="feedback" class="feedback-stack" aria-live="polite"></section>
         <div class="reticle" aria-hidden="true">
@@ -320,6 +378,8 @@ export class Hud {
     this.result = find("#result");
     this.resultDetail = find("#result-detail");
     this.feedback = find("#feedback");
+    this.salvoRibbonList = find("#salvo-ribbon-list");
+    this.damageCounter = find("#damage-counter");
     this.qualityButton = find("#quality");
     this.weaponBar = find("#weapon-bar");
     this.weaponButtons = Array.from(this.weaponBar.querySelectorAll<HTMLButtonElement>("[data-weapon]"));
@@ -341,6 +401,13 @@ export class Hud {
 
   resetMetrics(): void {
     this.maxObservedSpeed = 0;
+    this.playerDamageDealt = 0;
+    this.damageCounter.textContent = "累计伤害 0";
+    for (const visual of this.salvoRibbonVisuals.values()) {
+      window.clearTimeout(visual.timeout);
+      visual.element.remove();
+    }
+    this.salvoRibbonVisuals.clear();
   }
 
   setWeaponSelectHandler(handler: (slot: WeaponSlot) => void): void {
@@ -383,10 +450,61 @@ export class Hud {
     }).join("");
   }
 
+  private consumeSalvoSummaries(impacts: readonly ImpactEvent[]): void {
+    for (const fragment of summarizePlayerSalvos(impacts)) {
+      let visual = this.salvoRibbonVisuals.get(fragment.salvoId);
+      if (!visual) {
+        const element = document.createElement("div");
+        element.className = "salvo-ribbon-group";
+        this.salvoRibbonList.prepend(element);
+        visual = {
+          summary: emptySalvoSummary(fragment.salvoId),
+          element,
+          timeout: 0,
+        };
+        this.salvoRibbonVisuals.set(fragment.salvoId, visual);
+      }
+      const summary = visual.summary;
+      summary.hits += fragment.hits;
+      summary.penetration += fragment.penetration;
+      summary.overpenetration += fragment.overpenetration;
+      summary.ricochet += fragment.ricochet;
+      summary.shatter += fragment.shatter;
+      summary.fires += fragment.fires;
+      summary.floods += fragment.floods;
+      summary.modules += fragment.modules;
+      summary.damage += fragment.damage;
+      this.playerDamageDealt += fragment.damage;
+      this.damageCounter.textContent = `累计伤害 ${Math.round(this.playerDamageDealt).toLocaleString("zh-CN")}`;
+
+      const ribbons: Array<readonly [string, number, string]> = [
+        ["命中", summary.hits, "hit"],
+        ["击穿", summary.penetration, "penetration"],
+        ["过穿", summary.overpenetration, "overpenetration"],
+        ["跳弹", summary.ricochet, "ricochet"],
+        ["未穿透", summary.shatter, "shatter"],
+        ["起火", summary.fires, "fire"],
+        ["进水", summary.floods, "flood"],
+        ["模块", summary.modules, "module"],
+      ];
+      visual.element.innerHTML = `${ribbons
+        .filter(([, count]) => count > 0)
+        .map(([label, count, className]) => `<span class="salvo-ribbon ${className}"><b>${label}</b><i>×${count}</i></span>`)
+        .join("")}<strong class="salvo-damage">+${Math.round(summary.damage)}</strong>`;
+      window.clearTimeout(visual.timeout);
+      visual.timeout = window.setTimeout(() => {
+        visual?.element.remove();
+        this.salvoRibbonVisuals.delete(fragment.salvoId);
+      }, 4_200);
+    }
+  }
+
   consumeImpacts(impacts: readonly ImpactEvent[]): void {
+    this.consumeSalvoSummaries(impacts);
     for (const impact of impacts) {
       if (impact.kind === "splash" || !impact.targetId || !impact.compartment) continue;
       const incoming = impact.targetId === "player";
+      if (!incoming && impact.sourceId === "player" && impact.weaponSource === "mainGun") continue;
       const moduleText = impact.module ? ` · ${moduleLabels[impact.module]}受损` : "";
       const hazard = `${impact.startedFire ? " · 起火" : ""}${impact.startedFlooding ? " · 进水" : ""}`;
       const armorResult = impact.penetrationResult

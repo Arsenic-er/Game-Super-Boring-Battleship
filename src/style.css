@@ -702,6 +702,82 @@ button { font: inherit; }
   border-radius: 50%;
 }
 
+.salvo-ribbons {
+  position: fixed;
+  left: 50%;
+  top: 132px;
+  z-index: 7;
+  width: min(760px, calc(100% - 36px));
+  transform: translateX(-50%);
+  display: grid;
+  justify-items: center;
+  gap: 6px;
+  pointer-events: none;
+}
+
+.salvo-ribbons > strong {
+  padding: 5px 12px;
+  color: #d9f6ec;
+  border: 1px solid rgba(110, 202, 163, .38);
+  background: rgba(3, 22, 27, .78);
+  box-shadow: 0 5px 0 rgba(0, 0, 0, .22);
+  font: 700 12px/1 "Fusion Bold Pixel", "Microsoft YaHei", sans-serif;
+  letter-spacing: .08em;
+}
+
+.salvo-ribbon-list {
+  display: grid;
+  justify-items: center;
+  gap: 5px;
+}
+
+.salvo-ribbon-group {
+  display: flex;
+  align-items: stretch;
+  justify-content: center;
+  gap: 5px;
+  max-width: 100%;
+  animation: salvo-ribbon-in .18s steps(3, end);
+}
+
+.salvo-ribbon {
+  display: grid;
+  min-width: 54px;
+  padding: 6px 7px 5px;
+  color: #dff5e8;
+  border: 1px solid rgba(176, 219, 201, .4);
+  border-top: 3px solid #75c49d;
+  background: rgba(5, 30, 34, .9);
+  text-align: center;
+  box-shadow: 0 5px 0 rgba(0, 0, 0, .24);
+}
+
+.salvo-ribbon b { font: 700 10px/1 "Fusion Bold Pixel", "Microsoft YaHei", sans-serif; }
+.salvo-ribbon i { margin-top: 4px; color: #fff4c9; font: 700 12px/1 monospace; font-style: normal; }
+.salvo-ribbon.penetration { border-top-color: #f0d778; }
+.salvo-ribbon.overpenetration { border-top-color: #9db7ce; }
+.salvo-ribbon.ricochet, .salvo-ribbon.shatter { border-top-color: #84979b; color: #b9c8ca; }
+.salvo-ribbon.fire { border-top-color: #ef704d; color: #ffd8c5; }
+.salvo-ribbon.flood { border-top-color: #4fb8dc; color: #c9efff; }
+.salvo-ribbon.module { border-top-color: #c989df; color: #f2d4fc; }
+
+.salvo-damage {
+  display: grid;
+  place-items: center;
+  min-width: 62px;
+  padding: 6px 10px;
+  color: #fff1b4;
+  border: 1px solid rgba(237, 207, 104, .5);
+  background: rgba(47, 37, 10, .9);
+  box-shadow: 0 5px 0 rgba(0, 0, 0, .24);
+  font: 700 13px/1 "Fusion Bold Pixel", "Microsoft YaHei", sans-serif;
+}
+
+@keyframes salvo-ribbon-in {
+  from { opacity: 0; transform: translateY(-7px) scale(.96); }
+  to { opacity: 1; transform: translateY(0) scale(1); }
+}
+
 .feedback-stack {
   position: fixed;
   left: 50%;

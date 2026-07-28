@@ -715,6 +715,7 @@ function fireGun(state: BattleState, ship: ShipState): void {
   const gunDefinition = getMainBattery(ship.shipClassId, ship.mainGunId, ship.mainGunMounts);
   const damagePerShell = gunDefinition.damagePerShell;
   let firedShells = 0;
+  let salvoId: number | undefined;
   const gunRatio = Math.max(0.25, moduleRatio(ship, "gun"));
   const reloadDuration = gunDefinition.reloadSeconds * ship.performance.reloadMultiplier / gunRatio;
   for (const mount of ship.mainBatteryMounts) {
@@ -732,6 +733,7 @@ function fireGun(state: BattleState, ship: ShipState): void {
       const actualAimPoint = dispersedAimPoint(state, ship, origin, barrelAimPoint);
       const velocity = ballisticVelocity(origin, actualAimPoint, gunDefinition.muzzleVelocity);
       if (!velocity) continue;
+      if (salvoId === undefined) salvoId = state.nextEntityId++;
       state.projectiles.push({
         id: state.nextEntityId++,
         ownerId: ship.id,
@@ -739,6 +741,7 @@ function fireGun(state: BattleState, ship: ShipState): void {
         kind: "shell",
         ammoType: ship.ammoType,
         weaponSource: "mainGun",
+        salvoId,
         shellProfile: gunDefinition.shellProfile,
         position: copyVec(origin),
         previousPosition: copyVec(origin),
@@ -753,6 +756,7 @@ function fireGun(state: BattleState, ship: ShipState): void {
         kind: "shell",
         ammoType: ship.ammoType,
         weaponSource: "mainGun",
+        salvoId,
         position: copyVec(origin),
       });
       mountFiredShells += 1;
@@ -1775,6 +1779,9 @@ function applyHit(
     id: state.nextEntityId++,
     kind: "hit",
     position: copyVec(contact.point),
+    sourceId: projectile.ownerId,
+    sourceTeam: projectile.team,
+    salvoId: projectile.salvoId,
     targetId: ship.id,
     damage,
     compartment,
@@ -1871,6 +1878,8 @@ function applyCollisionDamage(
     id: state.nextEntityId++,
     kind: "collision",
     position: copyVec(position),
+    sourceId: other.id,
+    sourceTeam: other.team,
     targetId: ship.id,
     otherShipId: other.id,
     damage,
@@ -1970,6 +1979,9 @@ function advanceProjectiles(state: BattleState, dt: number): void {
         id: state.nextEntityId++,
         kind: "splash",
         position: { x: projectile.position.x, y: 0, z: projectile.position.z },
+        sourceId: projectile.ownerId,
+        sourceTeam: projectile.team,
+        salvoId: projectile.salvoId,
       });
       consumed = true;
     }
@@ -2019,6 +2031,8 @@ function advanceDepthCharges(state: BattleState, dt: number): void {
         kind: "underwater-explosion",
         projectileKind: "depthCharge",
         position: copyVec(charge.position),
+        sourceId: charge.ownerId,
+        sourceTeam: charge.team,
         targetId: hitTargetId,
         damage: dealtDamage || undefined,
       });

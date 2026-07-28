@@ -44,6 +44,10 @@ describe("historical main batteries", () => {
       fire: true,
     };
     stepSimulation(state, new Map([[player.id, command]]), FIXED_STEP);
+    const salvoIds = new Set(state.projectiles.map((projectile) => projectile.salvoId));
+    expect(salvoIds.size).toBe(1);
+    expect([...salvoIds][0]).toBeDefined();
+    expect(state.shots.every((shot) => shot.salvoId === [...salvoIds][0])).toBe(true);
     expect(state.projectiles).toHaveLength(12);
     expect(state.projectiles.reduce((sum, shell) => sum + shell.damage, 0))
       .toBeCloseTo(battery.damagePerShell * 12, 5);
