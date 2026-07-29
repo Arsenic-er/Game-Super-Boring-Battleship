@@ -1,11 +1,17 @@
 import { describe, expect, it } from "vitest";
-import { FIXED_STEP } from "../src/sim/config";
+import { FIXED_STEP, GUN } from "../src/sim/config";
 import { createInitialState, gunMuzzleOrigins, stepSimulation } from "../src/sim/simulation";
 import type { ControlCommand, ShipPerformanceModifiers } from "../src/sim/types";
 import { MAIN_GUNS } from "../src/ships/components";
 import type { ShipClassId } from "../src/ships/classes";
 import { getShipClass } from "../src/ships/classes";
-import { getMainBattery, mainBatteryBarrelCount } from "../src/ships/mainBatteries";
+import {
+  getMainBattery,
+  mainBatteryBarrelCount,
+  mainBatteryMuzzleLocalHeight,
+  MAIN_BATTERY_DECK_HEIGHT,
+  MAIN_BATTERY_SUPERFIRING_HEIGHT,
+} from "../src/ships/mainBatteries";
 
 const layouts: Record<ShipClassId, readonly number[]> = {
   fletcher: [1], "j-class": [1], kagero: [1], "type-1936a": [1], tashkent: [1],
@@ -30,6 +36,8 @@ describe("historical main batteries", () => {
       expect(battery.mounts.map((mount) => mount.barrelCount)).toEqual(expected);
       expect(mainBatteryBarrelCount(battery)).toBe(expected.reduce((sum, count) => sum + count, 0));
       expect(battery.caliberMm).toBeGreaterThanOrEqual(133);
+      expect(battery.mounts.every((mount) => mount.localHeight >= MAIN_BATTERY_DECK_HEIGHT))
+        .toBe(true);
     });
   }
 
@@ -48,6 +56,7 @@ describe("historical main batteries", () => {
     expect(salvoIds.size).toBe(1);
     expect([...salvoIds][0]).toBeDefined();
     expect(state.shots.every((shot) => shot.salvoId === [...salvoIds][0])).toBe(true);
+    expect(state.shots.map((shot) => shot.position)).toEqual(gunMuzzleOrigins(player));
     expect(state.projectiles).toHaveLength(12);
     expect(state.projectiles.reduce((sum, shell) => sum + shell.damage, 0))
       .toBeCloseTo(battery.damagePerShell * 12, 5);
@@ -105,6 +114,45 @@ describe("historical main batteries", () => {
       groups.set(key, (groups.get(key) ?? 0) + 1);
     }
     expect([...groups.values()]).toEqual([4, 2, 4]);
+  });
+
+  it("defines raised superfiring hardpoints for historical capital-ship layouts", () => {
+    const patterns: Array<readonly [ShipClassId, readonly number[]]> = [
+      ["cleveland", [0, 1, 1, 0]],
+      ["north-carolina", [0, 1, 0]],
+      ["king-george-v", [0, 1, 0]],
+      ["bismarck", [0, 1, 1, 0]],
+      ["yamato", [0, 1, 0]],
+      ["richelieu", [0, 1]],
+    ];
+    for (const [shipClassId, pattern] of patterns) {
+      const battery = getMainBattery(shipClassId, "mk1-single", pattern.length);
+      expect(battery.mounts.map((mount) => mount.localHeight)).toEqual(
+        pattern.map((raised) => raised
+          ? MAIN_BATTERY_SUPERFIRING_HEIGHT
+          : MAIN_BATTERY_DECK_HEIGHT),
+      );
+    }
+  });
+
+  it("derives physical muzzle heights from the same per-turret hardpoints", () => {
+    const state = createInitialState(45, "sea-trials", "mk1-single", armament(3), undefined, "king-george-v");
+    const player = state.ships[0]!;
+    const battery = getMainBattery(player.shipClassId, player.mainGunId, player.mainGunMounts);
+    const origins = gunMuzzleOrigins(player);
+    let offset = 0;
+    for (const mount of battery.mounts) {
+      const expectedY = mainBatteryMuzzleLocalHeight(mount) * getShipClass(player.shipClassId).renderScale.y;
+      expect(origins.slice(offset, offset + mount.barrelCount).every((origin) => origin.y === expectedY)).toBe(true);
+      offset += mount.barrelCount;
+    }
+  });
+
+  it("preserves the established destroyer ballistic muzzle height", () => {
+    const state = createInitialState(46, "sea-trials", "mk1-single", armament(5), undefined, "fletcher");
+    const player = state.ships[0]!;
+    const expectedY = GUN.muzzleHeight * getShipClass(player.shipClassId).renderScale.y;
+    expect(gunMuzzleOrigins(player).every((origin) => origin.y === expectedY)).toBe(true);
   });
 
   it("keeps Richelieu's two quadruple turrets forward of amidships", () => {

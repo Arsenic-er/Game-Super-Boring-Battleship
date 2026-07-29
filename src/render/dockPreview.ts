@@ -6,7 +6,10 @@ import { Vector3 } from "@babylonjs/core/Maths/math.vector";
 import { TransformNode } from "@babylonjs/core/Meshes/transformNode";
 import { Scene } from "@babylonjs/core/scene";
 import type { MainGunId } from "../ships/components";
-import { getMainBattery } from "../ships/mainBatteries";
+import {
+  getMainBattery,
+  mainBatteryMountLocalPosition,
+} from "../ships/mainBatteries";
 import { DEFAULT_SHIP_CLASS_ID, getShipClass } from "../ships/classes";
 import type { ShipClassId } from "../ships/classes";
 import { DEFAULT_TORPEDO_ID, getTorpedo } from "../ships/torpedoes";
@@ -101,7 +104,8 @@ export class DockPreview {
       const visual = createMainGunVisual(this.scene, this.shipRoot, `dock-mount-${index}`, {
         visual: { ...definition.visual, barrelCount: mount.barrelCount },
       }, this.palette);
-      visual.root.position.z = mount.longitudinalFraction * 112;
+      const hardpoint = mainBatteryMountLocalPosition(mount);
+      visual.root.position.set(hardpoint.x, hardpoint.y, hardpoint.z);
       this.turrets.push(visual.root);
       this.gunCradles.push(visual.cradle);
     }

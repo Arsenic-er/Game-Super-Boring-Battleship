@@ -30,7 +30,10 @@ import {
   torpedoLaunchSolution,
   turretAimPoint,
 } from "../sim/simulation";
-import { getMainBattery } from "../ships/mainBatteries";
+import {
+  getMainBattery,
+  mainBatteryMountLocalPosition,
+} from "../ships/mainBatteries";
 import type { HullId } from "../ships/hulls";
 import { getShipClass } from "../ships/classes";
 import type { ShipClassId } from "../ships/classes";
@@ -501,7 +504,8 @@ export class GameView implements AimProvider {
         ...gunDefinition,
         visual: { ...gunDefinition.visual, barrelCount: mount.barrelCount },
       }, palette);
-      gun.root.position.z = mount.longitudinalFraction * 112;
+      const hardpoint = mainBatteryMountLocalPosition(mount);
+      gun.root.position.set(hardpoint.x, hardpoint.y, hardpoint.z);
       return gun;
     });
     const torpedoDefinition = getTorpedo(ship.torpedoId);

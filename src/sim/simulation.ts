@@ -35,6 +35,8 @@ import { getSecondaryGun } from "../ships/secondaryGuns";
 import type { SecondaryGunId } from "../ships/secondaryGuns";
 import {
   getMainBattery,
+  mainBatteryMountLocalPosition,
+  mainBatteryMuzzleLocalHeight,
   MAIN_BATTERY_TRAVERSE_LIMIT_RADIANS,
   mainBatteryMountRestHeading,
 } from "../ships/mainBatteries";
@@ -649,17 +651,27 @@ function gunMuzzleOriginsForMount(ship: ShipState, mountIndex: number): Vec3[] {
   const mount = gunDefinition.mounts[mountIndex];
   if (!mount) return [];
   const turretHeading = ship.mainBatteryMounts[mountIndex]?.heading ?? ship.turretHeading;
+  const hardpoint = mainBatteryMountLocalPosition(mount);
   const barrelScale = hull.renderScale.x;
   const barrelDistance = gunDefinition.visual.barrelLength * .88 * hull.renderScale.z;
-  const longitudinal = mount.longitudinalFraction * hull.length;
+  const longitudinal = hardpoint.z * hull.renderScale.z;
+  const lateral = hardpoint.x * hull.renderScale.x;
   const offsets = Array.from(
     { length: mount.barrelCount },
     (_, index) => (index - (mount.barrelCount - 1) / 2) * gunDefinition.visual.barrelSpacing,
   );
   const center = {
-    x: ship.position.x + Math.sin(ship.heading) * longitudinal + Math.sin(turretHeading) * barrelDistance,
-    y: GUN.muzzleHeight * hull.renderScale.y,
-    z: ship.position.z + Math.cos(ship.heading) * longitudinal + Math.cos(turretHeading) * barrelDistance,
+    x: ship.position.x
+      + Math.sin(ship.heading) * longitudinal
+      + Math.cos(ship.heading) * lateral
+      + Math.sin(turretHeading) * barrelDistance,
+    y: (hull.hullId === "destroyer"
+      ? GUN.muzzleHeight
+      : mainBatteryMuzzleLocalHeight(mount)) * hull.renderScale.y,
+    z: ship.position.z
+      + Math.cos(ship.heading) * longitudinal
+      - Math.sin(ship.heading) * lateral
+      + Math.cos(turretHeading) * barrelDistance,
   };
   return offsets.map((offset) => ({
     x: center.x + Math.cos(turretHeading) * offset * barrelScale,
