@@ -32,6 +32,82 @@ export type SecondaryBatteryStatus =
   | "unavailable" | "disabled" | "searching" | "acquiring"
   | "out-of-range" | "sector" | "traversing" | "reloading" | "firing";
 
+export type AircraftRole = "fighter" | "torpedoBomber" | "diveBomber";
+export type AirMissionKind = "strikeShip" | "interceptSquadron" | "defendShip" | "recall";
+export type AirSquadronPhase =
+  | "ready" | "launching" | "outbound" | "searching"
+  | "attackRun" | "intercepting" | "patrolling"
+  | "returning" | "landing" | "rearming" | "destroyed";
+export type AirMissionRejectReason =
+  | "unknown-squadron" | "unavailable" | "target-required"
+  | "wrong-role" | "grounded" | "committed" | "invalid-target";
+export type AirCombatEventKind =
+  | "orderAccepted" | "orderRejected" | "launched" | "attackStarted"
+  | "returning" | "landed" | "aircraftLost";
+
+/** High-level intent only: no aircraft heading, throttle or release controls. */
+export interface AirMissionCommand {
+  squadronId: string;
+  kind: AirMissionKind;
+  targetId?: string;
+}
+
+export interface AirMissionOrder extends AirMissionCommand {
+  issuedAt: number;
+  lastKnownPosition?: Vec3;
+}
+
+export type AirRecoverySource =
+  | { kind: "mapEdge"; position: Vec3 }
+  | { kind: "carrier"; shipId: string };
+
+export interface AirContactSnapshot {
+  observedAt: number;
+  lastKnownPosition: Vec3;
+  confidence: number;
+}
+
+export type AirDamageCause = "aaContinuous" | "flak" | "airCombat" | "fuel" | "debug";
+
+export interface AirSquadronState {
+  id: string;
+  controllerId: string;
+  team: Team;
+  role: AircraftRole;
+  recoverySource: AirRecoverySource;
+  contactsByTeam: Partial<Record<Team, AirContactSnapshot>>;
+  phase: AirSquadronPhase;
+  position: Vec3;
+  previousPosition: Vec3;
+  heading: number;
+  aircraftCapacity: number;
+  aircraftOperational: number;
+  airframeHealth: number;
+  maxAirframeHealth: number;
+  ammoRemaining: number;
+  ordnanceRemaining: number;
+  cohesion: number;
+  fuelRemainingSeconds: number;
+  phaseStartedAt: number;
+  lastUpdatedAt: number;
+  order?: AirMissionOrder;
+}
+
+export interface AirCombatEvent {
+  id: number;
+  time: number;
+  kind: AirCombatEventKind;
+  team: Team;
+  controllerId: string;
+  squadronId: string;
+  orderKind?: AirMissionKind;
+  targetId?: string;
+  rejectReason?: AirMissionRejectReason;
+  position?: Vec3;
+  aircraftLost?: number;
+  lossCause?: AirDamageCause;
+}
+
 export interface ShellPenetrationProfile {
   caliberMm: number;
   hePenetrationMm: number;
@@ -326,6 +402,8 @@ export interface BattleState {
   endReason?: BattleEndReason;
   objective: ObjectiveState;
   ships: ShipState[];
+  airSquadrons: AirSquadronState[];
+  airEvents: AirCombatEvent[];
   projectiles: ProjectileState[];
   depthCharges: DepthChargeState[];
   underwaterTargets: UnderwaterTargetState[];
@@ -351,6 +429,7 @@ export interface ControlCommand {
   activateSmoke?: boolean;
   activateHydro?: boolean;
   deployDepthCharge?: boolean;
+  airMission?: AirMissionCommand;
   perception?: PerceptionTelemetry;
 }
 

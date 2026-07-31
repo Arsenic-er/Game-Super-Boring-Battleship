@@ -45,6 +45,8 @@ import { effectiveTorpedoDetectionRange } from "./detection";
 import type {
   AmmoType,
   ArmorZoneId,
+  AirMissionCommand,
+  AirMissionRejectReason,
   BattleState,
   CompartmentId,
   ControlCommand,
@@ -64,6 +66,12 @@ import type {
   TorpedoSpreadMode,
   TorpedoThreat,
 } from "./types";
+import {
+  advanceAirSquadronPhase,
+  airTransitionEventKind,
+  issueAirMissionOrder,
+} from "./airOperations";
+import type { AirMissionIssueResult } from "./airOperations";
 
 const zeroCommand: ControlCommand = {
   throttle: 0,
@@ -350,6 +358,8 @@ export function createInitialState(
         enemySecondaryGunIds,
       )]
       : [player, testTarget],
+    airSquadrons: [],
+    airEvents: [],
     projectiles: [],
     depthCharges: [],
     underwaterTargets: mode === "sea-trials" ? [{
@@ -2574,6 +2584,47 @@ export function observe(state: BattleState, shipId: string) {
   };
 }
 
+export interface AirMissionTargetValidation {
+  rejectReason?: AirMissionRejectReason;
+  lastKnownPosition?: Vec3;
+}
+
+export const AIR_CONTACT_VALID_SECONDS = 5;
+
+/** Resolves targets against authoritative battle perception, never client coordinates. */
+export function validateAirMissionTarget(
+  state: BattleState,
+  issuer: Readonly<ShipState>,
+  mission: Readonly<AirMissionCommand>,
+): AirMissionTargetValidation {
+  if (mission.kind === "strikeShip") {
+    if (!mission.targetId) return {};
+    const target = state.ships.find((ship) => ship.id === mission.targetId);
+    if (!target || target.team === issuer.team || target.hull <= 0) {
+      return { rejectReason: "invalid-target" };
+    }
+    const contact = observe(state, issuer.id).contacts.find(({ id }) => id === target.id);
+    return contact
+      ? { lastKnownPosition: copyVec(contact.position) }
+      : { rejectReason: "invalid-target" };
+  }
+  if (mission.kind === "interceptSquadron") {
+    if (!mission.targetId) return {};
+    const target = state.airSquadrons.find((candidate) =>
+      candidate.id === mission.targetId
+      && candidate.team !== issuer.team
+      && candidate.phase !== "ready"
+      && candidate.phase !== "rearming"
+      && candidate.phase !== "destroyed"
+      && candidate.aircraftOperational > 0);
+    const contact = target?.contactsByTeam[issuer.team];
+    return contact && state.time - contact.observedAt <= AIR_CONTACT_VALID_SECONDS
+      ? { lastKnownPosition: copyVec(contact.lastKnownPosition) }
+      : { rejectReason: "invalid-target" };
+  }
+  return {};
+}
+
 export function stepSimulation(
   state: BattleState,
   commands: ReadonlyMap<string, ControlCommand>,
@@ -2582,11 +2633,86 @@ export function stepSimulation(
   if (state.status !== "running") return;
   state.shots = [];
   state.impacts = [];
+  state.airEvents = [];
   state.time += dt;
+  state.airSquadrons = state.airSquadrons.map((squadron) => {
+    const advanced = advanceAirSquadronPhase(squadron, state.time);
+    const eventKind = airTransitionEventKind(squadron.phase, advanced.phase);
+    if (eventKind) {
+      state.airEvents.push({
+        id: state.nextEntityId++,
+        time: state.time,
+        kind: eventKind,
+        team: advanced.team,
+        controllerId: advanced.controllerId,
+        squadronId: advanced.id,
+        orderKind: advanced.order?.kind,
+        targetId: advanced.order?.targetId,
+      });
+    }
+    return advanced;
+  });
   state.smokeClouds = state.smokeClouds.filter((cloud) => cloud.expiresAt > state.time);
   for (const ship of state.ships) {
     if (ship.hull <= 0) continue;
     const command = commands.get(ship.id) ?? { ...zeroCommand, aimPoint: ship.aimPoint };
+    if (command.airMission) {
+      const squadronIndex = state.airSquadrons.findIndex((squadron) =>
+        squadron.id === command.airMission?.squadronId
+        && squadron.controllerId === ship.id
+        && squadron.team === ship.team);
+      let result: AirMissionIssueResult;
+      const validation = squadronIndex >= 0
+        ? validateAirMissionTarget(state, ship, command.airMission)
+        : {};
+      if (squadronIndex < 0) {
+        result = issueAirMissionOrder(undefined, command.airMission, state.time);
+      } else if (validation.rejectReason) {
+        result = { accepted: false, reason: validation.rejectReason };
+      } else {
+        result = issueAirMissionOrder(
+          squadronIndex >= 0 ? state.airSquadrons[squadronIndex] : undefined,
+          command.airMission,
+          state.time,
+          validation.lastKnownPosition,
+        );
+      }
+      const previousSquadron = squadronIndex >= 0 ? state.airSquadrons[squadronIndex] : undefined;
+      if (result.accepted && result.squadron && squadronIndex >= 0) {
+        state.airSquadrons[squadronIndex] = result.squadron;
+      }
+      if (!result.accepted || result.changed !== false) {
+        state.airEvents.push({
+          id: state.nextEntityId++,
+          time: state.time,
+          kind: result.accepted ? "orderAccepted" : "orderRejected",
+          team: ship.team,
+          controllerId: ship.id,
+          squadronId: command.airMission.squadronId,
+          orderKind: command.airMission.kind,
+          targetId: command.airMission.targetId,
+          rejectReason: result.reason,
+        });
+      }
+      if (result.accepted && result.changed && previousSquadron && result.squadron) {
+        const eventKind = airTransitionEventKind(
+          previousSquadron.phase,
+          result.squadron.phase,
+        );
+        if (eventKind) {
+          state.airEvents.push({
+            id: state.nextEntityId++,
+            time: state.time,
+            kind: eventKind,
+            team: ship.team,
+            controllerId: ship.id,
+            squadronId: result.squadron.id,
+            orderKind: result.squadron.order?.kind,
+            targetId: result.squadron.order?.targetId,
+          });
+        }
+      }
+    }
     if (command.perception) {
       ship.perception = {
         ...command.perception,

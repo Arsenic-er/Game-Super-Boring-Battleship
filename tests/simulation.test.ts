@@ -379,7 +379,7 @@ describe("deterministic battle simulation", () => {
     expect(torpedoThreatsFor(state, player.id)).toHaveLength(0);
   });
 
-  it("keeps weapon slot 3 reserved without spawning a projectile", () => {
+  it("does not release aircraft ordnance without an aviation mission", () => {
     const state = createInitialState(97, "sea-trials");
     const player = state.ships[0]!;
     stepSimulation(state, new Map([["player", {

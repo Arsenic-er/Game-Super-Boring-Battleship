@@ -208,6 +208,66 @@ export function battleStateFingerprint(state: BattleState): string {
           reloadRemaining: round(mount.reloadRemaining),
         })),
       })),
+    airSquadrons: [...state.airSquadrons]
+      .sort((left, right) => left.id.localeCompare(right.id))
+      .map((squadron) => ({
+        id: squadron.id,
+        controllerId: squadron.controllerId,
+        role: squadron.role,
+        recoverySource: squadron.recoverySource.kind === "mapEdge"
+          ? {
+            kind: squadron.recoverySource.kind,
+            position: {
+              x: round(squadron.recoverySource.position.x),
+              y: round(squadron.recoverySource.position.y),
+              z: round(squadron.recoverySource.position.z),
+            },
+          } : { ...squadron.recoverySource },
+        contactsByTeam: Object.fromEntries(
+          Object.entries(squadron.contactsByTeam)
+            .sort(([left], [right]) => left.localeCompare(right))
+            .map(([team, contact]) => [team, {
+              observedAt: round(contact.observedAt),
+              lastKnownPosition: {
+                x: round(contact.lastKnownPosition.x),
+                y: round(contact.lastKnownPosition.y),
+                z: round(contact.lastKnownPosition.z),
+              },
+              confidence: round(contact.confidence),
+            }]),
+        ),
+        phase: squadron.phase,
+        position: {
+          x: round(squadron.position.x),
+          y: round(squadron.position.y),
+          z: round(squadron.position.z),
+        },
+        previousPosition: {
+          x: round(squadron.previousPosition.x),
+          y: round(squadron.previousPosition.y),
+          z: round(squadron.previousPosition.z),
+        },
+        heading: round(squadron.heading, 6),
+        aircraftOperational: squadron.aircraftOperational,
+        airframeHealth: round(squadron.airframeHealth),
+        maxAirframeHealth: round(squadron.maxAirframeHealth),
+        ammoRemaining: squadron.ammoRemaining,
+        ordnanceRemaining: squadron.ordnanceRemaining,
+        cohesion: round(squadron.cohesion),
+        fuelRemainingSeconds: round(squadron.fuelRemainingSeconds),
+        phaseStartedAt: round(squadron.phaseStartedAt),
+        lastUpdatedAt: round(squadron.lastUpdatedAt),
+        order: squadron.order ? {
+          kind: squadron.order.kind,
+          targetId: squadron.order.targetId ?? null,
+          lastKnownPosition: squadron.order.lastKnownPosition ? {
+            x: round(squadron.order.lastKnownPosition.x),
+            y: round(squadron.order.lastKnownPosition.y),
+            z: round(squadron.order.lastKnownPosition.z),
+          } : null,
+          issuedAt: round(squadron.order.issuedAt),
+        } : null,
+      })),
     smokeClouds: [...state.smokeClouds]
       .sort((left, right) => left.id - right.id)
       .map((cloud) => ({

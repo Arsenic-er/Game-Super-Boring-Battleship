@@ -22,7 +22,8 @@ This is an early prototype rather than a finished commercial game. Visuals, bala
 - Historically paced destroyer movement with gradual rudder shift, steering-damage response and speed loss during hard turns.
 - Main-gun ballistics with visible shell arcs, dispersion, reload progress and independent turret alignment.
 - Staged HE/AP loading with 21 mm HE penetration, probabilistic AP ricochet, fuse-based overpenetration and compartment saturation.
-- Weapon slots: `1` main guns, `2` twin torpedo launch, `3` reserved aircraft slot.
+- Weapon slots: `1` main guns, `2` twin torpedo launch, `3` command-only fleet aviation.
+- Aviation command foundation for AI-piloted fighter CAP/interception and bomber surface strikes; players issue missions but never fly or release weapons directly.
 - Torpedo side arcs, narrow/wide spread, arming distance, per-model maximum range, lead prediction and closest-approach warnings.
 - Four historical torpedo loadouts with distinct compressed gameplay trade-offs in speed, range, damage, reload, wake visibility and onboard risk.
 - A visible traversing twin-tube launcher with alignment-gated firing, one loaded salvo plus two reserve salvos, and dynamic reload progress.
@@ -50,7 +51,7 @@ This is an early prototype rather than a finished commercial game. Visuals, bala
 | Mouse movement | Look around |
 | Mouse wheel | Adjust aiming range |
 | `R` | Enter / leave aiming scope |
-| `1` / `2` / `3` | Main gun / torpedo / reserved aircraft slot |
+| `1` / `2` / `3` | Main gun / torpedo / fleet aviation command slot |
 | `Q` | Switch HE/AP for main guns; switch narrow/wide spread for torpedoes |
 | `Space` | Fire selected weapon |
 | `4` | Cycle balanced / firefighting / flooding / module repair priority |
