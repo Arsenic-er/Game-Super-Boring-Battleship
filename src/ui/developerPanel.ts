@@ -1,6 +1,6 @@
 import { COMPARTMENT_MAX_HEALTH, HYDRO, SMOKE } from "../sim/config";
 import { getShipClass } from "../ships/classes";
-import { torpedoLauncherAlignmentError } from "../sim/simulation";
+import { mainBatteryMountCanBear, torpedoLauncherAlignmentError } from "../sim/simulation";
 import type { BattleState, CompartmentId, ModuleId, ShipState } from "../sim/types";
 import { getTorpedo } from "../ships/torpedoes";
 import { getSecondaryGun } from "../ships/secondaryGuns";
@@ -441,9 +441,9 @@ export class DeveloperPanel {
     const armor = getShipArmorProfile(ship.shipClassId);
     const battery = getMainBattery(ship.shipClassId, ship.mainGunId, ship.mainGunMounts);
     const mainTurrets = ship.mainBatteryMounts.map((mount) =>
-      `#${mount.mountIndex + 1} ${Math.round(mount.health / mount.maxHealth * 100)}%/${mount.reloadRemaining.toFixed(1)}s`
+      `#${mount.mountIndex + 1} ${Math.round(mount.health / mount.maxHealth * 100)}%/${mount.reloadRemaining.toFixed(1)}s/${mainBatteryMountCanBear(ship, mount.mountIndex) ? "射界内" : "遮挡"}`
     ).join(" · ");
-    this.armorStatus.textContent = `装甲 · ${armor.scheme} · 侧舷 艏/机舱/弹药库 ${armor.zones.side.bow}/${armor.zones.side.engineRoom}/${armor.zones.side.magazine} mm · 甲板 ${armor.zones.deck.magazine} mm · ${battery.caliberMm} mm 主炮 HE穿深 ${battery.shellProfile.hePenetrationMm} mm / AP炮口 ${Math.round(battery.shellProfile.apMuzzlePenetrationMm)} mm · 炮塔 ${mainTurrets}`;
+    this.armorStatus.textContent = `装甲 · ${armor.scheme} · 侧舷 艏/机舱/弹药库 ${armor.zones.side.bow}/${armor.zones.side.engineRoom}/${armor.zones.side.magazine} mm · 甲板 ${armor.zones.deck.magazine} mm · ${battery.caliberMm} mm 主炮 射程 ${(battery.maximumRangeMeters / 1_000).toFixed(2)} km / HE穿深 ${battery.shellProfile.hePenetrationMm} mm / AP炮口 ${Math.round(battery.shellProfile.apMuzzlePenetrationMm)} mm · 炮塔 ${mainTurrets}`;
     const telemetry = ship.perception;
     if (!telemetry) {
       this.perception.textContent = "感知：玩家/无 AI 遥测";

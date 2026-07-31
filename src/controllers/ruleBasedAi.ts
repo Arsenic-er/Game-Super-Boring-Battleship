@@ -10,6 +10,7 @@ import {
 import { getTorpedo } from "../ships/torpedoes";
 import { getMainBattery } from "../ships/mainBatteries";
 import {
+  mainBatteryMountCanBear,
   torpedoInterceptPoint,
   torpedoLauncherAlignmentError,
   torpedoLaunchSolution,
@@ -323,7 +324,12 @@ export class RuleBasedAi implements Controller {
     bearing: number,
   ): Vec3 {
     const estimatedBearing = bearing + this.bearingError;
-    const flightTime = this.estimatedRange / GUN.muzzleVelocity;
+    const muzzleVelocity = getMainBattery(
+      observation.self.shipClassId,
+      observation.self.mainGunId,
+      observation.self.mainGunMounts,
+    ).muzzleVelocity;
+    const flightTime = this.estimatedRange / muzzleVelocity;
     const targetSpeed = target.speedKnots * KNOT_TO_MPS;
     return {
       x: observation.self.position.x
@@ -532,18 +538,19 @@ export class RuleBasedAi implements Controller {
     const suppressMainGun = activateSmoke
       || observation.self.smokeDeploymentRemaining > 0
       || concealmentRetreat;
-    const mainGunBearingAllowed = Math.abs(
-      wrapAngle(bearingToTarget - observation.self.heading),
-    ) <= 145 * Math.PI / 180;
+    const mainGunAim = target
+      ? this.estimatedAimPoint(observation, target, bearingToTarget)
+      : fallbackAim;
+    const mainGunBearingAllowed = observation.self.mainBatteryMounts.some((mount) =>
+      mainBatteryMountCanBear(observation.self, mount.mountIndex, mainGunAim)
+    );
 
     return {
       throttle: damaged ? Math.min(tacticalThrottle, 0.52) : tacticalThrottle,
       rudder: clamp(headingError * 1.25, -0.82, 0.82),
       aimPoint: torpedoReady && torpedoAim
         ? torpedoAim
-        : target
-          ? this.estimatedAimPoint(observation, target, bearingToTarget)
-        : fallbackAim,
+        : mainGunAim,
       weaponSlot: launchTorpedoes ? "torpedo" : "mainGun",
       torpedoSpread,
       ammoType: this.selectedAmmo,

@@ -27,6 +27,7 @@ import type {
 } from "../profile/equipmentCatalog";
 import { SHIP_CLASSES, SHIP_CLASS_IDS } from "../ships/classes";
 import type { ShipClassId } from "../ships/classes";
+import { getMainBattery } from "../ships/mainBatteries";
 import { getTorpedo } from "../ships/torpedoes";
 import type { GameSettings } from "../settings/gameSettings";
 import type { GameMode } from "../sim/types";
@@ -51,7 +52,8 @@ const hullOptionsMarkup = (): string => ([
   ["destroyer", "驱逐舰"], ["lightCruiser", "轻巡洋舰"], ["battleship", "战列舰"],
 ] as const).map(([hullId, label]) => `<div class="hull-family"><h4>${label}</h4>${SHIP_CLASS_IDS.filter((id) => SHIP_CLASSES[id].hullId === hullId).map((shipClassId) => {
   const shipClass = SHIP_CLASSES[shipClassId];
-  return `<button class="hull-option" data-ship-class-id="${shipClassId}" type="button"><b>${shipClass.name}</b><span>${shipClass.country} · ${shipClass.serviceYear}</span><small>${hullTotalSlots(shipClassId)} 槽 · ${shipClass.maxSpeedKnots} kn · ${shipClass.maxHull} HP</small></button>`;
+  const battery = getMainBattery(shipClassId, "mk1-single", shipClass.starterSlots.mainGun);
+  return `<button class="hull-option" data-ship-class-id="${shipClassId}" type="button"><b>${shipClass.name}</b><span>${shipClass.country} · ${shipClass.serviceYear}</span><small>${hullTotalSlots(shipClassId)} 槽 · ${shipClass.maxSpeedKnots} kn · ${(battery.maximumRangeMeters / 1_000).toFixed(2)} km 主炮 · ${shipClass.maxHull} HP</small></button>`;
 }).join("")}</div>`).join("");
 
 function equipmentSummary(item: EquipmentDefinition): string {

@@ -406,8 +406,9 @@ describe("deterministic battle simulation", () => {
       fire: true,
     };
     stepSimulation(state, new Map([["player", command]]), FIXED_STEP);
-    expect(state.projectiles).toHaveLength(1);
-    expect(state.projectiles[0]!.velocity.z).toBeGreaterThan(0);
+    expect(state.projectiles).toHaveLength(0);
+    expect(player.reloadRemaining).toBe(0);
+    expect(player.lastMainGunFiredAt).toBeUndefined();
     for (let tick = 1; tick < 1_000; tick += 1) {
       stepSimulation(state, new Map([["player", { ...command, fire: false }]]), FIXED_STEP);
     }

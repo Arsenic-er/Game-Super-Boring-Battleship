@@ -413,6 +413,21 @@ function desiredTurretHeading(
   return { heading: wrapAngle(ship.heading + safeRelative), blocked };
 }
 
+export function mainBatteryMountCanBear(
+  ship: Readonly<ShipState>,
+  mountIndex: number,
+  aimPoint: Readonly<Vec3> = ship.aimPoint,
+): boolean {
+  const mount = ship.mainBatteryMounts[mountIndex];
+  if (!mount || mount.health <= 0) return false;
+  const desiredHeading = Math.atan2(
+    aimPoint.x - ship.position.x,
+    aimPoint.z - ship.position.z,
+  );
+  return Math.abs(wrapAngle(desiredHeading - ship.heading - mount.restHeadingOffset))
+    <= MAIN_BATTERY_TRAVERSE_LIMIT_RADIANS;
+}
+
 export function turretAlignmentError(ship: ShipState, mountIndex = 0): number {
   const mount = ship.mainBatteryMounts[mountIndex];
   return wrapAngle(desiredTurretHeading(ship, mountIndex).heading - (mount?.heading ?? ship.turretHeading));
@@ -420,8 +435,7 @@ export function turretAlignmentError(ship: ShipState, mountIndex = 0): number {
 
 export function isGunBearingBlocked(ship: ShipState): boolean {
   return ship.mainBatteryMounts.every((mount) =>
-    mount.health <= 0 || desiredTurretHeading(ship, mount.mountIndex).blocked
-  );
+    !mainBatteryMountCanBear(ship, mount.mountIndex));
 }
 
 export function isGunFireBlocked(ship: ShipState): boolean {
@@ -725,13 +739,24 @@ function dispersedAimPoint(
 function fireGun(state: BattleState, ship: ShipState): void {
   if (ship.modules.gun.health <= 0) return;
   const gunDefinition = getMainBattery(ship.shipClassId, ship.mainGunId, ship.mainGunMounts);
+  const requestedRange = Math.hypot(
+    ship.aimPoint.x - ship.position.x,
+    ship.aimPoint.z - ship.position.z,
+  );
+  if (
+    requestedRange < GUN.minAimRange
+    || requestedRange > gunDefinition.maximumRangeMeters + 0.001
+  ) return;
   const damagePerShell = gunDefinition.damagePerShell;
   let firedShells = 0;
   let salvoId: number | undefined;
   const gunRatio = Math.max(0.25, moduleRatio(ship, "gun"));
   const reloadDuration = gunDefinition.reloadSeconds * ship.performance.reloadMultiplier / gunRatio;
   for (const mount of ship.mainBatteryMounts) {
-    if (mount.reloadRemaining > 0 || mount.health <= 0) continue;
+    if (
+      mount.reloadRemaining > 0
+      || !mainBatteryMountCanBear(ship, mount.mountIndex)
+    ) continue;
     const origins = gunMuzzleOriginsForMount(ship, mount.mountIndex);
     const turretHeading = mount.heading;
     let mountFiredShells = 0;
@@ -2452,11 +2477,16 @@ export function observe(state: BattleState, shipId: string) {
       + target.fireIntensity / 100 * SENSOR.burningDetectionBonusMeters
       + clamp(Math.abs(target.speedKnots) / targetHull.maxSpeedKnots, 0, 1)
         * SENSOR.highSpeedDetectionBonusMeters;
+    const targetMainBatteryRange = Math.min(
+      SENSOR.gunBloomDetectionMeters,
+      getMainBattery(target.shipClassId, target.mainGunId, target.mainGunMounts)
+        .maximumRangeMeters,
+    );
     const detectionRange = recentlyFiredMainGun
-      ? Math.max(passiveDetectionRange, SENSOR.gunBloomDetectionMeters)
+      ? Math.max(passiveDetectionRange, targetMainBatteryRange)
       : passiveDetectionRange;
     const gunBloomReveal = recentlyFiredMainGun
-      && actualRange <= SENSOR.gunBloomDetectionMeters;
+      && actualRange <= targetMainBatteryRange;
     const rangeFactor = hydroDetected ? 0 : clamp(
       (actualRange - SENSOR.guaranteedDetectionMeters)
         / Math.max(1, detectionRange - SENSOR.guaranteedDetectionMeters),

@@ -4,6 +4,7 @@ import {
   dispersionAtRange,
   isGunFireBlocked,
   isPointInSmoke,
+  mainBatteryMountCanBear,
   mainGunBloomRemaining,
   torpedoLauncherAlignmentError,
   torpedoLaunchSolution,
@@ -559,6 +560,7 @@ export class Hud {
       ? `${ammoLabels[player.ammoType]} → ${ammoLabels[player.pendingAmmoType]}`
       : ammoLabels[player.ammoType];
     const torpedoDefinition = getTorpedo(player.torpedoId);
+    const gunDefinition = getMainBattery(player.shipClassId, player.mainGunId, player.mainGunMounts);
     const torpedoThreats = torpedoThreatsFor(state, player.id);
     const nearestTorpedo = torpedoThreats[0];
     this.torpedoWarning.hidden = !nearestTorpedo;
@@ -606,7 +608,12 @@ export class Hud {
     const recoverableHull = percent(player.recoverableHull, player.maxHull);
     this.speed.textContent = `${player.speedKnots.toFixed(1)} kn`;
     this.throttle.textContent = this.throttleLabel(player.throttle);
-    this.range.textContent = `${Math.round(aimRange).toLocaleString("zh-CN")} m`;
+    const selectedMaximumRange = selectedWeapon === "torpedo"
+      ? torpedoDefinition.maximumRangeMeters
+      : selectedWeapon === "mainGun"
+        ? gunDefinition.maximumRangeMeters
+        : GUN.maxAimRange;
+    this.range.textContent = `${Math.round(aimRange).toLocaleString("zh-CN")} m · 上限 ${(selectedMaximumRange / 1_000).toFixed(2)} km`;
     this.hullText.textContent = `${hull}%`;
     this.hullFill.style.width = `${hull}%`;
     this.recoverableHullText.textContent = `${recoverableHull}%`;
@@ -760,8 +767,7 @@ export class Hud {
 
     const aimBearing = Math.atan2(player.aimPoint.x - player.position.x, player.aimPoint.z - player.position.z);
     const relativeBearing = wrapAngle(aimBearing - player.heading) * 180 / Math.PI;
-    this.aimReadout.textContent = `相对方位 ${relativeBearing >= 0 ? "+" : ""}${relativeBearing.toFixed(1)}° · ${Math.round(aimRange).toLocaleString("zh-CN")} m`;
-    const gunDefinition = getMainBattery(player.shipClassId, player.mainGunId, player.mainGunMounts);
+    this.aimReadout.textContent = `相对方位 ${relativeBearing >= 0 ? "+" : ""}${relativeBearing.toFixed(1)}° · ${Math.round(aimRange).toLocaleString("zh-CN")} / ${Math.round(selectedMaximumRange).toLocaleString("zh-CN")} m`;
     this.reloadLabel.textContent = player.pendingAmmoType
       ? `已装 ${ammoLabels[player.ammoType]} · 待装 ${ammoLabels[player.pendingAmmoType]}`
       : `${ammoLabels[player.ammoType]} 已装填 · ${gunDefinition.shortLabel} · ${mainBatteryBarrelCount(gunDefinition)} 管`;
@@ -776,12 +782,14 @@ export class Hud {
     this.flightTime.textContent = `${(aimRange / horizontalSpeed).toFixed(1)} s`;
     const gunRatio = player.modules.gun.health / player.modules.gun.maxHealth;
     const spread = dispersionAtRange(aimRange, gunRatio, gunDefinition.dispersionMultiplier);
-    this.dispersion.textContent = `纵 ±${Math.round(spread.longitudinal)} / 横 ±${Math.round(spread.lateral)} m`;
+    this.dispersion.textContent = `纵 ±${Math.round(spread.longitudinal)} / 横 ±${Math.round(spread.lateral)} m · 射程 ${(gunDefinition.maximumRangeMeters / 1_000).toFixed(2)} km`;
     const reloadDuration = gunDefinition.reloadSeconds
       * player.performance.reloadMultiplier
       / Math.max(0.25, gunRatio);
     const functionalMounts = player.mainBatteryMounts.filter((mount) => mount.health > 0);
-    const readyMounts = functionalMounts.filter((mount) => mount.reloadRemaining <= 0);
+    const bearingMounts = functionalMounts.filter((mount) =>
+      mainBatteryMountCanBear(player, mount.mountIndex));
+    const readyMounts = bearingMounts.filter((mount) => mount.reloadRemaining <= 0);
     const reloadPercent = Math.round(functionalMounts.length > 0
       ? functionalMounts.reduce(
         (sum, mount) => sum + clamp(1 - mount.reloadRemaining / reloadDuration, 0, 1),
@@ -802,17 +810,28 @@ export class Hud {
       Number.POSITIVE_INFINITY,
     );
     const fireBlocked = isGunFireBlocked(player);
+    const bearingBlocked = bearingMounts.length === 0;
     this.reload.textContent = fireBlocked
       ? "主炮塔全部损坏 · 0%"
+      : bearingBlocked
+        ? `目标位于全炮塔死角 · 装填保持 ${reloadPercent}%`
       : readyMounts.length > 0
-        ? `可开火 ${readyMounts.length}/${functionalMounts.length} 座 · 平均装填 ${reloadPercent}%${Number.isFinite(traverseError) && traverseError > 2.5 ? ` · 最近炮塔差 ${traverseError.toFixed(1)}°` : ""}`
-        : `装填 ${reloadPercent}% · ${Number.isFinite(nextReload) ? `${nextReload.toFixed(1)} s 后首座就绪` : "已停止"}${player.pendingAmmoType ? ` · 切换至 ${ammoLabels[player.pendingAmmoType]}` : ""}`;
-    const primaryHeading = player.mainBatteryMounts[0]?.heading ?? player.turretHeading;
+        ? `可开火 ${readyMounts.length}/${bearingMounts.length} 座 · 射界 ${bearingMounts.length}/${functionalMounts.length} · 平均装填 ${reloadPercent}%${Number.isFinite(traverseError) && traverseError > 2.5 ? ` · 最近炮塔差 ${traverseError.toFixed(1)}°` : ""}`
+        : `射界 ${bearingMounts.length}/${functionalMounts.length} · 装填 ${reloadPercent}% · ${Number.isFinite(nextReload) ? `${nextReload.toFixed(1)} s 后首座就绪` : "已停止"}${player.pendingAmmoType ? ` · 切换至 ${ammoLabels[player.pendingAmmoType]}` : ""}`;
+    const primaryMount = functionalMounts.reduce<typeof functionalMounts[number] | undefined>(
+      (closest, mount) => !closest
+        || Math.abs(turretAlignmentError(player, mount.mountIndex))
+          < Math.abs(turretAlignmentError(player, closest.mountIndex))
+        ? mount
+        : closest,
+      undefined,
+    );
+    const primaryHeading = primaryMount?.heading ?? player.turretHeading;
     const barrelOffset = wrapAngle(primaryHeading - aimBearing) * 180 / Math.PI;
     this.scopeBarrelMarker.style.left = `calc(50% + ${clamp(barrelOffset * 4.2, -230, 230).toFixed(1)}px)`;
-    this.scopeBarrelMarker.classList.toggle("blocked", fireBlocked);
+    this.scopeBarrelMarker.classList.toggle("blocked", fireBlocked || bearingBlocked);
     this.scopeBearing.textContent = `${relativeBearing >= 0 ? "+" : ""}${relativeBearing.toFixed(1)}°`;
-    this.scopeRange.textContent = `${Math.round(aimRange).toLocaleString("zh-CN")} m`;
+    this.scopeRange.textContent = `${Math.round(aimRange).toLocaleString("zh-CN")} / ${Math.round(selectedMaximumRange).toLocaleString("zh-CN")} m`;
     const perceivedRange = target
       ? target.live
         ? target.rangeMeters
@@ -830,7 +849,7 @@ export class Hud {
     this.scopeDispersion.textContent = `纵±${Math.round(spread.longitudinal)} 横±${Math.round(spread.lateral)} m`;
     this.scopeGun.textContent = `${shellSelection} · ${gunDefinition.name}`;
     this.scopeReload.textContent = this.reload.textContent ?? "--";
-    this.scopeReload.classList.toggle("blocked", fireBlocked);
+    this.scopeReload.classList.toggle("blocked", fireBlocked || bearingBlocked);
     const torpedoSolution = torpedoLaunchSolution(
       player,
       player.aimPoint,

@@ -84,26 +84,40 @@ export class PlayerInput {
     this.pressed.delete(event.code);
   };
 
-  private onWheel = (event: WheelEvent): void => {
-    event.preventDefault();
-    const maximumRange = this.weaponSlot === "torpedo" && this.activeShip
-      ? getTorpedo(this.activeShip.torpedoId).maximumRangeMeters
-      : this.weaponSlot === "torpedo" ? TORPEDO.maximumRangeMeters
-        : this.activeShip
-          ? getMainBattery(
-            this.activeShip.shipClassId,
-            this.activeShip.mainGunId,
-            this.activeShip.mainGunMounts,
-          ).maximumRangeMeters
-          : GUN.maxAimRange;
+  private maximumAimRange(ship = this.activeShip): number {
+    if (this.weaponSlot === "torpedo") {
+      return ship
+        ? getTorpedo(ship.torpedoId).maximumRangeMeters
+        : TORPEDO.maximumRangeMeters;
+    }
+    if (this.weaponSlot === "mainGun" && ship) {
+      return getMainBattery(
+        ship.shipClassId,
+        ship.mainGunId,
+        ship.mainGunMounts,
+      ).maximumRangeMeters;
+    }
+    return GUN.maxAimRange;
+  }
+
+  private clampAimRange(ship = this.activeShip): void {
     this.range = Math.max(
       GUN.minAimRange,
-      Math.min(maximumRange, this.range + Math.sign(event.deltaY) * 150),
+      Math.min(this.maximumAimRange(ship), this.range),
+    );
+  }
+
+  private onWheel = (event: WheelEvent): void => {
+    event.preventDefault();
+    this.range = Math.max(
+      GUN.minAimRange,
+      Math.min(this.maximumAimRange(), this.range + Math.sign(event.deltaY) * 150),
     );
   };
 
   command(ship: ShipState): ControlCommand {
     this.activeShip = ship;
+    this.clampAimRange(ship);
     const steeringInput = (this.pressed.has("KeyD") ? 1 : 0)
       - (this.pressed.has("KeyA") ? 1 : 0);
     const fire = this.firePressed;
@@ -152,12 +166,7 @@ export class PlayerInput {
 
   selectWeapon(slot: WeaponSlot): void {
     this.weaponSlot = slot;
-    if (slot === "torpedo" && this.activeShip) {
-      this.range = Math.min(
-        this.range,
-        getTorpedo(this.activeShip.torpedoId).maximumRangeMeters,
-      );
-    }
+    this.clampAimRange();
   }
 
   exitAiming(): boolean {

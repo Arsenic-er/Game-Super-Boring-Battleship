@@ -143,7 +143,7 @@ describe("player optical perception", () => {
     const player = state.ships.find((ship) => ship.id === "player")!;
     const enemy = state.ships.find((ship) => ship.id === "enemy")!;
     enemy.position = {
-      x: player.position.x + 4_500,
+      x: player.position.x + 3_700,
       y: player.position.y,
       z: player.position.z,
     };
@@ -158,12 +158,40 @@ describe("player optical perception", () => {
     expect(observe(state, "player").contacts).toHaveLength(0);
   });
 
+  it("uses the firing ship's fitted main-battery range for gun bloom", () => {
+    const shortRange = createInitialState(307, "battle", "mk1-single", undefined, undefined, "j-class");
+    const shortObserver = shortRange.ships.find((ship) => ship.id === "player")!;
+    const shortTarget = shortRange.ships.find((ship) => ship.id === "enemy")!;
+    shortTarget.position = {
+      x: shortObserver.position.x + 3_800,
+      y: shortObserver.position.y,
+      z: shortObserver.position.z,
+    };
+    shortRange.time = 1;
+    shortTarget.lastMainGunFiredAt = shortRange.time;
+    expect(observe(shortRange, "player").contacts).toHaveLength(0);
+
+    const longRange = createInitialState(308, "battle", "mk1-single", undefined, undefined, "richelieu");
+    const longObserver = longRange.ships.find((ship) => ship.id === "player")!;
+    const longTarget = longRange.ships.find((ship) => ship.id === "enemy")!;
+    longTarget.position = {
+      x: longObserver.position.x + 4_900,
+      y: longObserver.position.y,
+      z: longObserver.position.z,
+    };
+    longRange.time = 1;
+    expect(observe(longRange, "player").contacts).toHaveLength(0);
+    longTarget.lastMainGunFiredAt = longRange.time;
+    expect(observe(longRange, "player").contacts.map((contact) => contact.id))
+      .toContain(longTarget.id);
+  });
+
   it("applies gun bloom symmetrically without revealing through a separate smoke wall", () => {
     const state = createInitialState(306);
     const player = state.ships.find((ship) => ship.id === "player")!;
     const enemy = state.ships.find((ship) => ship.id === "enemy")!;
     enemy.position = {
-      x: player.position.x + 4_400,
+      x: player.position.x + 3_700,
       y: player.position.y,
       z: player.position.z,
     };

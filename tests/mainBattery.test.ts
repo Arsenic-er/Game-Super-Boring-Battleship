@@ -9,6 +9,7 @@ import {
   getMainBattery,
   mainBatteryBarrelCount,
   mainBatteryMuzzleLocalHeight,
+  MAIN_BATTERY_MAXIMUM_RANGE_METERS,
   MAIN_BATTERY_DECK_HEIGHT,
   MAIN_BATTERY_SUPERFIRING_HEIGHT,
 } from "../src/ships/mainBatteries";
@@ -41,6 +42,19 @@ describe("historical main batteries", () => {
     });
   }
 
+  it("defines distinct compressed fire-control ranges for all fifteen classes", () => {
+    const ranges = Object.entries(MAIN_BATTERY_MAXIMUM_RANGE_METERS);
+    expect(ranges).toHaveLength(15);
+    expect(new Set(ranges.map(([, range]) => range)).size).toBeGreaterThanOrEqual(10);
+    for (const [shipClassId, range] of ranges) {
+      const battery = getMainBattery(shipClassId as ShipClassId, "mk1-single", layouts[shipClassId as ShipClassId].length);
+      expect(battery.maximumRangeMeters).toBe(range);
+      expect(range).toBeGreaterThanOrEqual(GUN.minAimRange);
+      expect(range).toBeLessThanOrEqual(GUN.maxAimRange);
+    }
+    expect(MAIN_BATTERY_MAXIMUM_RANGE_METERS.yamato).toBeGreaterThan(MAIN_BATTERY_MAXIMUM_RANGE_METERS.agano);
+  });
+
   it("fires one shell per Cleveland barrel without multiplying per-shell damage by mounts", () => {
     const state = createInitialState(41, "sea-trials", "mk1-single", armament(4), undefined, "cleveland");
     const player = state.ships[0]!;
@@ -48,7 +62,7 @@ describe("historical main batteries", () => {
     const command: ControlCommand = {
       throttle: 0,
       rudder: 0,
-      aimPoint: { x: player.position.x, y: 0, z: player.position.z + 2_000 },
+      aimPoint: { x: player.position.x + 2_000, y: 0, z: player.position.z },
       fire: true,
     };
     stepSimulation(state, new Map([[player.id, command]]), FIXED_STEP);
@@ -61,6 +75,78 @@ describe("historical main batteries", () => {
     expect(state.projectiles.reduce((sum, shell) => sum + shell.damage, 0))
       .toBeCloseTo(battery.damagePerShell * 12, 5);
     expect(player.reloadRemaining).toBeCloseTo(battery.reloadSeconds, 1);
+  });
+
+  it("rejects main-gun commands outside the fitted battery envelope", () => {
+    const state = createInitialState(47, "sea-trials", "mk1-single", armament(4), undefined, "cleveland");
+    const player = state.ships[0]!;
+    const battery = getMainBattery(player.shipClassId, player.mainGunId, player.mainGunMounts);
+    const command: ControlCommand = {
+      throttle: 0,
+      rudder: 0,
+      aimPoint: {
+        x: player.position.x,
+        y: 0,
+        z: player.position.z + battery.maximumRangeMeters + 1,
+      },
+      fire: true,
+    };
+    stepSimulation(state, new Map([[player.id, command]]), FIXED_STEP);
+    expect(state.projectiles).toHaveLength(0);
+    expect(player.reloadRemaining).toBe(0);
+    command.aimPoint.x = player.position.x + battery.maximumRangeMeters;
+    command.aimPoint.z = player.position.z;
+    stepSimulation(state, new Map([[player.id, command]]), FIXED_STEP);
+    expect(state.projectiles).toHaveLength(12);
+    expect(player.reloadRemaining).toBeGreaterThan(0);
+  });
+
+  it("fires only turrets whose structural arcs can bear without wasting the others", () => {
+    const cleveland = createInitialState(48, "sea-trials", "mk1-single", armament(4), undefined, "cleveland");
+    const cruiser = cleveland.ships[0]!;
+    const ahead: ControlCommand = {
+      throttle: 0,
+      rudder: 0,
+      aimPoint: {
+        x: cruiser.position.x,
+        y: 0,
+        z: cruiser.position.z + 2_000,
+      },
+      fire: true,
+    };
+    stepSimulation(cleveland, new Map([[cruiser.id, ahead]]), FIXED_STEP);
+    expect(cleveland.projectiles).toHaveLength(6);
+    expect(cruiser.mainBatteryMounts.slice(0, 2).every((mount) => mount.reloadRemaining > 0)).toBe(true);
+    expect(cruiser.mainBatteryMounts.slice(2).every((mount) => mount.reloadRemaining === 0)).toBe(true);
+
+    const nurnberg = createInitialState(49, "sea-trials", "mk1-single", armament(3), undefined, "nurnberg");
+    const sternGunner = nurnberg.ships[0]!;
+    const astern: ControlCommand = {
+      throttle: 0,
+      rudder: 0,
+      aimPoint: {
+        x: sternGunner.position.x,
+        y: 0,
+        z: sternGunner.position.z - 2_000,
+      },
+      fire: true,
+    };
+    stepSimulation(nurnberg, new Map([[sternGunner.id, astern]]), FIXED_STEP);
+    expect(nurnberg.projectiles).toHaveLength(6);
+    expect(sternGunner.mainBatteryMounts[0]!.reloadRemaining).toBe(0);
+    expect(sternGunner.mainBatteryMounts.slice(1).every((mount) => mount.reloadRemaining > 0)).toBe(true);
+
+    const richelieu = createInitialState(50, "sea-trials", "mk1-single", armament(2), undefined, "richelieu");
+    const allForward = richelieu.ships[0]!;
+    astern.aimPoint = {
+      x: allForward.position.x,
+      y: 0,
+      z: allForward.position.z - 2_000,
+    };
+    stepSimulation(richelieu, new Map([[allForward.id, astern]]), FIXED_STEP);
+    expect(richelieu.projectiles).toHaveLength(0);
+    expect(allForward.mainBatteryMounts.every((mount) => mount.reloadRemaining === 0)).toBe(true);
+    expect(allForward.lastMainGunFiredAt).toBeUndefined();
   });
 
   it("tracks traverse and reload independently for every turret", () => {
