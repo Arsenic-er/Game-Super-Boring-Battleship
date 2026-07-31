@@ -16,6 +16,7 @@ import { loadGameSettings, saveGameSettings } from "./settings/gameSettings";
 import type { GameSettings } from "./settings/gameSettings";
 import { FIXED_STEP } from "./sim/config";
 import { createInitialState, observe, stepSimulation } from "./sim/simulation";
+import { deployFleetAirSupport } from "./sim/airOperations";
 import { PlayerPerceptionTracker } from "./sim/playerPerception";
 import type { BattleState, ControlCommand, GameMode } from "./sim/types";
 import { GameMenus } from "./ui/gameMenus";
@@ -62,9 +63,11 @@ function startMode(mode: GameMode): void {
     equipment.torpedoId,
     equipment.shipClassId,
   );
+  deployFleetAirSupport(state);
   input.reset();
   view.resetTransient();
   tacticalMap?.close();
+  tacticalMap?.resetForBattle();
   developerPanel?.close();
   menus?.closeAll();
   hud.resetMetrics();
@@ -133,7 +136,21 @@ function applyControlSettings(next: GameSettings): void {
 applyControlSettings(settings);
 const gameShell = root.querySelector<HTMLElement>(".game-shell");
 if (!gameShell) throw new Error("Missing game shell");
-tacticalMap = new TacticalMap(gameShell);
+tacticalMap = new TacticalMap(gameShell, {
+  onOpen: () => {
+    input.setSuppressed(true);
+    view.releasePointerLock();
+    gameShell.classList.add("map-active");
+  },
+  onClose: () => {
+    gameShell.classList.remove("map-active");
+    input.setSuppressed(false);
+    if (!started || paused || state.status !== "running"
+      || menus?.isOpen() || developerPanel?.isOpen()) return;
+    gameShell.classList.add("game-active");
+    view.requestPointerLock();
+  },
+});
 menus = new GameMenus(gameShell, settings, profile, view.getQuality(), {
   onStart: startMode,
   onPause: () => {
@@ -178,21 +195,29 @@ developerPanel = new DeveloperPanel(gameShell, () => state, {
 
 window.addEventListener("keydown", (event) => {
   if (!started || state.status !== "running") return;
+  if (event.code === "KeyM") {
+    if (menus.isOpen() || developerPanel?.isOpen()) return;
+    event.preventDefault();
+    tacticalMap.toggle();
+    return;
+  }
+  if (tacticalMap.isExpanded()) {
+    if (tacticalMap.handleKeyDown(event)) return;
+    if (event.code === "Escape") {
+      event.preventDefault();
+      tacticalMap.close();
+      return;
+    }
+    if (event.code === "F3") return;
+  }
   if (event.code === "F3") {
     event.preventDefault();
     developerPanel?.toggle();
     return;
   }
-  if (event.code === "KeyM") {
-    if (menus.isOpen()) return;
-    event.preventDefault();
-    tacticalMap.toggle();
-    return;
-  }
   if (event.code === "Escape") {
     event.preventDefault();
     if (developerPanel?.isOpen()) developerPanel.close();
-    else if (tacticalMap.isExpanded()) tacticalMap.close();
     else if (input.exitAiming()) return;
     else menus.handleEscape();
   }
@@ -209,11 +234,15 @@ view.engine.runRenderLoop(() => {
       const player = state.ships.find((ship) => ship.id === "player");
       if (!player) break;
       const commands = new Map<string, ControlCommand>();
-      commands.set("player", input.command(player));
+      const playerCommand = input.command(player);
+      const airMissions = tacticalMap.consumeAirMissions();
+      if (airMissions.length > 0) playerCommand.airMissions = airMissions;
+      commands.set("player", playerCommand);
       if (state.mode === "battle" && state.ships.some((ship) => ship.id === "enemy")) {
         commands.set("enemy", ai.command(observe(state, "enemy")));
       }
       stepSimulation(state, commands, FIXED_STEP);
+      tacticalMap.handleAirEvents(state.airEvents);
       perceivedTarget = state.mode === "battle"
         ? playerPerception.update(observe(state, "player"))
         : undefined;
@@ -244,6 +273,7 @@ view.engine.runRenderLoop(() => {
     input.selectedTorpedoSpread,
   );
   if (state.status !== "running") {
+    tacticalMap.close();
     if (currentMode === "battle" && !battleRewarded) {
       const economy = awardBattleResult(profile, state.status);
       profile = economy.profile;

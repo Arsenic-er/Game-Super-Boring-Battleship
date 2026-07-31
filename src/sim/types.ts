@@ -33,7 +33,10 @@ export type SecondaryBatteryStatus =
   | "out-of-range" | "sector" | "traversing" | "reloading" | "firing";
 
 export type AircraftRole = "fighter" | "torpedoBomber" | "diveBomber";
-export type AirMissionKind = "strikeShip" | "interceptSquadron" | "defendShip" | "recall";
+export type AirWeaponKind = "machineGun" | "heBomb" | "aerialTorpedo";
+export type AirMissionKind =
+  | "moveTo" | "defendShip" | "interceptSquadron"
+  | "patrolArea" | "strikeShip" | "recall";
 export type AirSquadronPhase =
   | "ready" | "launching" | "outbound" | "searching"
   | "attackRun" | "intercepting" | "patrolling"
@@ -46,15 +49,26 @@ export type AirCombatEventKind =
   | "returning" | "landed" | "aircraftLost";
 
 /** High-level intent only: no aircraft heading, throttle or release controls. */
+export interface AirMissionArea {
+  center: Vec3;
+  radius: number;
+}
+
 export interface AirMissionCommand {
   squadronId: string;
   kind: AirMissionKind;
   targetId?: string;
+  targetIds?: string[];
+  area?: AirMissionArea;
 }
 
 export interface AirMissionOrder extends AirMissionCommand {
   issuedAt: number;
+  candidateTargetIds?: string[];
+  activeTargetId?: string;
   lastKnownPosition?: Vec3;
+  lastKnownPositions?: Record<string, Vec3>;
+  selectedWeapon?: AirWeaponKind;
 }
 
 export type AirRecoverySource =
@@ -65,6 +79,9 @@ export interface AirContactSnapshot {
   observedAt: number;
   lastKnownPosition: Vec3;
   confidence: number;
+  observedRole?: AircraftRole;
+  observedHeading?: number;
+  estimatedAircraft?: number;
 }
 
 export type AirDamageCause = "aaContinuous" | "flak" | "airCombat" | "fuel" | "debug";
@@ -430,6 +447,7 @@ export interface ControlCommand {
   activateHydro?: boolean;
   deployDepthCharge?: boolean;
   airMission?: AirMissionCommand;
+  airMissions?: AirMissionCommand[];
   perception?: PerceptionTelemetry;
 }
 

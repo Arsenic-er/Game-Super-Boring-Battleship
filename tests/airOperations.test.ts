@@ -139,7 +139,10 @@ describe("command-only air operations", () => {
       squadronId: state.id,
       kind: "strikeShip",
       targetId: "enemy",
-    }, 2, { x: 900, y: 0, z: 600 });
+    }, 2, {
+      targetIds: ["enemy"],
+      lastKnownPositions: { enemy: { x: 900, y: 0, z: 600 } },
+    });
     expect(updated.changed).toBe(false);
     expect(updated.squadron?.order?.lastKnownPosition).toEqual({ x: 900, y: 0, z: 600 });
     expect(updated.squadron?.phaseStartedAt).toBe(0);

@@ -911,12 +911,102 @@ kbd { display: inline-block; margin-right: 3px; padding: 3px 5px; color: #e5eeee
 }
 
 .large-map-card {
-  width: min(760px, 92vw);
+  position: relative;
+  width: min(880px, 94vw);
   padding: 18px;
   border: 1px solid rgba(171, 211, 208, .4);
   background: #061923;
   box-shadow: 0 28px 90px rgba(0, 0, 0, .52);
 }
+
+.large-map-stage {
+  position: relative;
+  width: min(100%, 68vh);
+  margin: 0 auto;
+  aspect-ratio: 1;
+}
+.large-map-stage .large-map-canvas {
+  width: 100%;
+  height: 100%;
+  max-height: none;
+}
+.air-command-layer {
+  position: absolute;
+  inset: 0;
+  z-index: 3;
+  overflow: hidden;
+  pointer-events: none;
+}
+.air-command-status {
+  position: absolute;
+  left: 10px;
+  right: 10px;
+  bottom: 9px;
+  padding: 7px 10px;
+  color: #ccefed;
+  border: 1px solid rgba(78, 203, 198, .42);
+  background: rgba(2, 18, 27, .88);
+  font: 700 10px/1.5 "Fusion Bold Pixel", "Microsoft YaHei", sans-serif;
+  text-align: center;
+}
+.air-command-palette,
+.air-context-menu {
+  position: absolute;
+  z-index: 6;
+  display: grid;
+  min-width: 188px;
+  padding: 7px;
+  border: 1px solid rgba(127, 214, 207, .56);
+  background: rgba(3, 23, 32, .97);
+  box-shadow: 7px 7px 0 rgba(0, 0, 0, .34);
+  pointer-events: auto;
+}
+.air-command-palette { top: 12px; right: 12px; }
+.air-command-palette[hidden],
+.air-context-menu[hidden] { display: none; }
+.air-command-palette strong,
+.air-context-menu strong {
+  padding: 8px 9px;
+  color: #f0d38d;
+  font-size: 11px;
+  letter-spacing: .08em;
+}
+.air-command-palette button,
+.air-context-menu button {
+  min-height: 34px;
+  padding: 6px 9px;
+  color: #cce1df;
+  border: 0;
+  border-top: 1px solid rgba(133, 192, 190, .14);
+  background: rgba(20, 61, 70, .55);
+  font: 700 10px "Fusion Bold Pixel", "Microsoft YaHei", sans-serif;
+  text-align: left;
+  pointer-events: auto;
+  cursor: pointer !important;
+}
+.air-command-palette button:hover,
+.air-context-menu button:hover { color: #071d25; background: #8ed9d0; }
+.map-marquee,
+.map-patrol-preview {
+  position: absolute;
+  z-index: 5;
+  border: 1px solid #8ff4e8;
+  background: rgba(65, 209, 197, .12);
+  box-shadow: inset 0 0 0 1px rgba(5, 25, 31, .65);
+}
+.map-marquee.targeting { border-color: #ffb65c; background: rgba(239, 128, 78, .12); }
+.map-patrol-preview {
+  border-color: #f0ce79;
+  border-radius: 50%;
+  background: rgba(232, 190, 89, .08);
+}
+.game-shell.map-active,
+.game-shell.map-active * { cursor: default !important; }
+.game-shell.map-active .large-map-canvas {
+  cursor: crosshair !important;
+  touch-action: none;
+}
+.game-shell.map-active .game-cursor { display: none; }
 
 .large-map-heading { display: flex; align-items: center; justify-content: space-between; margin-bottom: 12px; }
 .large-map-heading .eyebrow { margin-bottom: 5px; }

@@ -38,6 +38,7 @@ export class PlayerInput {
   private ammoType: AmmoType = "he";
   private damageControlPriority: DamageControlPriority = "balanced";
   private activeShip?: ShipState;
+  private suppressed = false;
 
   constructor(canvas: HTMLCanvasElement, private readonly aimProvider: AimProvider) {
     window.addEventListener("keydown", this.onKeyDown);
@@ -46,6 +47,10 @@ export class PlayerInput {
   }
 
   private onKeyDown = (event: KeyboardEvent): void => {
+    if (this.suppressed) {
+      event.preventDefault();
+      return;
+    }
     this.pressed.add(event.code);
     if (event.repeat) return;
     if (event.code === "KeyW") this.throttle = Math.min(1, this.throttle + 0.25);
@@ -118,6 +123,22 @@ export class PlayerInput {
   command(ship: ShipState): ControlCommand {
     this.activeShip = ship;
     this.clampAimRange(ship);
+    if (this.suppressed) {
+      return {
+        throttle: this.throttle,
+        rudder: 0,
+        aimPoint: this.aimProvider.aimPoint(ship, this.range),
+        fire: false,
+        activateSmoke: false,
+        activateHydro: false,
+        deployDepthCharge: false,
+        weaponSlot: this.weaponSlot,
+        torpedoSpread: this.torpedoSpread,
+        repairHull: false,
+        damageControlPriority: this.damageControlPriority,
+        ammoType: this.ammoType,
+      };
+    }
     const steeringInput = (this.pressed.has("KeyD") ? 1 : 0)
       - (this.pressed.has("KeyA") ? 1 : 0);
     const fire = this.firePressed;
@@ -181,6 +202,16 @@ export class PlayerInput {
     this.steeringSensitivity = Math.min(1, Math.max(0.35, value));
   }
 
+  setSuppressed(suppressed: boolean): void {
+    this.suppressed = suppressed;
+    if (!suppressed) return;
+    this.pressed.clear();
+    this.firePressed = false;
+    this.smokePressed = false;
+    this.hydroPressed = false;
+    this.depthChargePressed = false;
+  }
+
   reset(): void {
     this.throttle = 0.55;
     this.range = 2_200;
@@ -195,6 +226,7 @@ export class PlayerInput {
     this.torpedoSpread = "narrow";
     this.damageControlPriority = "balanced";
     this.activeShip = undefined;
+    this.suppressed = false;
     this.aimProvider.setAiming(false);
   }
 }

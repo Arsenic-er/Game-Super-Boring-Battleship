@@ -1,16 +1,21 @@
 import type {
   AircraftRole,
+  AirMissionArea,
   AirCombatEventKind,
   AirContactSnapshot,
   AirDamageCause,
   AirMissionCommand,
+  AirMissionOrder,
   AirMissionRejectReason,
   AirRecoverySource,
   AirSquadronPhase,
   AirSquadronState,
   Team,
+  AirWeaponKind,
+  BattleState,
   Vec3,
 } from "./types";
+import type { HullId } from "../ships/hulls";
 
 export const AIR_OPERATION_TIMING = {
   launchSeconds: 8,
@@ -38,6 +43,15 @@ export const AIR_OPERATION_TIMING = {
   rearmSeconds: Record<AircraftRole, number>;
   enduranceSeconds: Record<AircraftRole, number>;
 };
+
+export const AIR_NAVIGATION = {
+  mapHalfExtentMeters: 6_000,
+  patrolRadiusMinMeters: 250,
+  patrolRadiusMaxMeters: 2_000,
+  arrivalRadiusMeters: 90,
+  detectionRangeMeters: 2_800,
+  speedMetersPerSecond: { fighter: 105, torpedoBomber: 82, diveBomber: 90 },
+} as const;
 
 export const AIR_SQUADRON_LOADOUT = {
   airframeHealthPerAircraft: 100,
@@ -69,6 +83,13 @@ export interface AirMissionIssueResult {
   reason?: AirMissionRejectReason;
 }
 
+export interface AirMissionTrustedData {
+  targetIds?: readonly string[];
+  lastKnownPositions?: Readonly<Record<string, Readonly<Vec3>>>;
+  area?: Readonly<AirMissionArea>;
+  selectedWeapon?: AirWeaponKind;
+}
+
 export interface AirPhaseSignals {
   reachedMissionArea?: boolean;
   contactValid?: boolean;
@@ -78,6 +99,18 @@ export interface AirPhaseSignals {
 }
 
 const copyPoint = (point: Readonly<Vec3>): Vec3 => ({ ...point });
+
+const copyArea = (area: Readonly<AirMissionArea>): AirMissionArea => ({
+  center: copyPoint(area.center),
+  radius: area.radius,
+});
+
+export function airMissionTargetIds(command: Readonly<AirMissionCommand>): string[] {
+  return [...new Set([
+    ...(command.targetIds ?? []),
+    ...(command.targetId ? [command.targetId] : []),
+  ])].slice(0, 16);
+}
 
 const copyContact = (
   contact: Readonly<AirContactSnapshot>,
@@ -110,6 +143,9 @@ export function createAirSquadronState(
         observedAt: now,
         lastKnownPosition: options.position,
         confidence: 1,
+        observedRole: options.role,
+        observedHeading: options.heading ?? 0,
+        estimatedAircraft: aircraftCapacity,
       }),
     },
     phase: "ready",
@@ -141,6 +177,43 @@ export function airMissionRequiresTarget(kind: AirMissionCommand["kind"]): boole
   return kind === "strikeShip" || kind === "interceptSquadron";
 }
 
+export function airMissionRequiresArea(kind: AirMissionCommand["kind"]): boolean {
+  return kind === "moveTo" || kind === "patrolArea";
+}
+
+export function chooseAirStrikeWeapon(
+  role: AircraftRole,
+  targetHull: HullId,
+): AirWeaponKind | undefined {
+  if (role === "fighter") {
+    return targetHull === "destroyer" ? "machineGun" : undefined;
+  }
+  if (role === "torpedoBomber") return "aerialTorpedo";
+  return "heBomb";
+}
+
+export function airStrikeTargetScore(role: AircraftRole, targetHull: HullId): number {
+  if (role === "fighter") return targetHull === "destroyer" ? 35 : -1;
+  if (role === "torpedoBomber") {
+    if (targetHull === "battleship") return 100;
+    if (targetHull === "lightCruiser") return 62;
+    return 24;
+  }
+  if (targetHull === "destroyer") return 100;
+  if (targetHull === "lightCruiser") return 82;
+  return 58;
+}
+
+function sameArea(
+  left: Readonly<AirMissionArea> | undefined,
+  right: Readonly<AirMissionArea> | undefined,
+): boolean {
+  if (!left || !right) return left === right;
+  return left.center.x === right.center.x
+    && left.center.z === right.center.z
+    && left.radius === right.radius;
+}
+
 const reject = (reason: AirMissionRejectReason): AirMissionIssueResult => ({
   accepted: false,
   reason,
@@ -154,7 +227,7 @@ export function issueAirMissionOrder(
   squadron: Readonly<AirSquadronState> | undefined,
   command: Readonly<AirMissionCommand>,
   now: number,
-  lastKnownPosition?: Readonly<Vec3>,
+  trusted: Readonly<AirMissionTrustedData> = {},
 ): AirMissionIssueResult {
   if (!squadron || squadron.id !== command.squadronId) {
     return reject("unknown-squadron");
@@ -165,16 +238,20 @@ export function issueAirMissionOrder(
   if (squadron.phase === "attackRun" || squadron.phase === "landing") {
     return reject("committed");
   }
-  if (airMissionRequiresTarget(command.kind) && !command.targetId) {
+  const targetIds = [...new Set(trusted.targetIds ?? airMissionTargetIds(command))];
+  const area = trusted.area ?? command.area;
+  if (airMissionRequiresTarget(command.kind) && targetIds.length === 0) {
     return reject("target-required");
   }
+  if (airMissionRequiresArea(command.kind) && !area) return reject("target-required");
   if (
-    (command.kind === "strikeShip" && squadron.role === "fighter")
-    || (
-      (command.kind === "interceptSquadron" || command.kind === "defendShip")
-      && squadron.role !== "fighter"
-    )
+    (command.kind === "interceptSquadron" || command.kind === "defendShip")
+    && squadron.role !== "fighter"
   ) {
+    return reject("wrong-role");
+  }
+  if (command.kind === "strikeShip" && trusted.selectedWeapon === undefined
+    && squadron.role === "fighter") {
     return reject("wrong-role");
   }
   if (command.kind === "recall" && !isAirSquadronAirborne(squadron.phase)) {
@@ -186,8 +263,19 @@ export function issueAirMissionOrder(
 
   if (
     squadron.order?.kind === command.kind
-    && squadron.order.targetId === command.targetId
+    && (squadron.order.candidateTargetIds ?? []).join("|") === targetIds.join("|")
+    && sameArea(squadron.order.area, area)
   ) {
+    const positions = trusted.lastKnownPositions
+      ? Object.fromEntries(
+        Object.entries(trusted.lastKnownPositions)
+          .map(([id, position]) => [id, copyPoint(position)]),
+      )
+      : Object.fromEntries(
+        Object.entries(squadron.order.lastKnownPositions ?? {})
+          .map(([id, position]) => [id, copyPoint(position)]),
+      );
+    const activeTargetId = targetIds[0] ?? squadron.order.activeTargetId;
     return {
       accepted: true,
       changed: false,
@@ -195,21 +283,38 @@ export function issueAirMissionOrder(
         ...squadron,
         order: {
           ...squadron.order,
-          lastKnownPosition: lastKnownPosition
-            ? copyPoint(lastKnownPosition)
+          activeTargetId,
+          lastKnownPosition: activeTargetId && positions[activeTargetId]
+            ? copyPoint(positions[activeTargetId])
             : squadron.order.lastKnownPosition
               ? copyPoint(squadron.order.lastKnownPosition)
               : undefined,
+          lastKnownPositions: positions,
         },
       },
     };
   }
 
-  const order = {
-    ...command,
-    lastKnownPosition: lastKnownPosition
-      ? copyPoint(lastKnownPosition)
+  const activeTargetId = targetIds[0];
+  const positions = trusted.lastKnownPositions ?? {};
+  const order: AirMissionOrder = {
+    squadronId: command.squadronId,
+    kind: command.kind,
+    targetId: activeTargetId,
+    targetIds: targetIds.length > 0 ? [...targetIds] : undefined,
+    candidateTargetIds: targetIds.length > 0 ? [...targetIds] : undefined,
+    activeTargetId,
+    area: area ? copyArea(area) : undefined,
+    lastKnownPosition: activeTargetId && positions[activeTargetId]
+      ? copyPoint(positions[activeTargetId])
       : undefined,
+    lastKnownPositions: Object.fromEntries(
+      Object.entries(positions).map(([id, position]) => [id, copyPoint(position)]),
+    ),
+    selectedWeapon: trusted.selectedWeapon
+      ?? (command.kind === "interceptSquadron" || command.kind === "defendShip"
+        ? "machineGun"
+        : undefined),
     issuedAt: now,
   };
   return {
@@ -236,6 +341,8 @@ const missionPhase = (squadron: Readonly<AirSquadronState>): AirSquadronPhase =>
     case "strikeShip": return "attackRun";
     case "interceptSquadron": return "intercepting";
     case "defendShip": return "patrolling";
+    case "moveTo":
+    case "patrolArea": return "patrolling";
     default: return "returning";
   }
 };
@@ -257,6 +364,17 @@ export function advanceAirSquadronPhase(
         ...squadron.order,
         lastKnownPosition: squadron.order.lastKnownPosition
           ? copyPoint(squadron.order.lastKnownPosition)
+          : undefined,
+        targetIds: squadron.order.targetIds ? [...squadron.order.targetIds] : undefined,
+        candidateTargetIds: squadron.order.candidateTargetIds
+          ? [...squadron.order.candidateTargetIds]
+          : undefined,
+        area: squadron.order.area ? copyArea(squadron.order.area) : undefined,
+        lastKnownPositions: squadron.order.lastKnownPositions
+          ? Object.fromEntries(
+            Object.entries(squadron.order.lastKnownPositions).map(([id, position]) =>
+              [id, copyPoint(position)]),
+          )
           : undefined,
       }
       : undefined,
@@ -377,6 +495,30 @@ export function applyAirDamage(
     aircraftLost,
     cause,
   };
+}
+
+export function deployFleetAirSupport(state: BattleState): void {
+  if (state.airSquadrons.length > 0) return;
+  const teams: Team[] = state.mode === "battle" ? ["player", "enemy"] : ["player"];
+  const roles: AircraftRole[] = ["fighter", "diveBomber", "torpedoBomber"];
+  for (const team of teams) {
+    const controllerId = team === "player" ? "player" : "enemy";
+    const side = team === "player" ? -1 : 1;
+    roles.forEach((role, index) => {
+      const position = { x: (index - 1) * 340, y: 180, z: side * 5_200 };
+      const squadron = createAirSquadronState({
+        id: `${team}-${role}-1`,
+        controllerId,
+        team,
+        role,
+        recoverySource: { kind: "mapEdge", position },
+        position,
+        aircraftCapacity: role === "fighter" ? 6 : 5,
+        now: state.time,
+      });
+      state.airSquadrons.push(squadron);
+    });
+  }
 }
 
 export function airTransitionEventKind(

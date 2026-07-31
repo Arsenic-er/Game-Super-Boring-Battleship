@@ -260,11 +260,29 @@ export function battleStateFingerprint(state: BattleState): string {
         order: squadron.order ? {
           kind: squadron.order.kind,
           targetId: squadron.order.targetId ?? null,
+          candidateTargetIds: squadron.order.candidateTargetIds ?? null,
+          activeTargetId: squadron.order.activeTargetId ?? null,
+          area: squadron.order.area ? {
+            center: {
+              x: round(squadron.order.area.center.x),
+              y: round(squadron.order.area.center.y),
+              z: round(squadron.order.area.center.z),
+            },
+            radius: round(squadron.order.area.radius),
+          } : null,
+          selectedWeapon: squadron.order.selectedWeapon ?? null,
           lastKnownPosition: squadron.order.lastKnownPosition ? {
             x: round(squadron.order.lastKnownPosition.x),
             y: round(squadron.order.lastKnownPosition.y),
             z: round(squadron.order.lastKnownPosition.z),
           } : null,
+          lastKnownPositions: Object.fromEntries(
+            Object.entries(squadron.order.lastKnownPositions ?? {})
+              .sort(([left], [right]) => left.localeCompare(right))
+              .map(([id, position]) => [id, {
+                x: round(position.x), y: round(position.y), z: round(position.z),
+              }]),
+          ),
           issuedAt: round(squadron.order.issuedAt),
         } : null,
       })),

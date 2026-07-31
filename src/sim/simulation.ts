@@ -47,6 +47,7 @@ import type {
   ArmorZoneId,
   AirMissionCommand,
   AirMissionRejectReason,
+  AirSquadronState,
   BattleState,
   CompartmentId,
   ControlCommand,
@@ -67,11 +68,16 @@ import type {
   TorpedoThreat,
 } from "./types";
 import {
+  AIR_NAVIGATION,
+  airMissionTargetIds,
+  airStrikeTargetScore,
   advanceAirSquadronPhase,
   airTransitionEventKind,
+  chooseAirStrikeWeapon,
+  isAirSquadronAirborne,
   issueAirMissionOrder,
 } from "./airOperations";
-import type { AirMissionIssueResult } from "./airOperations";
+import type { AirMissionIssueResult, AirMissionTrustedData } from "./airOperations";
 
 const zeroCommand: ControlCommand = {
   throttle: 0,
@@ -2587,6 +2593,7 @@ export function observe(state: BattleState, shipId: string) {
 export interface AirMissionTargetValidation {
   rejectReason?: AirMissionRejectReason;
   lastKnownPosition?: Vec3;
+  trusted?: AirMissionTrustedData;
 }
 
 export const AIR_CONTACT_VALID_SECONDS = 5;
@@ -2597,32 +2604,284 @@ export function validateAirMissionTarget(
   issuer: Readonly<ShipState>,
   mission: Readonly<AirMissionCommand>,
 ): AirMissionTargetValidation {
-  if (mission.kind === "strikeShip") {
-    if (!mission.targetId) return {};
-    const target = state.ships.find((ship) => ship.id === mission.targetId);
-    if (!target || target.team === issuer.team || target.hull <= 0) {
+  if (mission.kind === "moveTo" || mission.kind === "patrolArea") {
+    const center = mission.area?.center;
+    if (!center || !Number.isFinite(center.x) || !Number.isFinite(center.z)) {
       return { rejectReason: "invalid-target" };
     }
-    const contact = observe(state, issuer.id).contacts.find(({ id }) => id === target.id);
-    return contact
-      ? { lastKnownPosition: copyVec(contact.position) }
+    if (Math.abs(center.x) > AIR_NAVIGATION.mapHalfExtentMeters
+      || Math.abs(center.z) > AIR_NAVIGATION.mapHalfExtentMeters) {
+      return { rejectReason: "invalid-target" };
+    }
+    const radius = mission.kind === "moveTo"
+      ? AIR_NAVIGATION.arrivalRadiusMeters
+      : clamp(
+        Number.isFinite(mission.area?.radius) ? mission.area!.radius : 0,
+        AIR_NAVIGATION.patrolRadiusMinMeters,
+        AIR_NAVIGATION.patrolRadiusMaxMeters,
+      );
+    return { trusted: { area: { center: copyVec(center), radius } } };
+  }
+  const requestedIds = airMissionTargetIds(mission);
+  if (mission.kind === "defendShip") {
+    const candidates = requestedIds.length > 0 ? requestedIds : [issuer.id];
+    const positions: Record<string, Vec3> = {};
+    const targetIds = candidates.filter((id) => {
+      const ship = state.ships.find((candidate) => candidate.id === id);
+      if (ship && ship.team === issuer.team && ship.hull > 0) {
+        positions[id] = copyVec(ship.position);
+        return true;
+      }
+      const squadron = state.airSquadrons.find((candidate) => candidate.id === id);
+      if (squadron && squadron.team === issuer.team && squadron.phase !== "destroyed") {
+        positions[id] = copyVec(squadron.position);
+        return true;
+      }
+      return false;
+    });
+    return targetIds.length > 0
+      ? { trusted: { targetIds, lastKnownPositions: positions, selectedWeapon: "machineGun" } }
       : { rejectReason: "invalid-target" };
   }
+  if (mission.kind === "strikeShip") {
+    const contacts = new Map(
+      observe(state, issuer.id).contacts.map((contact) => [contact.id, contact]),
+    );
+    const role = state.airSquadrons.find((squadron) =>
+      squadron.id === mission.squadronId)?.role ?? "diveBomber";
+    const eligible = requestedIds
+      .map((id) => state.ships.find((ship) => ship.id === id))
+      .filter((target): target is ShipState => Boolean(
+        target && target.team !== issuer.team && target.hull > 0 && contacts.has(target.id),
+      ))
+      .map((target) => ({
+        target,
+        contact: contacts.get(target.id)!,
+        score: airStrikeTargetScore(role, getShipClass(target.shipClassId).hullId),
+      }))
+      .filter(({ score }) => score >= 0)
+      .sort((left, right) => right.score - left.score);
+    const primary = eligible[0];
+    if (!primary) return { rejectReason: "invalid-target" };
+    const targetIds = eligible.map(({ target }) => target.id);
+    const positions = Object.fromEntries(eligible.map(({ target, contact }) =>
+      [target.id, copyVec(contact.position)]));
+    return {
+      lastKnownPosition: copyVec(primary.contact.position),
+      trusted: {
+        targetIds,
+        lastKnownPositions: positions,
+        selectedWeapon: chooseAirStrikeWeapon(
+          role,
+          getShipClass(primary.target.shipClassId).hullId,
+        ),
+      },
+    };
+  }
   if (mission.kind === "interceptSquadron") {
-    if (!mission.targetId) return {};
-    const target = state.airSquadrons.find((candidate) =>
-      candidate.id === mission.targetId
-      && candidate.team !== issuer.team
-      && candidate.phase !== "ready"
-      && candidate.phase !== "rearming"
-      && candidate.phase !== "destroyed"
-      && candidate.aircraftOperational > 0);
-    const contact = target?.contactsByTeam[issuer.team];
-    return contact && state.time - contact.observedAt <= AIR_CONTACT_VALID_SECONDS
-      ? { lastKnownPosition: copyVec(contact.lastKnownPosition) }
+    const positions: Record<string, Vec3> = {};
+    const targetIds = requestedIds.filter((id) => {
+      const target = state.airSquadrons.find((candidate) =>
+        candidate.id === id
+        && candidate.team !== issuer.team
+        && isAirSquadronAirborne(candidate.phase)
+        && candidate.aircraftOperational > 0);
+      const contact = target?.contactsByTeam[issuer.team];
+      if (!contact || state.time - contact.observedAt > AIR_CONTACT_VALID_SECONDS) return false;
+      positions[id] = copyVec(contact.lastKnownPosition);
+      return true;
+    });
+    return targetIds.length > 0
+      ? {
+        lastKnownPosition: copyVec(positions[targetIds[0]!]!),
+        trusted: { targetIds, lastKnownPositions: positions, selectedWeapon: "machineGun" },
+      }
       : { rejectReason: "invalid-target" };
   }
   return {};
+}
+
+function airDestination(state: BattleState, squadron: Readonly<AirSquadronState>): Vec3 {
+  if (squadron.phase === "returning") {
+    const recoverySource = squadron.recoverySource;
+    if (recoverySource.kind === "mapEdge") return recoverySource.position;
+    return state.ships.find((ship) => ship.id === recoverySource.shipId)?.position
+      ?? squadron.position;
+  }
+  const order = squadron.order;
+  if (!order) return squadron.position;
+  if (order.kind === "moveTo" || order.kind === "patrolArea") {
+    return order.area?.center ?? squadron.position;
+  }
+  const targetId = order.activeTargetId ?? order.candidateTargetIds?.[0];
+  if (order.kind === "defendShip" && targetId) {
+    return state.ships.find((ship) => ship.id === targetId)?.position
+      ?? state.airSquadrons.find((candidate) => candidate.id === targetId)?.position
+      ?? order.lastKnownPositions?.[targetId]
+      ?? squadron.position;
+  }
+  return targetId
+    ? order.lastKnownPositions?.[targetId] ?? order.lastKnownPosition ?? squadron.position
+    : squadron.position;
+}
+
+interface AirMissionTracking {
+  squadron: AirSquadronState;
+  contactValid?: boolean;
+}
+
+/** Refreshes mission navigation only from contacts authorized to the squadron team. */
+function refreshAirMissionTracking(
+  state: BattleState,
+  squadron: Readonly<AirSquadronState>,
+): AirMissionTracking {
+  const order = squadron.order;
+  if (!order || (order.kind !== "strikeShip" && order.kind !== "interceptSquadron")) {
+    return { squadron: { ...squadron } };
+  }
+  const candidateIds = order.candidateTargetIds ?? order.targetIds ?? [];
+  const positions: Record<string, Vec3> = Object.fromEntries(
+    Object.entries(order.lastKnownPositions ?? {}).map(([id, position]) =>
+      [id, copyVec(position)]),
+  );
+  let activeTargetId: string | undefined;
+  if (order.kind === "strikeShip") {
+    const contacts = new Map(
+      observe(state, squadron.controllerId).contacts.map((contact) => [contact.id, contact]),
+    );
+    activeTargetId = candidateIds.find((id) => contacts.has(id));
+    if (activeTargetId) positions[activeTargetId] = copyVec(contacts.get(activeTargetId)!.position);
+  } else {
+    activeTargetId = candidateIds.find((id) => {
+      const contact = state.airSquadrons.find((candidate) => candidate.id === id)
+        ?.contactsByTeam[squadron.team];
+      if (!contact || state.time - contact.observedAt > AIR_CONTACT_VALID_SECONDS) return false;
+      positions[id] = copyVec(contact.lastKnownPosition);
+      return true;
+    });
+  }
+  const retainedTargetId = activeTargetId ?? order.activeTargetId ?? candidateIds[0];
+  const lastKnownPosition = retainedTargetId
+    ? positions[retainedTargetId] ?? order.lastKnownPosition
+    : order.lastKnownPosition;
+  return {
+    contactValid: Boolean(activeTargetId),
+    squadron: {
+      ...squadron,
+      order: {
+        ...order,
+        targetId: retainedTargetId,
+        activeTargetId: retainedTargetId,
+        lastKnownPosition: lastKnownPosition ? copyVec(lastKnownPosition) : undefined,
+        lastKnownPositions: positions,
+      },
+    },
+  };
+}
+
+function moveAirSquadron(
+  state: BattleState,
+  squadron: Readonly<AirSquadronState>,
+  dt: number,
+  contactValid?: boolean,
+): AirSquadronState {
+  let destination = airDestination(state, squadron);
+  if (squadron.phase === "patrolling") {
+    const radius = squadron.order?.area?.radius ?? 340;
+    const direction = squadron.team === "player" ? 1 : -1;
+    const angle = state.time * 0.23 * direction + squadron.id.length;
+    destination = {
+      x: destination.x + Math.sin(angle) * radius,
+      y: squadron.position.y,
+      z: destination.z + Math.cos(angle) * radius,
+    };
+  }
+  const dx = destination.x - squadron.position.x;
+  const dz = destination.z - squadron.position.z;
+  const distance = Math.hypot(dx, dz);
+  const canMove = isAirSquadronAirborne(squadron.phase)
+    && !["launching", "landing", "rearming", "destroyed"].includes(squadron.phase);
+  const step = canMove
+    ? Math.min(distance, AIR_NAVIGATION.speedMetersPerSecond[squadron.role] * dt)
+    : 0;
+  const position = distance <= 0.001 ? copyVec(squadron.position) : {
+    x: squadron.position.x + dx / distance * step,
+    y: squadron.position.y,
+    z: squadron.position.z + dz / distance * step,
+  };
+  const moved: AirSquadronState = {
+    ...squadron,
+    previousPosition: copyVec(squadron.position),
+    position,
+    heading: distance <= 0.001 ? squadron.heading : Math.atan2(dx, dz),
+  };
+  const remaining = Math.hypot(destination.x - position.x, destination.z - position.z);
+  const advanced = advanceAirSquadronPhase(moved, state.time, {
+    contactValid,
+    reachedMissionArea: squadron.phase === "outbound"
+      && remaining <= AIR_NAVIGATION.arrivalRadiusMeters,
+    reachedRecoveryPoint: squadron.phase === "returning"
+      && remaining <= AIR_NAVIGATION.arrivalRadiusMeters,
+    attackCompleted: squadron.phase === "attackRun"
+      && state.time - squadron.phaseStartedAt >= 6,
+    engagementComplete: squadron.phase === "intercepting"
+      && state.time - squadron.phaseStartedAt >= 10,
+  });
+  advanced.contactsByTeam[advanced.team] = {
+    observedAt: state.time,
+    lastKnownPosition: copyVec(advanced.position),
+    confidence: 1,
+    observedRole: advanced.role,
+    observedHeading: advanced.heading,
+    estimatedAircraft: advanced.aircraftOperational,
+  };
+  return advanced;
+}
+
+function refreshAirContacts(state: BattleState): void {
+  for (const squadron of state.airSquadrons) {
+    if (!isAirSquadronAirborne(squadron.phase)) continue;
+    for (const team of ["player", "enemy"] as const) {
+      if (team === squadron.team) continue;
+      const detected = state.ships.some((ship) => ship.team === team && ship.hull > 0
+        && Math.hypot(
+          ship.position.x - squadron.position.x,
+          ship.position.z - squadron.position.z,
+        ) <= AIR_NAVIGATION.detectionRangeMeters);
+      if (detected) {
+        squadron.contactsByTeam[team] = {
+          observedAt: state.time,
+          lastKnownPosition: copyVec(squadron.position),
+          confidence: 0.88,
+          observedRole: squadron.role,
+          observedHeading: squadron.heading,
+          estimatedAircraft: squadron.aircraftOperational,
+        };
+      }
+    }
+  }
+}
+
+function automatedAirMissionsFor(
+  state: BattleState,
+  ship: Readonly<ShipState>,
+): AirMissionCommand[] {
+  if (ship.team !== "enemy") return [];
+  const surfaceTargetIds = observe(state, ship.id).contacts.map(({ id }) => id);
+  return state.airSquadrons
+    .filter((squadron) =>
+      squadron.controllerId === ship.id
+      && squadron.team === ship.team
+      && squadron.phase === "ready"
+      && !squadron.order)
+    .flatMap((squadron): AirMissionCommand[] => {
+      if (squadron.role === "fighter") {
+        return [{ squadronId: squadron.id, kind: "defendShip", targetIds: [ship.id] }];
+      }
+      return surfaceTargetIds.length > 0
+        ? [{ squadronId: squadron.id, kind: "strikeShip", targetIds: surfaceTargetIds }]
+        : [];
+    });
 }
 
 export function stepSimulation(
@@ -2635,8 +2894,11 @@ export function stepSimulation(
   state.impacts = [];
   state.airEvents = [];
   state.time += dt;
+  refreshAirContacts(state);
   state.airSquadrons = state.airSquadrons.map((squadron) => {
-    const advanced = advanceAirSquadronPhase(squadron, state.time);
+    const tracking = refreshAirMissionTracking(state, squadron);
+    const advanced = moveAirSquadron(
+      state, tracking.squadron, dt, tracking.contactValid);
     const eventKind = airTransitionEventKind(squadron.phase, advanced.phase);
     if (eventKind) {
       state.airEvents.push({
@@ -2652,29 +2914,33 @@ export function stepSimulation(
     }
     return advanced;
   });
+  refreshAirContacts(state);
   state.smokeClouds = state.smokeClouds.filter((cloud) => cloud.expiresAt > state.time);
   for (const ship of state.ships) {
     if (ship.hull <= 0) continue;
     const command = commands.get(ship.id) ?? { ...zeroCommand, aimPoint: ship.aimPoint };
-    if (command.airMission) {
+    const explicitAirMissions = command.airMissions
+      ?? (command.airMission ? [command.airMission] : []);
+    const airMissions = [...explicitAirMissions, ...automatedAirMissionsFor(state, ship)];
+    for (const airMission of airMissions) {
       const squadronIndex = state.airSquadrons.findIndex((squadron) =>
-        squadron.id === command.airMission?.squadronId
+        squadron.id === airMission.squadronId
         && squadron.controllerId === ship.id
         && squadron.team === ship.team);
       let result: AirMissionIssueResult;
       const validation = squadronIndex >= 0
-        ? validateAirMissionTarget(state, ship, command.airMission)
+        ? validateAirMissionTarget(state, ship, airMission)
         : {};
       if (squadronIndex < 0) {
-        result = issueAirMissionOrder(undefined, command.airMission, state.time);
+        result = issueAirMissionOrder(undefined, airMission, state.time);
       } else if (validation.rejectReason) {
         result = { accepted: false, reason: validation.rejectReason };
       } else {
         result = issueAirMissionOrder(
           squadronIndex >= 0 ? state.airSquadrons[squadronIndex] : undefined,
-          command.airMission,
+          airMission,
           state.time,
-          validation.lastKnownPosition,
+          validation.trusted ?? {},
         );
       }
       const previousSquadron = squadronIndex >= 0 ? state.airSquadrons[squadronIndex] : undefined;
@@ -2688,9 +2954,9 @@ export function stepSimulation(
           kind: result.accepted ? "orderAccepted" : "orderRejected",
           team: ship.team,
           controllerId: ship.id,
-          squadronId: command.airMission.squadronId,
-          orderKind: command.airMission.kind,
-          targetId: command.airMission.targetId,
+          squadronId: airMission.squadronId,
+          orderKind: airMission.kind,
+          targetId: result.squadron?.order?.activeTargetId ?? airMission.targetId,
           rejectReason: result.reason,
         });
       }
