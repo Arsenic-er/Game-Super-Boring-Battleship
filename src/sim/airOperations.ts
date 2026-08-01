@@ -18,6 +18,7 @@ import type {
 import type { HullId } from "../ships/hulls";
 import { getShipClass } from "../ships/classes";
 import type { ShipClassId } from "../ships/classes";
+import { GUN, KNOT_TO_MPS } from "./config";
 
 export const AIR_OPERATION_TIMING = {
   launchSeconds: 8,
@@ -52,6 +53,12 @@ export const AIR_NAVIGATION = {
   patrolRadiusMaxMeters: 2_000,
   arrivalRadiusMeters: 90,
   detectionRangeMeters: 2_800,
+  surfaceDetectionRangeMeters: {
+    fighter: 1_600,
+    torpedoBomber: 2_400,
+    diveBomber: 2_500,
+  },
+  surfaceObservationIntervalSeconds: 0.5,
   speedMetersPerSecond: { fighter: 105, torpedoBomber: 82, diveBomber: 90 },
 } as const;
 
@@ -131,6 +138,8 @@ export interface AirMissionIssueResult {
 export interface AirMissionTrustedData {
   targetIds?: readonly string[];
   lastKnownPositions?: Readonly<Record<string, Readonly<Vec3>>>;
+  lastKnownHeadings?: Readonly<Record<string, number>>;
+  lastKnownSpeedsKnots?: Readonly<Record<string, number>>;
   area?: Readonly<AirMissionArea>;
   selectedWeapon?: AirWeaponKind;
 }
@@ -235,19 +244,71 @@ export function airWeaponReleaseDelay(weapon: AirWeaponKind | undefined): number
   return weapon ? AIR_COMBAT.releaseSeconds[weapon] : 0;
 }
 
-export function shipAntiAirProfile(shipClassId: ShipClassId): ShipAntiAirProfile {
+export function predictAirStrikeAimPoint(
+  origin: Readonly<Vec3>,
+  target: Readonly<Vec3>,
+  heading: number,
+  speedKnots: number,
+  weapon: AirWeaponKind,
+): Vec3 {
+  const targetSpeed = Math.max(0, speedKnots) * KNOT_TO_MPS;
+  const velocityX = Math.sin(heading) * targetSpeed;
+  const velocityZ = Math.cos(heading) * targetSpeed;
+  const relativeX = target.x - origin.x;
+  const relativeZ = target.z - origin.z;
+  let flightSeconds: number;
+  if (weapon === "heBomb") {
+    flightSeconds = Math.sqrt(2 * Math.max(1, origin.y) / GUN.gravity);
+  } else {
+    const weaponSpeed = weapon === "aerialTorpedo"
+      ? AIR_COMBAT.torpedo.speedMetersPerSecond
+      : AIR_COMBAT.machineGun.muzzleVelocity;
+    const a = velocityX ** 2 + velocityZ ** 2 - weaponSpeed ** 2;
+    const b = 2 * (relativeX * velocityX + relativeZ * velocityZ);
+    const c = relativeX ** 2 + relativeZ ** 2;
+    const discriminant = b ** 2 - 4 * a * c;
+    if (Math.abs(a) < 0.0001) {
+      flightSeconds = Math.abs(b) < 0.0001 ? Math.sqrt(c) / weaponSpeed : -c / b;
+    } else if (discriminant >= 0) {
+      const root = Math.sqrt(discriminant);
+      const candidates = [(-b - root) / (2 * a), (-b + root) / (2 * a)]
+        .filter((value) => value > 0);
+      flightSeconds = candidates.length > 0
+        ? Math.min(...candidates)
+        : Math.sqrt(c) / weaponSpeed;
+    } else {
+      flightSeconds = Math.sqrt(c) / weaponSpeed;
+    }
+  }
+  const predictionSeconds = Math.min(30, Math.max(0, flightSeconds));
+  return {
+    x: target.x + velocityX * predictionSeconds,
+    y: target.y,
+    z: target.z + velocityZ * predictionSeconds,
+  };
+}
+
+export function shipAntiAirProfile(
+  shipClassId: ShipClassId,
+  fittedMounts?: number,
+  efficiencyMultiplier = 1,
+): ShipAntiAirProfile {
   const definition = getShipClass(shipClassId);
-  const slots = definition.starterSlots.antiAir;
+  const slots = Math.max(0, fittedMounts ?? definition.starterSlots.antiAir);
+  if (slots <= 0) {
+    return { rangeMeters: 0, continuousDps: 0, flakBurstsPerSecond: 0, flakDamage: 0 };
+  }
   const hullMultiplier = definition.hullId === "battleship"
     ? 1.3
     : definition.hullId === "lightCruiser" ? 1.15 : 1;
+  const effectiveMultiplier = hullMultiplier * Math.max(0, efficiencyMultiplier);
   return {
     rangeMeters: AIR_COMBAT.aa.baseRangeMeters
-      + slots * AIR_COMBAT.aa.rangePerSlotMeters * hullMultiplier,
-    continuousDps: slots * AIR_COMBAT.aa.continuousDpsPerSlot * hullMultiplier,
+      + slots * AIR_COMBAT.aa.rangePerSlotMeters * effectiveMultiplier,
+    continuousDps: slots * AIR_COMBAT.aa.continuousDpsPerSlot * effectiveMultiplier,
     flakBurstsPerSecond: slots
-      * AIR_COMBAT.aa.flakBurstsPerSecondPerSlot * hullMultiplier,
-    flakDamage: AIR_COMBAT.aa.flakDamage * hullMultiplier,
+      * AIR_COMBAT.aa.flakBurstsPerSecondPerSlot * effectiveMultiplier,
+    flakDamage: AIR_COMBAT.aa.flakDamage * effectiveMultiplier,
   };
 }
 
@@ -361,6 +422,12 @@ export function issueAirMissionOrder(
         Object.entries(squadron.order.lastKnownPositions ?? {})
           .map(([id, position]) => [id, copyPoint(position)]),
       );
+    const headings = trusted.lastKnownHeadings
+      ? { ...trusted.lastKnownHeadings }
+      : { ...squadron.order.lastKnownHeadings };
+    const speeds = trusted.lastKnownSpeedsKnots
+      ? { ...trusted.lastKnownSpeedsKnots }
+      : { ...squadron.order.lastKnownSpeedsKnots };
     const activeTargetId = targetIds[0] ?? squadron.order.activeTargetId;
     return {
       accepted: true,
@@ -376,6 +443,8 @@ export function issueAirMissionOrder(
               ? copyPoint(squadron.order.lastKnownPosition)
               : undefined,
           lastKnownPositions: positions,
+          lastKnownHeadings: headings,
+          lastKnownSpeedsKnots: speeds,
         },
       },
     };
@@ -397,6 +466,8 @@ export function issueAirMissionOrder(
     lastKnownPositions: Object.fromEntries(
       Object.entries(positions).map(([id, position]) => [id, copyPoint(position)]),
     ),
+    lastKnownHeadings: trusted.lastKnownHeadings ? { ...trusted.lastKnownHeadings } : undefined,
+    lastKnownSpeedsKnots: trusted.lastKnownSpeedsKnots ? { ...trusted.lastKnownSpeedsKnots } : undefined,
     selectedWeapon: trusted.selectedWeapon
       ?? (command.kind === "interceptSquadron" || command.kind === "defendShip"
         ? "machineGun"
@@ -464,6 +535,10 @@ export function advanceAirSquadronPhase(
               [id, copyPoint(position)]),
           )
           : undefined,
+        lastKnownHeadings: squadron.order.lastKnownHeadings
+          ? { ...squadron.order.lastKnownHeadings } : undefined,
+        lastKnownSpeedsKnots: squadron.order.lastKnownSpeedsKnots
+          ? { ...squadron.order.lastKnownSpeedsKnots } : undefined,
       }
       : undefined,
     resumeOrder: squadron.resumeOrder ? { ...squadron.resumeOrder } : undefined,
@@ -487,7 +562,12 @@ export function advanceAirSquadronPhase(
     return transition("destroyed", true);
   }
   if (consumesFlightFuel(next.phase) && next.fuelRemainingSeconds <= 0) {
-    return transition("destroyed", true);
+    return {
+      ...transition("destroyed", true),
+      aircraftOperational: 0,
+      airframeHealth: 0,
+      cohesion: 0,
+    };
   }
   if (
     next.fuelRemainingSeconds <= AIR_OPERATION_TIMING.returnReserveSeconds

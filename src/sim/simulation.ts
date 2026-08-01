@@ -82,6 +82,7 @@ import {
   chooseAirStrikeWeapon,
   isAirSquadronAirborne,
   issueAirMissionOrder,
+  predictAirStrikeAimPoint,
   shipAntiAirProfile,
 } from "./airOperations";
 import type { AirMissionIssueResult, AirMissionTrustedData } from "./airOperations";
@@ -212,6 +213,8 @@ function createShip(
   mainGunMounts = 1,
   torpedoLauncherMounts = 1,
   depthChargeMounts = 0,
+  antiAirMounts = 0,
+  antiAirEfficiencyMultiplier = 1,
   secondaryGunIds: readonly SecondaryGunId[] = [],
 ): ShipState {
   const hullDefinition = getShipClass(shipClassId);
@@ -251,6 +254,8 @@ function createShip(
     ),
     torpedoLauncherMounts: Math.max(0, torpedoLauncherMounts),
     depthChargeMounts: Math.max(0, depthChargeMounts),
+    antiAirMounts: Math.max(0, antiAirMounts),
+    antiAirEfficiencyMultiplier: Math.max(0, antiAirEfficiencyMultiplier),
     secondaryMounts: createSecondaryMounts(secondaryGunIds, heading, shipClassId),
     secondaryBatteryStatus: secondaryGunIds.length > 0 ? "searching" : "unavailable",
     secondaryAcquisitionSamples: 0,
@@ -301,6 +306,8 @@ export function createInitialState(
     mainGunMounts?: number;
     torpedoLauncherMounts?: number;
     depthChargeMounts?: number;
+    antiAirMounts?: number;
+    antiAirEfficiencyMultiplier?: number;
     secondaryGunIds?: SecondaryGunId[];
   }) | undefined;
   const mainGunMounts = armament?.mainGunMounts ?? 1;
@@ -308,6 +315,9 @@ export function createInitialState(
     ?? (playerShipClass.slotCounts.torpedo > 0 ? 1 : 0);
   const depthChargeMounts = armament?.depthChargeMounts
     ?? (playerShipClass.slotCounts.depthCharge > 0 ? 1 : 0);
+  const antiAirMounts = armament?.antiAirMounts
+    ?? playerShipClass.starterSlots.antiAir;
+  const antiAirEfficiencyMultiplier = armament?.antiAirEfficiencyMultiplier ?? 1;
   const secondaryGunIds = armament?.secondaryGunIds
     ?? Array.from(
       { length: playerShipClass.starterSlots.sideGun },
@@ -323,7 +333,8 @@ export function createInitialState(
     turnMultiplier: playerPerformance?.turnMultiplier ?? 1,
     reloadMultiplier: playerPerformance?.reloadMultiplier ?? 1,
     magazineRiskMultiplier: playerPerformance?.magazineRiskMultiplier ?? 1,
-  }, playerShipClassId, mainGunMounts, torpedoLauncherMounts, depthChargeMounts, secondaryGunIds);
+  }, playerShipClassId, mainGunMounts, torpedoLauncherMounts, depthChargeMounts,
+  antiAirMounts, antiAirEfficiencyMultiplier, secondaryGunIds);
   const testTarget = createShip(
     "test-target",
     "enemy",
@@ -337,6 +348,8 @@ export function createInitialState(
     mainGunMounts,
     torpedoLauncherMounts,
     0,
+    0,
+    1,
     [],
   );
   testTarget.speedKnots = 0;
@@ -368,6 +381,8 @@ export function createInitialState(
         mainGunMounts,
         torpedoLauncherMounts,
         0,
+        playerShipClass.starterSlots.antiAir,
+        1,
         enemySecondaryGunIds,
       )]
       : [player, testTarget],
@@ -2724,11 +2739,17 @@ export function validateAirMissionTarget(
     const targetIds = eligible.map(({ target }) => target.id);
     const positions = Object.fromEntries(eligible.map(({ target, contact }) =>
       [target.id, copyVec(contact.position)]));
+    const headings = Object.fromEntries(eligible.map(({ target, contact }) =>
+      [target.id, contact.heading]));
+    const speeds = Object.fromEntries(eligible.map(({ target, contact }) =>
+      [target.id, contact.speedKnots]));
     return {
       lastKnownPosition: copyVec(primary.contact.position),
       trusted: {
         targetIds,
         lastKnownPositions: positions,
+        lastKnownHeadings: headings,
+        lastKnownSpeedsKnots: speeds,
         selectedWeapon: chooseAirStrikeWeapon(
           role,
           getShipClass(primary.target.shipClassId).hullId,
@@ -2788,6 +2809,56 @@ interface AirMissionTracking {
   contactValid?: boolean;
 }
 
+interface AirSurfaceObservation {
+  position: Vec3;
+  heading: number;
+  speedKnots: number;
+}
+
+function observeSurfaceFromAir(
+  state: BattleState,
+  squadron: Readonly<AirSquadronState>,
+  target: Readonly<ShipState>,
+): AirSurfaceObservation | undefined {
+  if (!isAirSquadronAirborne(squadron.phase) || squadron.aircraftOperational <= 0) {
+    return undefined;
+  }
+  const dx = target.position.x - squadron.position.x;
+  const dz = target.position.z - squadron.position.z;
+  const range = Math.hypot(dx, dz);
+  const maximumRange = AIR_NAVIGATION.surfaceDetectionRangeMeters[squadron.role];
+  if (range > maximumRange) return undefined;
+  if (isLineObscuredBySmoke(state, squadron.position, target.position)
+    && range > SMOKE.guaranteedDetectionMeters) return undefined;
+  const sampleIndex = Math.floor(
+    state.time / AIR_NAVIGATION.surfaceObservationIntervalSeconds,
+  );
+  const sampleSeed = (
+    state.randomSeed ^ sampleIndex ^ stringSeed(squadron.id) ^ stringSeed(target.id)
+  ) >>> 0;
+  const rangeFactor = clamp(range / Math.max(1, maximumRange), 0, 1);
+  const confidence = 0.96 - rangeFactor * 0.2;
+  const bearing = Math.atan2(dx, dz)
+    + sensorSigned(sampleSeed ^ 0x5f356495) * (0.002 + rangeFactor * 0.008);
+  const observedRange = Math.max(1, range * (
+    1 + sensorSigned(sampleSeed ^ 0x7c72e993) * (0.003 + rangeFactor * 0.012)
+  ));
+  return {
+    position: {
+      x: squadron.position.x + Math.sin(bearing) * observedRange,
+      y: target.position.y,
+      z: squadron.position.z + Math.cos(bearing) * observedRange,
+    },
+    heading: wrapAngle(
+      target.heading + sensorSigned(sampleSeed ^ 0x1b873593) * 0.035 * (1.1 - confidence),
+    ),
+    speedKnots: Math.max(
+      0,
+      target.speedKnots + sensorSigned(sampleSeed ^ 0x85ebca6b) * 0.8 * (1.1 - confidence),
+    ),
+  };
+}
+
 /** Refreshes mission navigation only from contacts authorized to the squadron team. */
 function refreshAirMissionTracking(
   state: BattleState,
@@ -2802,13 +2873,29 @@ function refreshAirMissionTracking(
     Object.entries(order.lastKnownPositions ?? {}).map(([id, position]) =>
       [id, copyVec(position)]),
   );
+  const headings = { ...(order.lastKnownHeadings ?? {}) };
+  const speeds = { ...(order.lastKnownSpeedsKnots ?? {}) };
   let activeTargetId: string | undefined;
   if (order.kind === "strikeShip") {
     const contacts = new Map(
       observe(state, squadron.controllerId).contacts.map((contact) => [contact.id, contact]),
     );
-    activeTargetId = candidateIds.find((id) => contacts.has(id));
-    if (activeTargetId) positions[activeTargetId] = copyVec(contacts.get(activeTargetId)!.position);
+    activeTargetId = candidateIds.find((id) => {
+      const target = state.ships.find((ship) =>
+        ship.id === id && ship.team !== squadron.team && ship.hull > 0);
+      const local = target ? observeSurfaceFromAir(state, squadron, target) : undefined;
+      const shipContact = contacts.get(id);
+      const contact = local ?? (shipContact ? {
+        position: shipContact.position,
+        heading: shipContact.heading,
+        speedKnots: shipContact.speedKnots,
+      } : undefined);
+      if (!contact) return false;
+      positions[id] = copyVec(contact.position);
+      headings[id] = contact.heading;
+      speeds[id] = contact.speedKnots;
+      return true;
+    });
   } else {
     activeTargetId = candidateIds.find((id) => {
       const contact = state.airSquadrons.find((candidate) => candidate.id === id)
@@ -2832,6 +2919,8 @@ function refreshAirMissionTracking(
         activeTargetId: retainedTargetId,
         lastKnownPosition: lastKnownPosition ? copyVec(lastKnownPosition) : undefined,
         lastKnownPositions: positions,
+        lastKnownHeadings: headings,
+        lastKnownSpeedsKnots: speeds,
       },
     },
   };
@@ -3069,7 +3158,11 @@ function resolveShipAntiAir(state: BattleState, dt: number): void {
     let flakDamageWeighted = 0;
     for (const ship of state.ships) {
       if (ship.team === squadron.team || ship.hull <= 0) continue;
-      const profile = shipAntiAirProfile(ship.shipClassId);
+      const profile = shipAntiAirProfile(
+        ship.shipClassId,
+        ship.antiAirMounts,
+        ship.antiAirEfficiencyMultiplier,
+      );
       const distance = Math.hypot(
         ship.position.x - squadron.position.x,
         ship.position.z - squadron.position.z,
@@ -3205,11 +3298,18 @@ function releaseAirStrike(state: BattleState, squadron: AirSquadronState): void 
   const targetId = order?.activeTargetId;
   const target = targetId ? state.ships.find((ship) =>
     ship.id === targetId && ship.team !== squadron.team) : undefined;
-  const aimPoint = targetId
+  const observedAimPoint = targetId
     ? order?.lastKnownPositions?.[targetId] ?? order?.lastKnownPosition
     : order?.lastKnownPosition;
   squadron.attackRunReleased = true;
-  if (!weapon || !target || !aimPoint || !airWeaponAvailable(squadron, weapon)) return;
+  if (!weapon || !target || !observedAimPoint || !airWeaponAvailable(squadron, weapon)) return;
+  const aimPoint = predictAirStrikeAimPoint(
+    squadron.position,
+    observedAimPoint,
+    targetId ? order?.lastKnownHeadings?.[targetId] ?? 0 : 0,
+    targetId ? order?.lastKnownSpeedsKnots?.[targetId] ?? 0 : 0,
+    weapon,
+  );
   if (weapon === "machineGun") squadron.ammoRemaining -= 1;
   else squadron.ordnanceRemaining -= 1;
   state.airEvents.push({
@@ -3356,6 +3456,12 @@ export function stepSimulation(
         squadronId: advanced.id,
         orderKind: advanced.order?.kind,
         targetId: advanced.order?.targetId,
+        position: copyVec(advanced.position),
+        aircraftLost: eventKind === "aircraftLost"
+          ? Math.max(0, squadron.aircraftOperational - advanced.aircraftOperational)
+          : undefined,
+        lossCause: eventKind === "aircraftLost" && advanced.fuelRemainingSeconds <= 0
+          ? "fuel" : undefined,
       });
     }
     return advanced;

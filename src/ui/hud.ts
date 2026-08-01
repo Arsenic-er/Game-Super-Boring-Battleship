@@ -305,7 +305,7 @@ export class Hud {
         <section id="weapon-bar" class="weapon-bar panel" aria-label="武器选择">
           <button type="button" data-weapon="mainGun"><kbd>1</kbd><span>主炮</span><small>HE 高爆弹 · Q 切换</small></button>
           <button type="button" data-weapon="torpedo"><kbd>2</kbd><span>鱼雷</span><small>双雷齐射</small></button>
-          <button type="button" data-weapon="aircraft" class="reserved"><kbd>3</kbd><span>舰载机</span><small>预留</small></button>
+          <button type="button" data-weapon="aircraft"><kbd>3</kbd><span>航空指挥</span><small>M 大地图 · C 指令</small></button>
         </section>
         <section class="controls panel">
           <span><kbd>W</kbd><kbd>S</kbd> 车钟</span><span><kbd>A</kbd><kbd>D</kbd> 舵</span><span><kbd>移动鼠标</kbd> 视角</span>

@@ -212,6 +212,9 @@ describe("command-only air operations", () => {
       AIR_OPERATION_TIMING.enduranceSeconds.fighter + 0.02,
     );
     expect(state.phase).toBe("destroyed");
+    expect(state.aircraftOperational).toBe(0);
+    expect(state.airframeHealth).toBe(0);
+    expect(state.cohesion).toBe(0);
   });
 
   it("separates the controlling ship from an off-map recovery source", () => {

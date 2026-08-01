@@ -69,6 +69,8 @@ export interface AirMissionOrder extends AirMissionCommand {
   activeTargetId?: string;
   lastKnownPosition?: Vec3;
   lastKnownPositions?: Record<string, Vec3>;
+  lastKnownHeadings?: Record<string, number>;
+  lastKnownSpeedsKnots?: Record<string, number>;
   selectedWeapon?: AirWeaponKind;
 }
 
@@ -260,6 +262,8 @@ export interface ShipState {
   mainBatteryMounts: MainBatteryMountState[];
   torpedoLauncherMounts: number;
   depthChargeMounts: number;
+  antiAirMounts: number;
+  antiAirEfficiencyMultiplier: number;
   secondaryMounts: SecondaryMountState[];
   secondaryBatteryStatus: SecondaryBatteryStatus;
   secondaryTargetId?: string;

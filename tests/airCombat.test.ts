@@ -3,6 +3,7 @@ import {
   AIR_COMBAT,
   airMissionApproachRadius,
   deployFleetAirSupport,
+  predictAirStrikeAimPoint,
   shipAntiAirProfile,
 } from "../src/sim/airOperations";
 import { FIXED_STEP } from "../src/sim/config";
@@ -267,10 +268,66 @@ describe("air combat execution", () => {
     expect(left.randomSeed).toBe(right.randomSeed);
   });
 
+  it("leads a moving ship and gives slow aerial torpedoes the largest prediction", () => {
+    const origin = { x: 0, y: 180, z: -900 };
+    const target = { x: 0, y: 0, z: 0 };
+    const stationary = predictAirStrikeAimPoint(origin, target, 0, 0, "aerialTorpedo");
+    const bombLead = predictAirStrikeAimPoint(origin, target, Math.PI / 2, 30, "heBomb");
+    const torpedoLead = predictAirStrikeAimPoint(
+      origin, target, Math.PI / 2, 30, "aerialTorpedo",
+    );
+    expect(stationary).toEqual(target);
+    expect(bombLead.x).toBeGreaterThan(0);
+    expect(torpedoLead.x).toBeGreaterThan(bombLead.x * 2);
+  });
+
+  it("uses the attacking squadron to refresh a surface contact beyond mother-ship vision", () => {
+    const state = createInitialState(860, "battle");
+    deployFleetAirSupport(state);
+    const player = state.ships.find(({ team }) => team === "player")!;
+    const target = state.ships.find(({ team }) => team === "enemy")!;
+    const bomber = state.airSquadrons.find(({ team, role }) =>
+      team === "player" && role === "torpedoBomber")!;
+    player.position = { x: -5_500, y: 0, z: -5_500 };
+    target.position = { x: 0, y: 0, z: 0 };
+    target.speedKnots = 24;
+    target.heading = Math.PI / 2;
+    bomber.position = { x: 0, y: 180, z: -1_300 };
+    bomber.previousPosition = { ...bomber.position };
+    bomber.phase = "outbound";
+    bomber.order = {
+      squadronId: bomber.id,
+      kind: "strikeShip",
+      targetId: target.id,
+      targetIds: [target.id],
+      candidateTargetIds: [target.id],
+      activeTargetId: target.id,
+      lastKnownPosition: { x: 0, y: 0, z: -800 },
+      lastKnownPositions: { [target.id]: { x: 0, y: 0, z: -800 } },
+      selectedWeapon: "aerialTorpedo",
+      issuedAt: 0,
+    };
+    state.sensorSnapshots = {};
+    stepSimulation(state, new Map(), FIXED_STEP);
+    const tracked = state.airSquadrons.find(({ id }) => id === bomber.id)!;
+    expect(tracked.phase).not.toBe("searching");
+    expect(tracked.order?.lastKnownPosition?.z).toBeGreaterThan(-100);
+    expect(tracked.order?.lastKnownSpeedsKnots?.[target.id]).toBeGreaterThan(20);
+  });
+
   it("derives temporary baseline AA from historical class starter slots", () => {
     const destroyer = shipAntiAirProfile("fletcher");
     const battleship = shipAntiAirProfile("yamato");
     expect(battleship.rangeMeters).toBeGreaterThan(destroyer.rangeMeters);
     expect(battleship.continuousDps).toBeGreaterThan(destroyer.continuousDps);
+  });
+
+  it("uses fitted AA mount count and equipment efficiency", () => {
+    const empty = shipAntiAirProfile("fletcher", 0, 1);
+    const common = shipAntiAirProfile("fletcher", 1, 1.03);
+    const upgraded = shipAntiAirProfile("fletcher", 2, 1.22);
+    expect(empty.continuousDps).toBe(0);
+    expect(upgraded.continuousDps).toBeGreaterThan(common.continuousDps * 2);
+    expect(upgraded.rangeMeters).toBeGreaterThan(common.rangeMeters);
   });
 });

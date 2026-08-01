@@ -74,6 +74,8 @@ export interface BattleLoadout {
   mainGunMounts: number;
   torpedoLauncherMounts: number;
   depthChargeMounts: number;
+  antiAirMounts: number;
+  antiAirEfficiencyMultiplier: number;
   secondaryGunIds: SecondaryGunId[];
 }
 
@@ -437,6 +439,10 @@ export function battleLoadout(profileSource: LocalProfile): BattleLoadout {
   const engine = equipped("engine");
   const steering = equipped("steering");
   const magazine = equipped("magazine");
+  const antiAirDefinitions = profile.slotLoadoutsByShipClass[profile.shipClassId].antiAir
+    .flatMap((id) => id && EQUIPMENT_BY_ID[id] ? [EQUIPMENT_BY_ID[id]] : []);
+  const antiAirEfficiencyMultiplier = antiAirDefinitions.length === 0 ? 1 : 1
+    + antiAirDefinitions.reduce((sum, item) => sum + item.bonus, 0) / antiAirDefinitions.length;
   return {
     hullId: profile.hullId,
     shipClassId: profile.shipClassId,
@@ -450,6 +456,8 @@ export function battleLoadout(profileSource: LocalProfile): BattleLoadout {
     mainGunMounts: profile.slotLoadoutsByShipClass[profile.shipClassId].mainGun.filter(Boolean).length,
     torpedoLauncherMounts: profile.slotLoadoutsByShipClass[profile.shipClassId].torpedo.filter(Boolean).length,
     depthChargeMounts: profile.slotLoadoutsByShipClass[profile.shipClassId].depthCharge.filter(Boolean).length,
+    antiAirMounts: antiAirDefinitions.length,
+    antiAirEfficiencyMultiplier,
     secondaryGunIds: profile.slotLoadoutsByShipClass[profile.shipClassId].sideGun.flatMap((id) => {
       const definition = id ? EQUIPMENT_BY_ID[id] : undefined;
       return definition?.secondaryGunId ? [definition.secondaryGunId] : [];

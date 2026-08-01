@@ -123,7 +123,6 @@ function toggleQuality(): void {
 const hud = new Hud(root, restart, toggleQuality, returnToMainMenu);
 view = new GameView(hud.canvas);
 input = new PlayerInput(hud.canvas, view);
-hud.setWeaponSelectHandler((slot) => input.selectWeapon(slot));
 const settings = loadGameSettings();
 
 function applyControlSettings(next: GameSettings): void {
@@ -150,6 +149,12 @@ tacticalMap = new TacticalMap(gameShell, {
     gameShell.classList.add("game-active");
     view.requestPointerLock();
   },
+});
+hud.setWeaponSelectHandler((slot) => {
+  input.selectWeapon(slot);
+  if (slot !== "aircraft" || !started || paused || state.status !== "running"
+    || menus?.isOpen() || developerPanel?.isOpen()) return;
+  tacticalMap.open();
 });
 menus = new GameMenus(gameShell, settings, profile, view.getQuality(), {
   onStart: startMode,
@@ -195,6 +200,13 @@ developerPanel = new DeveloperPanel(gameShell, () => state, {
 
 window.addEventListener("keydown", (event) => {
   if (!started || state.status !== "running") return;
+  if (event.code === "Digit3" && !event.repeat) {
+    if (menus.isOpen() || developerPanel?.isOpen()) return;
+    event.preventDefault();
+    input.selectWeapon("aircraft");
+    tacticalMap.open();
+    return;
+  }
   if (event.code === "KeyM") {
     if (menus.isOpen() || developerPanel?.isOpen()) return;
     event.preventDefault();

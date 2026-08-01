@@ -52,6 +52,8 @@ describe("local commander profile", () => {
     expect(modifiers.maxSpeedMultiplier).toBeGreaterThan(1.1);
     expect(modifiers.turnMultiplier).toBeGreaterThan(1.05);
     expect(modifiers.reloadMultiplier).toBeLessThan(1);
+    expect(modifiers.antiAirMounts).toBeGreaterThan(0);
+    expect(modifiers.antiAirEfficiencyMultiplier).toBeGreaterThan(1);
   });
 
   it("maps every historical torpedo component into a distinct battle definition", () => {
@@ -227,5 +229,24 @@ describe("local commander profile", () => {
     expect(battleLoadout(mixed).secondaryGunIds)
       .toEqual(["sideGun-common", "sideGun-purple"]);
     expect(battleLoadout(selectShipClass(mixed, "fletcher")).secondaryGunIds).toEqual([]);
+  });
+
+  it("passes fitted anti-air slots and their historical component quality into battle", () => {
+    const base = createDefaultLocalProfile();
+    const upgraded = normalizeLocalProfile({
+      ...base,
+      inventory: { ...base.inventory, "antiAir-redGold": 1 },
+      unlockedEquipment: { ...base.unlockedEquipment, "antiAir-redGold": true },
+      slotLoadoutsByShipClass: {
+        ...base.slotLoadoutsByShipClass,
+        fletcher: {
+          ...base.slotLoadoutsByShipClass.fletcher,
+          antiAir: ["antiAir-common", "antiAir-redGold", null, null],
+        },
+      },
+    });
+    const loadout = battleLoadout(upgraded);
+    expect(loadout.antiAirMounts).toBe(2);
+    expect(loadout.antiAirEfficiencyMultiplier).toBeCloseTo(1.125);
   });
 });
