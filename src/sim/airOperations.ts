@@ -16,6 +16,8 @@ import type {
   Vec3,
 } from "./types";
 import type { HullId } from "../ships/hulls";
+import { getShipClass } from "../ships/classes";
+import type { ShipClassId } from "../ships/classes";
 
 export const AIR_OPERATION_TIMING = {
   launchSeconds: 8,
@@ -62,6 +64,49 @@ export const AIR_SQUADRON_LOADOUT = {
   ammo: Record<AircraftRole, number>;
   ordnance: Record<AircraftRole, number>;
 };
+
+export const AIR_COMBAT = {
+  airDetectionRangeMeters: 2_400,
+  guardRadiusMeters: 1_800,
+  interceptApproachMeters: 420,
+  interceptReleaseSeconds: 1.2,
+  approachMeters: {
+    machineGun: 320,
+    heBomb: 180,
+    aerialTorpedo: 900,
+  },
+  releaseSeconds: {
+    machineGun: 0.7,
+    heBomb: 0.9,
+    aerialTorpedo: 1.5,
+  },
+  bomb: { damage: 58, dispersionMeters: 34 },
+  torpedo: {
+    speedMetersPerSecond: 43,
+    damage: 78,
+    armingDistanceMeters: 125,
+    maximumRangeMeters: 3_200,
+    detectionRangeMeters: 720,
+    spreadRadians: 0.025,
+  },
+  machineGun: { muzzleVelocity: 420, damage: 5 },
+  fighterBurstDamagePerAircraft: 19,
+  fighterDefensiveFireMultiplier: 0.55,
+  aa: {
+    baseRangeMeters: 620,
+    rangePerSlotMeters: 135,
+    continuousDpsPerSlot: 7.5,
+    flakBurstsPerSecondPerSlot: 0.035,
+    flakDamage: 92,
+  },
+} as const;
+
+export interface ShipAntiAirProfile {
+  rangeMeters: number;
+  continuousDps: number;
+  flakBurstsPerSecond: number;
+  flakDamage: number;
+}
 
 export interface CreateAirSquadronOptions {
   id: string;
@@ -162,6 +207,47 @@ export function createAirSquadronState(
     fuelRemainingSeconds: AIR_OPERATION_TIMING.enduranceSeconds[options.role],
     phaseStartedAt: now,
     lastUpdatedAt: now,
+    attackRunReleased: false,
+  };
+}
+
+export function airWeaponAvailable(
+  squadron: Pick<AirSquadronState, "ammoRemaining" | "ordnanceRemaining">,
+  weapon: AirWeaponKind | undefined,
+): boolean {
+  if (!weapon) return false;
+  return weapon === "machineGun"
+    ? squadron.ammoRemaining > 0
+    : squadron.ordnanceRemaining > 0;
+}
+
+export function airMissionApproachRadius(
+  squadron: Pick<AirSquadronState, "order">,
+): number {
+  if (squadron.order?.kind === "interceptSquadron") {
+    return AIR_COMBAT.interceptApproachMeters;
+  }
+  const weapon = squadron.order?.selectedWeapon;
+  return weapon ? AIR_COMBAT.approachMeters[weapon] : AIR_NAVIGATION.arrivalRadiusMeters;
+}
+
+export function airWeaponReleaseDelay(weapon: AirWeaponKind | undefined): number {
+  return weapon ? AIR_COMBAT.releaseSeconds[weapon] : 0;
+}
+
+export function shipAntiAirProfile(shipClassId: ShipClassId): ShipAntiAirProfile {
+  const definition = getShipClass(shipClassId);
+  const slots = definition.starterSlots.antiAir;
+  const hullMultiplier = definition.hullId === "battleship"
+    ? 1.3
+    : definition.hullId === "lightCruiser" ? 1.15 : 1;
+  return {
+    rangeMeters: AIR_COMBAT.aa.baseRangeMeters
+      + slots * AIR_COMBAT.aa.rangePerSlotMeters * hullMultiplier,
+    continuousDps: slots * AIR_COMBAT.aa.continuousDpsPerSlot * hullMultiplier,
+    flakBurstsPerSecond: slots
+      * AIR_COMBAT.aa.flakBurstsPerSecondPerSlot * hullMultiplier,
+    flakDamage: AIR_COMBAT.aa.flakDamage * hullMultiplier,
   };
 }
 
@@ -331,6 +417,8 @@ export function issueAirMissionOrder(
       phaseStartedAt: squadron.phase === "launching" && command.kind !== "recall"
         ? squadron.phaseStartedAt
         : now,
+      attackRunReleased: false,
+      resumeOrder: undefined,
       lastUpdatedAt: now,
     },
   };
@@ -378,6 +466,7 @@ export function advanceAirSquadronPhase(
           : undefined,
       }
       : undefined,
+    resumeOrder: squadron.resumeOrder ? { ...squadron.resumeOrder } : undefined,
     fuelRemainingSeconds: consumesFlightFuel(squadron.phase)
       ? Math.max(0, squadron.fuelRemainingSeconds - elapsed)
       : squadron.fuelRemainingSeconds,
@@ -391,6 +480,7 @@ export function advanceAirSquadronPhase(
     phase,
     phaseStartedAt: now,
     order: clearOrder ? undefined : next.order,
+    resumeOrder: clearOrder ? undefined : next.resumeOrder,
   });
 
   if (next.aircraftOperational <= 0 || next.airframeHealth <= 0) {
@@ -452,6 +542,7 @@ export function advanceAirSquadronPhase(
         ammoRemaining: AIR_SQUADRON_LOADOUT.ammo[next.role],
         ordnanceRemaining: AIR_SQUADRON_LOADOUT.ordnance[next.role],
         fuelRemainingSeconds: AIR_OPERATION_TIMING.enduranceSeconds[next.role],
+        attackRunReleased: false,
       };
   }
 }

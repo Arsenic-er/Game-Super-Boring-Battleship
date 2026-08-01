@@ -217,8 +217,7 @@ export class TacticalAirCommandController {
   handleAirEvents(events: readonly AirCombatEvent[]): void {
     const fresh = events.filter((event) =>
       event.id > this.lastAirEventId
-      && event.controllerId === "player"
-      && (event.kind === "orderAccepted" || event.kind === "orderRejected"));
+      && event.controllerId === "player");
     if (events.length > 0) {
       this.lastAirEventId = Math.max(this.lastAirEventId, ...events.map(({ id }) => id));
     }
@@ -237,9 +236,29 @@ export class TacticalAirCommandController {
     const rejectedReason = rejected[0]?.rejectReason
       ? rejectLabels[rejected[0].rejectReason] ?? rejected[0].rejectReason
       : "";
-    this.setStatus([
+    const orderStatus = [
       accepted > 0 ? `\u5df2\u786e\u8ba4 ${accepted} \u652f\u673a\u7fa4` : "",
       rejected.length > 0 ? `\u5df2\u62d2\u7edd ${rejected.length} \u652f\uff1a${rejectedReason}` : "",
+    ].filter(Boolean).join(" \u00b7 ");
+    if (orderStatus) this.setStatus(orderStatus);
+    const released = fresh.filter(({ kind }) => kind === "weaponReleased");
+    const hits = fresh.filter(({ kind }) => kind === "attackHit");
+    const misses = fresh.filter(({ kind }) => kind === "attackMiss");
+    const losses = fresh.filter(({ kind }) => kind === "aircraftLost")
+      .reduce((sum, event) => sum + (event.aircraftLost ?? 0), 0);
+    if (released.length === 0 && hits.length === 0 && misses.length === 0 && losses === 0) return;
+    const weaponLabels: Record<string, string> = {
+      machineGun: "\u673a\u70ae", heBomb: "HE\u822a\u5f39", aerialTorpedo: "\u822a\u7a7a\u9c7c\u96f7",
+    };
+    const weapon = hits[0]?.weapon ?? released[0]?.weapon ?? misses[0]?.weapon;
+    const damage = hits.reduce((sum, event) => sum + (event.damage ?? 0), 0);
+    this.setStatus([
+      weapon ? weaponLabels[weapon] ?? weapon : "\u822a\u7a7a\u653b\u51fb",
+      released.length > 0 ? `\u5df2\u91ca\u653e ${released.length} \u6ce2` : "",
+      hits.length > 0 ? `\u547d\u4e2d ${hits.length}` : "",
+      misses.length > 0 ? `\u672a\u547d\u4e2d ${misses.length}` : "",
+      damage > 0 ? `\u4f24\u5bb3 ${Math.round(damage)}` : "",
+      losses > 0 ? `\u635f\u5931 ${losses} \u67b6` : "",
     ].filter(Boolean).join(" \u00b7 "));
   }
 

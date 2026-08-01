@@ -45,6 +45,7 @@ import { effectiveTorpedoDetectionRange } from "./detection";
 import type {
   AmmoType,
   ArmorZoneId,
+  AirDamageCause,
   AirMissionCommand,
   AirMissionRejectReason,
   AirSquadronState,
@@ -68,14 +69,20 @@ import type {
   TorpedoThreat,
 } from "./types";
 import {
+  AIR_COMBAT,
   AIR_NAVIGATION,
+  applyAirDamage,
+  airMissionApproachRadius,
   airMissionTargetIds,
   airStrikeTargetScore,
   advanceAirSquadronPhase,
   airTransitionEventKind,
+  airWeaponAvailable,
+  airWeaponReleaseDelay,
   chooseAirStrikeWeapon,
   isAirSquadronAirborne,
   issueAirMissionOrder,
+  shipAntiAirProfile,
 } from "./airOperations";
 import type { AirMissionIssueResult, AirMissionTrustedData } from "./airOperations";
 
@@ -1851,7 +1858,24 @@ function applyHit(
     armorZone: contact.armorZone,
     projectileKind: projectile.kind,
     weaponSource: projectile.weaponSource,
+    airWeapon: projectile.airWeapon,
   });
+  if (projectile.weaponSource === "aircraft" && projectile.airWeapon) {
+    const squadron = state.airSquadrons.find(({ id }) => id === projectile.ownerId);
+    state.airEvents.push({
+      id: state.nextEntityId++,
+      time: state.time,
+      kind: "attackHit",
+      team: projectile.team,
+      controllerId: squadron?.controllerId ?? projectile.ownerId,
+      squadronId: projectile.ownerId,
+      orderKind: squadron?.order?.kind,
+      targetId: ship.id,
+      position: copyVec(contact.point),
+      weapon: projectile.airWeapon,
+      damage,
+    });
+  }
 }
 
 interface HorizontalAxis {
@@ -2035,12 +2059,46 @@ function advanceProjectiles(state: BattleState, dt: number): void {
         sourceId: projectile.ownerId,
         sourceTeam: projectile.team,
         salvoId: projectile.salvoId,
+        projectileKind: projectile.kind,
+        weaponSource: projectile.weaponSource,
+        airWeapon: projectile.airWeapon,
       });
+      if (projectile.weaponSource === "aircraft" && projectile.airWeapon) {
+        const squadron = state.airSquadrons.find(({ id }) => id === projectile.ownerId);
+        state.airEvents.push({
+          id: state.nextEntityId++,
+          time: state.time,
+          kind: "attackMiss",
+          team: projectile.team,
+          controllerId: squadron?.controllerId ?? projectile.ownerId,
+          squadronId: projectile.ownerId,
+          orderKind: squadron?.order?.kind,
+          targetId: squadron?.order?.activeTargetId,
+          position: { x: projectile.position.x, y: 0, z: projectile.position.z },
+          weapon: projectile.airWeapon,
+        });
+      }
       consumed = true;
     }
     const withinLifetime = projectile.kind === "torpedo"
       ? (projectile.distanceTravelled ?? 0) < (projectile.maximumRange ?? TORPEDO.maximumRangeMeters)
       : projectile.age < 18;
+    if (!consumed && !withinLifetime
+      && projectile.weaponSource === "aircraft" && projectile.airWeapon) {
+      const squadron = state.airSquadrons.find(({ id }) => id === projectile.ownerId);
+      state.airEvents.push({
+        id: state.nextEntityId++,
+        time: state.time,
+        kind: "attackMiss",
+        team: projectile.team,
+        controllerId: squadron?.controllerId ?? projectile.ownerId,
+        squadronId: projectile.ownerId,
+        orderKind: squadron?.order?.kind,
+        targetId: squadron?.order?.activeTargetId,
+        position: copyVec(projectile.position),
+        weapon: projectile.airWeapon,
+      });
+    }
     if (!consumed && withinLifetime) active.push(projectile);
   }
   state.projectiles = active;
@@ -2816,17 +2874,36 @@ function moveAirSquadron(
     heading: distance <= 0.001 ? squadron.heading : Math.atan2(dx, dz),
   };
   const remaining = Math.hypot(destination.x - position.x, destination.z - position.z);
-  const advanced = advanceAirSquadronPhase(moved, state.time, {
+  const missionArrivalRadius = airMissionApproachRadius(squadron);
+  let advanced = advanceAirSquadronPhase(moved, state.time, {
     contactValid,
     reachedMissionArea: squadron.phase === "outbound"
-      && remaining <= AIR_NAVIGATION.arrivalRadiusMeters,
+      && remaining <= missionArrivalRadius,
     reachedRecoveryPoint: squadron.phase === "returning"
       && remaining <= AIR_NAVIGATION.arrivalRadiusMeters,
     attackCompleted: squadron.phase === "attackRun"
-      && state.time - squadron.phaseStartedAt >= 6,
+      && (squadron.attackRunReleased
+        || !airWeaponAvailable(squadron, squadron.order?.selectedWeapon)),
     engagementComplete: squadron.phase === "intercepting"
-      && state.time - squadron.phaseStartedAt >= 10,
+      && (squadron.attackRunReleased
+        || !airWeaponAvailable(squadron, "machineGun")
+        || state.time - squadron.phaseStartedAt >= 10),
   });
+  if (squadron.phase === "intercepting"
+    && advanced.phase === "returning" && squadron.resumeOrder) {
+    if (airWeaponAvailable(advanced, "machineGun")) {
+      advanced = {
+        ...advanced,
+        phase: "outbound",
+        phaseStartedAt: state.time,
+        order: { ...squadron.resumeOrder },
+        resumeOrder: undefined,
+        attackRunReleased: false,
+      };
+    } else {
+      advanced.resumeOrder = undefined;
+    }
+  }
   advanced.contactsByTeam[advanced.team] = {
     observedAt: state.time,
     lastKnownPosition: copyVec(advanced.position),
@@ -2843,12 +2920,20 @@ function refreshAirContacts(state: BattleState): void {
     if (!isAirSquadronAirborne(squadron.phase)) continue;
     for (const team of ["player", "enemy"] as const) {
       if (team === squadron.team) continue;
+      const detectedByAir = state.airSquadrons.some((observer) =>
+        observer.team === team
+        && isAirSquadronAirborne(observer.phase)
+        && observer.aircraftOperational > 0
+        && Math.hypot(
+          observer.position.x - squadron.position.x,
+          observer.position.z - squadron.position.z,
+        ) <= AIR_COMBAT.airDetectionRangeMeters);
       const detected = state.ships.some((ship) => ship.team === team && ship.hull > 0
         && Math.hypot(
           ship.position.x - squadron.position.x,
           ship.position.z - squadron.position.z,
         ) <= AIR_NAVIGATION.detectionRangeMeters);
-      if (detected) {
+      if (detected || detectedByAir) {
         squadron.contactsByTeam[team] = {
           observedAt: state.time,
           lastKnownPosition: copyVec(squadron.position),
@@ -2859,6 +2944,74 @@ function refreshAirContacts(state: BattleState): void {
         };
       }
     }
+  }
+}
+
+/** Fighters on guard autonomously intercept a fresh contact near the protected unit. */
+function assignGuardInterceptions(state: BattleState): void {
+  for (const fighter of state.airSquadrons) {
+    const order = fighter.order;
+    if (
+      fighter.role !== "fighter"
+      || fighter.phase !== "patrolling"
+      || order?.kind !== "defendShip"
+      || !airWeaponAvailable(fighter, "machineGun")
+    ) continue;
+    const protectedIds = order.candidateTargetIds ?? order.targetIds ?? [];
+    const protectedPositions = protectedIds.flatMap((id): Vec3[] => {
+      const ship = state.ships.find((candidate) =>
+        candidate.id === id && candidate.team === fighter.team && candidate.hull > 0);
+      if (ship) return [copyVec(ship.position)];
+      const squadron = state.airSquadrons.find((candidate) =>
+        candidate.id === id && candidate.team === fighter.team
+        && candidate.phase !== "destroyed");
+      return squadron ? [copyVec(squadron.position)] : [];
+    });
+    if (protectedPositions.length === 0) continue;
+    const threat = state.airSquadrons
+      .flatMap((candidate) => {
+        if (candidate.team === fighter.team || !isAirSquadronAirborne(candidate.phase)) {
+          return [];
+        }
+        const contact = candidate.contactsByTeam[fighter.team];
+        if (!contact || state.time - contact.observedAt > AIR_CONTACT_VALID_SECONDS) return [];
+        const distance = Math.min(...protectedPositions.map((position) => Math.hypot(
+          position.x - contact.lastKnownPosition.x,
+          position.z - contact.lastKnownPosition.z,
+        )));
+        return distance <= AIR_COMBAT.guardRadiusMeters
+          ? [{ candidate, contact, distance }]
+          : [];
+      })
+      .sort((left, right) => left.distance - right.distance)[0];
+    if (!threat) continue;
+    const lastKnownPosition = copyVec(threat.contact.lastKnownPosition);
+    fighter.resumeOrder = {
+      ...order,
+      targetIds: order.targetIds ? [...order.targetIds] : undefined,
+      candidateTargetIds: order.candidateTargetIds
+        ? [...order.candidateTargetIds]
+        : undefined,
+      lastKnownPosition: order.lastKnownPosition ? copyVec(order.lastKnownPosition) : undefined,
+      lastKnownPositions: order.lastKnownPositions
+        ? Object.fromEntries(Object.entries(order.lastKnownPositions).map(([id, point]) => [id, copyVec(point)]))
+        : undefined,
+    };
+    fighter.order = {
+      squadronId: fighter.id,
+      kind: "interceptSquadron",
+      targetId: threat.candidate.id,
+      targetIds: [threat.candidate.id],
+      candidateTargetIds: [threat.candidate.id],
+      activeTargetId: threat.candidate.id,
+      lastKnownPosition,
+      lastKnownPositions: { [threat.candidate.id]: copyVec(lastKnownPosition) },
+      selectedWeapon: "machineGun",
+      issuedAt: state.time,
+    };
+    fighter.phase = "outbound";
+    fighter.phaseStartedAt = state.time;
+    fighter.attackRunReleased = false;
   }
 }
 
@@ -2884,6 +3037,298 @@ function automatedAirMissionsFor(
     });
 }
 
+function pushAirLossEvent(
+  state: BattleState,
+  squadron: Readonly<AirSquadronState>,
+  aircraftLost: number,
+  cause: AirDamageCause,
+): void {
+  if (aircraftLost <= 0) return;
+  state.airEvents.push({
+    id: state.nextEntityId++,
+    time: state.time,
+    kind: "aircraftLost",
+    team: squadron.team,
+    controllerId: squadron.controllerId,
+    squadronId: squadron.id,
+    orderKind: squadron.order?.kind,
+    targetId: squadron.order?.activeTargetId,
+    position: copyVec(squadron.position),
+    aircraftLost,
+    lossCause: cause,
+  });
+}
+
+function resolveShipAntiAir(state: BattleState, dt: number): void {
+  state.airSquadrons = state.airSquadrons.map((squadron) => {
+    if (!isAirSquadronAirborne(squadron.phase) || squadron.aircraftOperational <= 0) {
+      return squadron;
+    }
+    let continuousDps = 0;
+    let flakBurstsPerSecond = 0;
+    let flakDamageWeighted = 0;
+    for (const ship of state.ships) {
+      if (ship.team === squadron.team || ship.hull <= 0) continue;
+      const profile = shipAntiAirProfile(ship.shipClassId);
+      const distance = Math.hypot(
+        ship.position.x - squadron.position.x,
+        ship.position.z - squadron.position.z,
+      );
+      if (distance > profile.rangeMeters) continue;
+      continuousDps += profile.continuousDps;
+      flakBurstsPerSecond += profile.flakBurstsPerSecond;
+      flakDamageWeighted += profile.flakDamage * profile.flakBurstsPerSecond;
+    }
+    if (continuousDps <= 0 && flakBurstsPerSecond <= 0) return squadron;
+    const flakHit = flakBurstsPerSecond > 0
+      && random(state) < 1 - Math.exp(-flakBurstsPerSecond * dt);
+    const flakDamage = flakHit
+      ? flakDamageWeighted / Math.max(0.0001, flakBurstsPerSecond)
+      : 0;
+    const result = applyAirDamage(
+      squadron,
+      continuousDps * dt + flakDamage,
+      flakHit ? "flak" : "aaContinuous",
+    );
+    const advanced = advanceAirSquadronPhase(result.squadron, state.time);
+    pushAirLossEvent(state, advanced, result.aircraftLost, result.cause);
+    return advanced;
+  });
+}
+
+interface PendingAirAttack {
+  attackerId: string;
+  targetId: string;
+  damage: number;
+}
+
+function resolveAirInterceptions(state: BattleState): void {
+  const snapshots = new Map(state.airSquadrons.map((squadron) => [squadron.id, squadron]));
+  const pending: PendingAirAttack[] = [];
+  for (const attacker of snapshots.values()) {
+    if (
+      attacker.phase !== "intercepting"
+      || attacker.attackRunReleased
+      || state.time - attacker.phaseStartedAt < AIR_COMBAT.interceptReleaseSeconds
+    ) continue;
+    const liveAttacker = state.airSquadrons.find(({ id }) => id === attacker.id);
+    if (!liveAttacker) continue;
+    const targetId = attacker.order?.activeTargetId;
+    const target = targetId ? snapshots.get(targetId) : undefined;
+    const contact = target?.contactsByTeam[attacker.team];
+    if (
+      !target
+      || target.team === attacker.team
+      || !contact
+      || state.time - contact.observedAt > AIR_CONTACT_VALID_SECONDS
+      || !airWeaponAvailable(attacker, "machineGun")
+    ) {
+      liveAttacker.attackRunReleased = true;
+      continue;
+    }
+    const contactRange = Math.hypot(
+      contact.lastKnownPosition.x - attacker.position.x,
+      contact.lastKnownPosition.z - attacker.position.z,
+    );
+    if (contactRange > AIR_COMBAT.interceptApproachMeters * 1.35) continue;
+    liveAttacker.ammoRemaining = Math.max(0, liveAttacker.ammoRemaining - 1);
+    liveAttacker.attackRunReleased = true;
+    const damage = attacker.aircraftOperational
+      * AIR_COMBAT.fighterBurstDamagePerAircraft
+      * attacker.cohesion
+      * (0.82 + random(state) * 0.36);
+    pending.push({ attackerId: attacker.id, targetId: target.id, damage });
+    state.airEvents.push({
+      id: state.nextEntityId++,
+      time: state.time,
+      kind: "weaponReleased",
+      team: attacker.team,
+      controllerId: attacker.controllerId,
+      squadronId: attacker.id,
+      orderKind: attacker.order?.kind,
+      targetId: target.id,
+      position: copyVec(attacker.position),
+      weapon: "machineGun",
+    });
+  }
+  const damageByTarget = new Map<string, number>();
+  for (const attack of pending) {
+    damageByTarget.set(
+      attack.targetId,
+      (damageByTarget.get(attack.targetId) ?? 0) + attack.damage,
+    );
+  }
+  for (const [targetId, damage] of damageByTarget) {
+    const index = state.airSquadrons.findIndex(({ id }) => id === targetId);
+    if (index < 0) continue;
+    const target = state.airSquadrons[index]!;
+    const result = applyAirDamage(target, damage, "airCombat");
+    const advanced = advanceAirSquadronPhase(result.squadron, state.time);
+    state.airSquadrons[index] = advanced;
+    pushAirLossEvent(state, advanced, result.aircraftLost, "airCombat");
+    const attacks = pending.filter((candidate) => candidate.targetId === targetId);
+    const requestedDamage = attacks.reduce((sum, attack) => sum + attack.damage, 0);
+    for (const attack of attacks) {
+      const source = snapshots.get(attack.attackerId);
+      if (!source) continue;
+      state.airEvents.push({
+        id: state.nextEntityId++,
+        time: state.time,
+        kind: "attackHit",
+        team: source.team,
+        controllerId: source.controllerId,
+        squadronId: source.id,
+        orderKind: source.order?.kind,
+        targetId,
+        position: copyVec(advanced.position),
+        weapon: "machineGun",
+        damage: requestedDamage <= 0
+          ? 0
+          : result.damageApplied * attack.damage / requestedDamage,
+      });
+    }
+  }
+}
+
+function centeredAirDispersion(state: BattleState): number {
+  return ((random(state) + random(state) + random(state)) - 1.5) / 1.5;
+}
+
+function releaseAirStrike(state: BattleState, squadron: AirSquadronState): void {
+  const order = squadron.order;
+  const weapon = order?.selectedWeapon;
+  if (
+    squadron.phase !== "attackRun"
+    || squadron.attackRunReleased
+    || state.time - squadron.phaseStartedAt < airWeaponReleaseDelay(weapon)
+  ) return;
+  const targetId = order?.activeTargetId;
+  const target = targetId ? state.ships.find((ship) =>
+    ship.id === targetId && ship.team !== squadron.team) : undefined;
+  const aimPoint = targetId
+    ? order?.lastKnownPositions?.[targetId] ?? order?.lastKnownPosition
+    : order?.lastKnownPosition;
+  squadron.attackRunReleased = true;
+  if (!weapon || !target || !aimPoint || !airWeaponAvailable(squadron, weapon)) return;
+  if (weapon === "machineGun") squadron.ammoRemaining -= 1;
+  else squadron.ordnanceRemaining -= 1;
+  state.airEvents.push({
+    id: state.nextEntityId++, time: state.time, kind: "weaponReleased",
+    team: squadron.team, controllerId: squadron.controllerId,
+    squadronId: squadron.id, orderKind: order?.kind, targetId,
+    position: copyVec(squadron.position), weapon,
+  });
+  const planeCount = Math.max(1, squadron.aircraftOperational);
+  const salvoId = state.nextEntityId++;
+  if (weapon === "heBomb") {
+    const flightSeconds = Math.max(
+      1.2,
+      Math.sqrt(2 * Math.max(1, squadron.position.y) / GUN.gravity),
+    );
+    for (let index = 0; index < planeCount; index += 1) {
+      const actualAim = {
+        x: aimPoint.x + centeredAirDispersion(state)
+          * AIR_COMBAT.bomb.dispersionMeters / Math.max(0.35, squadron.cohesion),
+        y: 0,
+        z: aimPoint.z + centeredAirDispersion(state)
+          * AIR_COMBAT.bomb.dispersionMeters / Math.max(0.35, squadron.cohesion),
+      };
+      const origin = {
+        x: squadron.position.x + (index - (planeCount - 1) / 2) * 5,
+        y: squadron.position.y,
+        z: squadron.position.z,
+      };
+      state.projectiles.push({
+        id: state.nextEntityId++, ownerId: squadron.id, team: squadron.team,
+        kind: "shell", ammoType: "he", weaponSource: "aircraft", airWeapon: weapon,
+        salvoId, position: copyVec(origin), previousPosition: copyVec(origin),
+        velocity: {
+          x: (actualAim.x - origin.x) / flightSeconds,
+          y: 0,
+          z: (actualAim.z - origin.z) / flightSeconds,
+        },
+        damage: AIR_COMBAT.bomb.damage, age: 0,
+      });
+      state.shots.push({
+        id: state.nextEntityId++, ownerId: squadron.id, team: squadron.team,
+        kind: "shell", ammoType: "he", weaponSource: "aircraft", airWeapon: weapon,
+        salvoId, position: copyVec(origin),
+      });
+    }
+    return;
+  }
+  const dx = aimPoint.x - squadron.position.x;
+  const dz = aimPoint.z - squadron.position.z;
+  const baseHeading = Math.atan2(dx, dz);
+  if (weapon === "aerialTorpedo") {
+    for (let index = 0; index < planeCount; index += 1) {
+      const lateral = (index - (planeCount - 1) / 2) * 15;
+      const rightX = Math.cos(baseHeading);
+      const rightZ = -Math.sin(baseHeading);
+      const heading = baseHeading
+        + (index - (planeCount - 1) / 2) * AIR_COMBAT.torpedo.spreadRadians;
+      const origin = {
+        x: squadron.position.x + rightX * lateral,
+        y: 0.35,
+        z: squadron.position.z + rightZ * lateral,
+      };
+      state.projectiles.push({
+        id: state.nextEntityId++, ownerId: squadron.id, team: squadron.team,
+        kind: "torpedo", weaponSource: "aircraft", airWeapon: weapon,
+        salvoId, position: copyVec(origin), previousPosition: copyVec(origin),
+        velocity: {
+          x: Math.sin(heading) * AIR_COMBAT.torpedo.speedMetersPerSecond,
+          y: 0,
+          z: Math.cos(heading) * AIR_COMBAT.torpedo.speedMetersPerSecond,
+        },
+        damage: AIR_COMBAT.torpedo.damage, age: 0, distanceTravelled: 0,
+        armingDistance: AIR_COMBAT.torpedo.armingDistanceMeters,
+        maximumRange: AIR_COMBAT.torpedo.maximumRangeMeters,
+        detectionRange: AIR_COMBAT.torpedo.detectionRangeMeters,
+      });
+      state.shots.push({
+        id: state.nextEntityId++, ownerId: squadron.id, team: squadron.team,
+        kind: "torpedo", weaponSource: "aircraft", airWeapon: weapon,
+        salvoId, position: copyVec(origin),
+      });
+    }
+    return;
+  }
+  for (let index = 0; index < planeCount; index += 1) {
+    const origin = {
+      x: squadron.position.x + (index - (planeCount - 1) / 2) * 3,
+      y: squadron.position.y,
+      z: squadron.position.z,
+    };
+    const actualAim = {
+      x: aimPoint.x + centeredAirDispersion(state) * 7,
+      y: getShipClass(target.shipClassId).deckHeight * 0.7,
+      z: aimPoint.z + centeredAirDispersion(state) * 7,
+    };
+    const velocity = ballisticVelocity(origin, actualAim, AIR_COMBAT.machineGun.muzzleVelocity);
+    if (!velocity) continue;
+    state.projectiles.push({
+      id: state.nextEntityId++, ownerId: squadron.id, team: squadron.team,
+      kind: "shell", ammoType: "he", weaponSource: "aircraft", airWeapon: weapon,
+      salvoId, position: copyVec(origin), previousPosition: copyVec(origin), velocity,
+      damage: AIR_COMBAT.machineGun.damage, age: 0,
+    });
+    state.shots.push({
+      id: state.nextEntityId++, ownerId: squadron.id, team: squadron.team,
+      kind: "shell", ammoType: "he", weaponSource: "aircraft", airWeapon: weapon,
+      salvoId, position: copyVec(origin),
+    });
+  }
+}
+
+function resolveAirCombat(state: BattleState, dt: number): void {
+  resolveShipAntiAir(state, dt);
+  resolveAirInterceptions(state);
+  for (const squadron of state.airSquadrons) {
+    if (squadron.phase !== "destroyed") releaseAirStrike(state, squadron);
+  }
+}
+
 export function stepSimulation(
   state: BattleState,
   commands: ReadonlyMap<string, ControlCommand>,
@@ -2895,6 +3340,7 @@ export function stepSimulation(
   state.airEvents = [];
   state.time += dt;
   refreshAirContacts(state);
+  assignGuardInterceptions(state);
   state.airSquadrons = state.airSquadrons.map((squadron) => {
     const tracking = refreshAirMissionTracking(state, squadron);
     const advanced = moveAirSquadron(
@@ -3007,6 +3453,7 @@ export function stepSimulation(
     }
     if (command.deployDepthCharge) deployDepthChargePattern(state, ship);
   }
+  resolveAirCombat(state, dt);
   for (const ship of state.ships) {
     if (ship.hull > 0) updateSecondaryBattery(state, ship, dt);
   }

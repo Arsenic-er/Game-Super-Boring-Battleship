@@ -46,6 +46,7 @@ export type AirMissionRejectReason =
   | "wrong-role" | "grounded" | "committed" | "invalid-target";
 export type AirCombatEventKind =
   | "orderAccepted" | "orderRejected" | "launched" | "attackStarted"
+  | "weaponReleased" | "attackHit" | "attackMiss"
   | "returning" | "landed" | "aircraftLost";
 
 /** High-level intent only: no aircraft heading, throttle or release controls. */
@@ -107,7 +108,9 @@ export interface AirSquadronState {
   fuelRemainingSeconds: number;
   phaseStartedAt: number;
   lastUpdatedAt: number;
+  attackRunReleased: boolean;
   order?: AirMissionOrder;
+  resumeOrder?: AirMissionOrder;
 }
 
 export interface AirCombatEvent {
@@ -121,6 +124,8 @@ export interface AirCombatEvent {
   targetId?: string;
   rejectReason?: AirMissionRejectReason;
   position?: Vec3;
+  weapon?: AirWeaponKind;
+  damage?: number;
   aircraftLost?: number;
   lossCause?: AirDamageCause;
 }
@@ -317,7 +322,8 @@ export interface ProjectileState {
   team: Team;
   kind: ProjectileKind;
   ammoType?: AmmoType;
-  weaponSource?: "mainGun" | "secondary";
+  weaponSource?: "mainGun" | "secondary" | "aircraft";
+  airWeapon?: AirWeaponKind;
   salvoId?: number;
   shellProfile?: ShellPenetrationProfile;
   position: Vec3;
@@ -361,7 +367,8 @@ export interface ShotEvent {
   team: Team;
   kind: ProjectileKind | "depthCharge";
   ammoType?: AmmoType;
-  weaponSource?: "mainGun" | "secondary";
+  weaponSource?: "mainGun" | "secondary" | "aircraft";
+  airWeapon?: AirWeaponKind;
   salvoId?: number;
   position: Vec3;
 }
@@ -389,7 +396,8 @@ export interface ImpactEvent {
   impactAngleDegrees?: number;
   armorZone?: ArmorZoneId;
   projectileKind?: ProjectileKind | "depthCharge";
-  weaponSource?: "mainGun" | "secondary";
+  weaponSource?: "mainGun" | "secondary" | "aircraft";
+  airWeapon?: AirWeaponKind;
 }
 
 export interface TorpedoThreat {
