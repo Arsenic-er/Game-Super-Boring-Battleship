@@ -1,5 +1,10 @@
 /* Loaded after the base stylesheet so the pixel interface wins the cascade. */
-:root { font-family: "Fusion Bold Pixel", "Microsoft YaHei", sans-serif; font-weight: 700; image-rendering: pixelated; }
+:root { font-family: "Fusion Bold Pixel", "Microsoft YaHei", "Microsoft JhengHei", "Yu Gothic UI", "Meiryo", "Segoe UI", sans-serif; font-weight: 700; image-rendering: pixelated; }
+body[data-locale="zh-TW"] { font-family: "Fusion Bold Pixel", "Microsoft JhengHei", "PingFang TC", sans-serif; }
+body[data-locale="ja-JP"] { font-family: "Fusion Bold Pixel", "Yu Gothic UI", "Meiryo", sans-serif; }
+body[data-locale="es-ES"], body[data-locale="de-DE"], body[data-locale="ru-RU"] {
+  font-family: "Fusion Bold Pixel", "Segoe UI", "Arial", sans-serif;
+}
 
 .game-shell::after {
   content: ""; position: fixed; z-index: 90; inset: 0; pointer-events: none; opacity: .07;

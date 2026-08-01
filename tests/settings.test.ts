@@ -15,6 +15,7 @@ describe("game settings", () => {
       aimSensitivity: 0.5,
       masterVolume: 0.7,
       muted: false,
+      locale: "zh-CN",
     });
   });
 
@@ -27,15 +28,24 @@ describe("game settings", () => {
       aimSensitivity: 1.2,
       masterVolume: 0.7,
       muted: false,
+      locale: "zh-CN",
     });
     expect(normalizeGameSettings({ masterVolume: 4, muted: true })).toEqual({
       steeringSensitivity: 1,
       aimSensitivity: 1,
       masterVolume: 1,
       muted: true,
+      locale: "zh-CN",
     });
     expect(normalizeGameSettings({ masterVolume: Number.NaN, muted: "yes" })).toEqual(
       DEFAULT_GAME_SETTINGS,
     );
+  });
+
+  it("persists supported locales and rejects unknown locale values", () => {
+    expect(normalizeGameSettings({ locale: "ja-JP" }).locale).toBe("ja-JP");
+    expect(normalizeGameSettings({ locale: "ru-RU" }).locale).toBe("ru-RU");
+    expect(normalizeGameSettings({ locale: "fr-FR" }).locale).toBe("zh-CN");
+    expect(normalizeGameSettings({ locale: null }).locale).toBe("zh-CN");
   });
 });

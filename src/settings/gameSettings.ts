@@ -1,8 +1,12 @@
+import { DEFAULT_GAME_LOCALE, isGameLocale } from "../i18n/gameLocale";
+import type { GameLocale } from "../i18n/gameLocale";
+
 export interface GameSettings {
   steeringSensitivity: number;
   aimSensitivity: number;
   masterVolume: number;
   muted: boolean;
+  locale: GameLocale;
 }
 
 export const DEFAULT_GAME_SETTINGS: GameSettings = {
@@ -10,6 +14,7 @@ export const DEFAULT_GAME_SETTINGS: GameSettings = {
   aimSensitivity: 1,
   masterVolume: 0.7,
   muted: false,
+  locale: DEFAULT_GAME_LOCALE,
 };
 
 const STORAGE_KEY = "grey-sea-game-settings-v1";
@@ -36,11 +41,15 @@ export function normalizeGameSettings(value: unknown): GameSettings {
   const muted = typeof candidate.muted === "boolean"
     ? candidate.muted
     : DEFAULT_GAME_SETTINGS.muted;
+  const locale = isGameLocale(candidate.locale)
+    ? candidate.locale
+    : DEFAULT_GAME_SETTINGS.locale;
   return {
     steeringSensitivity: clamp(steering, 0.35, 1),
     aimSensitivity: clamp(aim, 0.5, 2),
     masterVolume: clamp(masterVolume, 0, 1),
     muted,
+    locale,
   };
 }
 

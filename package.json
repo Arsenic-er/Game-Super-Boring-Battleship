@@ -2,6 +2,20 @@
   "name": "battleship",
   "private": true,
   "version": "0.6.4",
+  "description": "A lightweight single-player 3D WWII naval combat game with modular damage and AI-controlled fleet aviation.",
+  "author": {
+    "name": "Arsenic-er",
+    "email": "302726993@qq.com"
+  },
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/Arsenic-er/Game-Super-Boring-Battleship.git"
+  },
+  "homepage": "https://github.com/Arsenic-er/Game-Super-Boring-Battleship",
+  "bugs": {
+    "url": "https://github.com/Arsenic-er/Game-Super-Boring-Battleship/issues"
+  },
+  "keywords": ["wwii", "naval-combat", "battleship", "babylonjs", "electron", "single-player"],
   "type": "module",
   "main": "desktop/main.cjs",
   "scripts": {
@@ -26,7 +40,7 @@
   },
   "build": {
     "appId": "io.greysea.battleship",
-    "productName": "Grey Sea Action",
+    "productName": "Super Boring Battleship Game",
     "artifactName": "battleship-${version}-windows-${arch}.${ext}",
     "directories": {
       "output": "release"

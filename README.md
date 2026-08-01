@@ -2,13 +2,23 @@
   <img src="docs/images/hero-banner.png" alt="Super Boring Battleship Game — pixel-art destroyer battle" width="100%">
 </p>
 
+[English](README.md) |
+[简体中文](README.zh-CN.md) |
+[繁體中文](README.zh-TW.md) |
+[日本語](README.ja.md) |
+[Español](README.es.md) |
+[Deutsch](README.de.md) |
+[Русский](README.ru.md)
+
 # Super Boring Battleship Game
 
 **Official Chinese title / 正式中文名：Game：超级无聊战舰游戏**
 
-> A deliberately unhurried, lightweight 3D WWII destroyer combat prototype by **koko**.
+> A deliberately unhurried, lightweight 3D WWII naval-combat game by **koko**.
+> 由 **koko** 制作的低配置二战 3D 海战游戏 / 由 **koko** 製作的低配備二戰 3D 海戰遊戲 / **koko** 制作の軽量な第二次大戦3D海戦ゲーム
+> Combate naval 3D de la SGM para equipos modestos / Leichtgewichtiger 3D-Seekampf im Zweiten Weltkrieg / Лёгкая 3D-игра о морских боях Второй мировой
 
-[Download the latest Windows build](https://github.com/Arsenic-er/Game-Super-Boring-Battleship/releases/latest) · [中文说明](#game超级无聊战舰游戏)
+[Download the latest Windows build](https://github.com/Arsenic-er/Game-Super-Boring-Battleship/releases/latest) · Select a language above
 
 ## About the game
 
@@ -22,8 +32,8 @@ This is an early prototype rather than a finished commercial game. Visuals, bala
 - Historically paced destroyer movement with gradual rudder shift, steering-damage response and speed loss during hard turns.
 - Main-gun ballistics with visible shell arcs, dispersion, reload progress and independent turret alignment.
 - Staged HE/AP loading with 21 mm HE penetration, probabilistic AP ricochet, fuse-based overpenetration and compartment saturation.
-- Weapon slots: `1` main guns, `2` twin torpedo launch, `3` command-only fleet aviation.
-- Aviation command foundation for AI-piloted fighter CAP/interception and bomber surface strikes; players issue missions but never fly or release weapons directly.
+- Weapon slots: `1` main guns, `2` twin torpedo launch, `3` AI-controlled fleet aviation.
+- RTS-style box selection, movement, guard, patrol, interception and surface-strike orders for AI-piloted squadrons; pilots select suitable guns, bombs or aerial torpedoes and resolve attacks without direct player control.
 - Torpedo side arcs, narrow/wide spread, arming distance, per-model maximum range, lead prediction and closest-approach warnings.
 - Four historical torpedo loadouts with distinct compressed gameplay trade-offs in speed, range, damage, reload, wake visibility and onboard risk.
 - A visible traversing twin-tube launcher with alignment-gated firing, one loaded salvo plus two reserve salvos, and dynamic reload progress.
@@ -122,7 +132,8 @@ Third-party libraries and the Fusion Pixel Font remain under their respective li
 - 每座主炮塔独立判断结构死角：射界内可在转正前按当前炮管方向开火，死角内不浪费炮弹和装填。
 - HE/AP 弹药切换、装甲入射角、跳弹、碎弹、正常穿透与过度穿透。
 - 弹种切换区分“当前已装填”和“待装填”；HE 固定穿深、AP 概率跳弹/引信过穿以及舱段饱和共同决定伤害。
-- 武器栏：`1` 主炮、`2` 双雷齐射、`3` 预留舰载机。
+- 武器栏：`1` 主炮、`2` 双雷齐射、`3` AI 自主作战的舰载航空兵指挥。
+- 航空兵支持类似即时战略游戏的框选、移动、护卫、巡逻、截击和对舰攻击；机群会按角色选择机炮、炸弹或航空鱼雷并自行完成攻击。
 - 鱼雷具有左右舷射界、窄/宽扇面、武装距离、型号独立最大射程、提前量预测线与最近通过距离警报。
 - 四种历史鱼雷组件拥有独立的航速、射程、装药、装填、尾迹可见性与舰上风险取舍，并从船坞配装真实继承到战斗。
 - 舰体上存在可见且真实转动的双联装鱼雷发射器；必须转到位才能发射，并携带一轮管内齐射与两轮备用齐射。
@@ -148,7 +159,7 @@ Third-party libraries and the Fusion Pixel Font remain under their respective li
 | 移动鼠标 | 转动视角 |
 | 鼠标滚轮 | 调整瞄准距离 |
 | `R` | 进入或退出瞄准镜 |
-| `1` / `2` / `3` | 主炮 / 鱼雷 / 预留舰载机 |
+| `1` / `2` / `3` | 主炮 / 鱼雷 / 舰载航空兵指挥 |
 | `Q` | 主炮模式切换 HE / AP；鱼雷模式切换窄 / 宽扇面 |
 | `Space` | 发射当前武器 |
 | `4` | 循环均衡 / 灭火 / 堵漏 / 模块优先级 |

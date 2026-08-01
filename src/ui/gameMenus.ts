@@ -1,5 +1,12 @@
 import type { LocalProfile, SupplyDrawResult } from "../profile/localProfile";
 import {
+  GAME_LOCALE_OPTIONS,
+  applyDocumentLocale,
+  formatGameNumber,
+  isGameLocale,
+  localizeElement,
+} from "../i18n/gameLocale";
+import {
   battleLoadout,
   drawSupplies,
   equipComponent,
@@ -48,6 +55,9 @@ type StartTab = "mission" | "store" | "inventory" | "dock" | "codex";
 const hullTotalSlots = (shipClassId: ShipClassId): number =>
   Object.values(SHIP_CLASS_SLOT_COUNTS[shipClassId]).reduce((total, count) => total + count, 0);
 
+const languageOptionsMarkup = (): string => GAME_LOCALE_OPTIONS
+  .map(({ value, label }) => `<option value="${value}">${label}</option>`).join("");
+
 const hullOptionsMarkup = (): string => ([
   ["destroyer", "驱逐舰"], ["lightCruiser", "轻巡洋舰"], ["battleship", "战列舰"],
 ] as const).map(([hullId, label]) => `<div class="hull-family"><h4>${label}</h4>${SHIP_CLASS_IDS.filter((id) => SHIP_CLASSES[id].hullId === hullId).map((shipClassId) => {
@@ -92,6 +102,7 @@ export class GameMenus {
   private readonly aimValue: HTMLOutputElement;
   private readonly masterVolumeValue: HTMLOutputElement;
   private readonly qualityButtons: HTMLButtonElement[];
+  private readonly languageSelectors: HTMLSelectElement[];
   private readonly tabButtons: HTMLButtonElement[];
   private readonly panels: Record<StartTab, HTMLElement>;
   private readonly commanderName: HTMLInputElement;
@@ -137,6 +148,7 @@ export class GameMenus {
         <section class="game-menu-card start-card command-center" role="dialog" aria-label="开始战斗、军需商店与舰队船坞">
           <div class="profile-strip">
             <label><span>本地舰长档案</span><input class="commander-name" maxlength="20" aria-label="本地舰长昵称" /></label>
+            <label class="profile-language"><span>界面语言</span><select class="menu-language" aria-label="界面语言">${languageOptionsMarkup()}</select></label>
             <div class="profile-resources">
               <span><i class="fa-solid fa-coins"></i> 银币 <strong class="profile-credits">0</strong></span>
               <span><i class="fa-solid fa-flask"></i> 研发 <strong class="profile-research">0</strong></span>
@@ -197,7 +209,7 @@ export class GameMenus {
         </section>
       </div>
       <div class="game-menu-overlay pause-menu" hidden><section class="game-menu-card" role="dialog" aria-modal="true" aria-label="暂停菜单"><p class="eyebrow">战斗暂停</p><h2>舰桥指令</h2><p>战场模拟已暂停。舰装更换需返回主菜单。</p><div class="menu-buttons"><button class="menu-button primary resume-battle" type="button">返回战斗</button><button class="menu-button open-settings" type="button">设置</button><button class="menu-button danger restart-battle" type="button">重新开始</button><button class="menu-button exit-main-menu" type="button">退出到主菜单</button></div></section></div>
-      <div class="game-menu-overlay settings-menu" hidden><section class="game-menu-card" role="dialog" aria-modal="true" aria-label="游戏设置"><p class="eyebrow">游戏设置</p><h2>操控与画面</h2><div class="settings-group"><label>操控灵敏度</label><div class="sensitivity-row"><span>转向</span><input class="menu-steering" type="range" min="35" max="100" step="5" /><output class="menu-steering-value">100%</output></div><div class="sensitivity-row"><span>瞄准</span><input class="menu-aim" type="range" min="50" max="200" step="10" /><output class="menu-aim-value">100%</output></div></div><div class="settings-group"><label>画面质量</label><div class="quality-options"><button class="quality-option" type="button" data-quality="low">低（推荐）</button><button class="quality-option" type="button" data-quality="medium">中</button></div></div><div class="menu-buttons"><button class="menu-button settings-back" type="button">返回暂停菜单</button></div></section></div>`;
+      <div class="game-menu-overlay settings-menu" hidden><section class="game-menu-card" role="dialog" aria-modal="true" aria-label="游戏设置"><p class="eyebrow">游戏设置</p><h2>操控与画面</h2><div class="settings-group language-settings"><label>界面语言</label><select class="menu-language" aria-label="界面语言">${languageOptionsMarkup()}</select><small>语言切换会立即生效并保存在本机</small></div><div class="settings-group"><label>操控灵敏度</label><div class="sensitivity-row"><span>转向</span><input class="menu-steering" type="range" min="35" max="100" step="5" /><output class="menu-steering-value">100%</output></div><div class="sensitivity-row"><span>瞄准</span><input class="menu-aim" type="range" min="50" max="200" step="10" /><output class="menu-aim-value">100%</output></div></div><div class="settings-group"><label>画面质量</label><div class="quality-options"><button class="quality-option" type="button" data-quality="low">低（推荐）</button><button class="quality-option" type="button" data-quality="medium">中等</button></div></div><div class="menu-buttons"><button class="menu-button settings-back" type="button">返回暂停菜单</button></div></section></div>`;
     while (container.firstElementChild) parent.append(container.firstElementChild);
 
     const audioSettings = document.createElement("div");
@@ -213,6 +225,7 @@ export class GameMenus {
     this.startOverlay = find(".start-menu"); this.pauseOverlay = find(".pause-menu"); this.settingsOverlay = find(".settings-menu");
     this.steering = find(".menu-steering"); this.aim = find(".menu-aim"); this.masterVolume = find(".menu-master-volume"); this.muteAudio = find(".menu-mute-audio"); this.steeringValue = find(".menu-steering-value"); this.aimValue = find(".menu-aim-value"); this.masterVolumeValue = find(".menu-master-volume-value");
     this.qualityButtons = Array.from(parent.querySelectorAll("[data-quality]")); this.tabButtons = Array.from(parent.querySelectorAll("[data-menu-tab]"));
+    this.languageSelectors = Array.from(parent.querySelectorAll(".menu-language"));
     this.panels = { mission: find(".mission-panel"), store: find(".store-panel"), inventory: find(".inventory-panel"), dock: find(".dock-panel"), codex: find(".codex-panel") };
     this.commanderName = find(".commander-name"); this.credits = find(".profile-credits"); this.researchPoints = find(".profile-research"); this.supplyTokens = find(".profile-tokens"); this.materialSummary = find(".material-summary");
     this.guaranteePanel = find(".guarantee-panel"); this.drawResults = find(".draw-results"); this.inventoryGrid = find(".inventory-grid"); this.componentDetail = find(".component-detail");
@@ -220,6 +233,7 @@ export class GameMenus {
     this.warehouseGrid = find(".warehouse-grid"); this.warehouseDetail = find(".warehouse-detail"); this.warehouseNotice = find(".warehouse-notice"); this.codexBody = find(".codex-table tbody");
     this.dockPreview = new DockPreview(find(".dock-preview"));
     this.steering.value = String(Math.round(this.settings.steeringSensitivity * 100)); this.aim.value = String(Math.round(this.settings.aimSensitivity * 100)); this.masterVolume.value = String(Math.round(this.settings.masterVolume * 100)); this.commanderName.value = this.profile.commanderName;
+    for (const selector of this.languageSelectors) selector.value = this.settings.locale;
     this.renderStaticContent(); this.updateSensitivityLabels(); this.setQuality(initialQuality); this.renderProfile(); this.setStartTab("mission");
 
     find<HTMLButtonElement>(".start-battle").addEventListener("click", () => this.start("battle"));
@@ -242,7 +256,16 @@ export class GameMenus {
     this.aim.addEventListener("input", () => { this.settings = { ...this.settings, aimSensitivity: Number(this.aim.value) / 100 }; this.emitSettings(); });
     this.masterVolume.addEventListener("input", () => { this.settings = { ...this.settings, masterVolume: Number(this.masterVolume.value) / 100 }; this.emitSettings(); });
     this.muteAudio.addEventListener("click", () => { this.settings = { ...this.settings, muted: !this.settings.muted }; this.emitSettings(); });
+    for (const selector of this.languageSelectors) selector.addEventListener("change", () => {
+      if (!isGameLocale(selector.value)) return;
+      this.settings = { ...this.settings, locale: selector.value };
+      for (const sibling of this.languageSelectors) sibling.value = selector.value;
+      this.renderProfile();
+      this.applyLocale();
+      this.emitSettings();
+    });
     for (const button of this.qualityButtons) button.addEventListener("click", () => { const quality = button.dataset.quality === "medium" ? "medium" : "low"; this.setQuality(quality); this.callbacks.onQualityChange(quality); });
+    this.applyLocale();
   }
 
   private renderStaticContent(): void {
@@ -301,8 +324,8 @@ export class GameMenus {
   }
 
   private renderProfile(): void {
-    this.credits.textContent = this.profile.credits.toLocaleString("zh-CN");
-    this.researchPoints.textContent = this.profile.researchPoints.toLocaleString("zh-CN");
+    this.credits.textContent = formatGameNumber(this.profile.credits, this.settings.locale);
+    this.researchPoints.textContent = formatGameNumber(this.profile.researchPoints, this.settings.locale);
     this.supplyTokens.textContent = String(this.profile.supplyTokens);
     this.materialSummary.textContent = `钢材 ${this.profile.materials.steel} · 零件 ${this.profile.materials.parts}`;
     for (const button of this.startOverlay.querySelectorAll<HTMLButtonElement>("[data-ship-class-id]")) {
@@ -315,6 +338,7 @@ export class GameMenus {
     this.dockPreview.setShipClass(equipment.shipClassId);
     this.dockPreview.setMainGun(equipment.mainGunId);
     this.dockPreview.setTorpedo(equipment.torpedoId);
+    this.applyLocale();
   }
 
   private renderStore(): void {
@@ -324,7 +348,7 @@ export class GameMenus {
       const unlocked = Boolean(this.profile.unlockedEquipment[item.id]);
       const owned = this.profile.inventory[item.id] ?? 0;
       const cost = item.purchaseCost;
-      return `<button class="armory-item rarity-${item.rarity}${unlocked ? " researched" : " locked"}" data-armory-item="${item.id}" type="button"><i class="${CATEGORY_META[item.category].icon}"></i><span>${item.name}</span><small>${item.origin}</small><b>${unlocked ? `${cost.credits.toLocaleString("zh-CN")} 银币` : `${item.researchCost} 研发解锁`}</b><em>持有 ×${owned}</em></button>`;
+      return `<button class="armory-item rarity-${item.rarity}${unlocked ? " researched" : " locked"}" data-armory-item="${item.id}" type="button"><i class="${CATEGORY_META[item.category].icon}"></i><span>${item.name}</span><small>${item.origin}</small><b>${unlocked ? `${formatGameNumber(cost.credits, this.settings.locale)} 银币` : `${item.researchCost} 研发解锁`}</b><em>持有 ×${owned}</em></button>`;
     }).join("");
     for (const button of this.armoryGrid.querySelectorAll<HTMLButtonElement>("[data-armory-item]")) {
       button.addEventListener("click", () => { this.selectedArmoryItemId = button.dataset.armoryItem; this.renderStore(); });
@@ -339,7 +363,7 @@ export class GameMenus {
 
   private priceMarkup(item: EquipmentDefinition): string {
     const cost = item.purchaseCost;
-    return `<span><i class="fa-solid fa-coins"></i>${cost.credits.toLocaleString("zh-CN")}</span>${cost.steel ? `<span>钢材 ${cost.steel}</span>` : ""}${cost.parts ? `<span>零件 ${cost.parts}</span>` : ""}`;
+    return `<span><i class="fa-solid fa-coins"></i>${formatGameNumber(cost.credits, this.settings.locale)}</span>${cost.steel ? `<span>钢材 ${cost.steel}</span>` : ""}${cost.parts ? `<span>零件 ${cost.parts}</span>` : ""}`;
   }
 
   private renderArmoryDetail(item: EquipmentDefinition): void {
@@ -434,6 +458,13 @@ export class GameMenus {
     this.componentDetail.querySelector<HTMLButtonElement>(".equip-selected")?.addEventListener("click", () => { this.profile = equipComponent(this.profile, item.id); this.emitProfile(); });
   }
 
+  private applyLocale(): void {
+    applyDocumentLocale(this.settings.locale);
+    localizeElement(document.body, this.settings.locale);
+    for (const selector of this.languageSelectors) selector.value = this.settings.locale;
+    document.body.dataset.locale = this.settings.locale;
+  }
+
   private emitProfile(): void { this.renderProfile(); this.callbacks.onProfileChange(normalizeLocalProfile(this.profile)); }
   private setStartTab(tab: StartTab): void { for (const [id, panel] of Object.entries(this.panels)) panel.hidden = id !== tab; for (const button of this.tabButtons) { const active = button.dataset.menuTab === tab; button.classList.toggle("active", active); button.setAttribute("aria-selected", String(active)); } if (tab === "dock") setTimeout(() => this.dockPreview.resize(), 0); }
   private start(mode: GameMode): void { this.startOverlay.hidden = true; this.callbacks.onStart(mode); }
@@ -449,6 +480,6 @@ export class GameMenus {
   setProfile(profile: LocalProfile): void { this.profile = normalizeLocalProfile(profile); this.renderProfile(); }
   showStart(): void { this.pauseOverlay.hidden = true; this.settingsOverlay.hidden = true; this.startOverlay.hidden = false; this.pauseOpen = false; this.settingsOpen = false; this.setStartTab("mission"); }
   setQuality(quality: "low" | "medium"): void { for (const button of this.qualityButtons) button.classList.toggle("active", button.dataset.quality === quality); }
-  private emitSettings(): void { this.updateSensitivityLabels(); this.callbacks.onSettingsChange({ ...this.settings }); }
+  private emitSettings(): void { this.updateSensitivityLabels(); this.applyLocale(); this.callbacks.onSettingsChange({ ...this.settings }); }
   private updateSensitivityLabels(): void { this.steeringValue.textContent = `${Math.round(this.settings.steeringSensitivity * 100)}%`; this.aimValue.textContent = `${Math.round(this.settings.aimSensitivity * 100)}%`; this.masterVolumeValue.textContent = `${Math.round(this.settings.masterVolume * 100)}%`; this.muteAudio.textContent = this.settings.muted ? "静音：开" : "静音：关"; this.muteAudio.setAttribute("aria-pressed", String(this.settings.muted)); this.muteAudio.classList.toggle("active", this.settings.muted); }
 }

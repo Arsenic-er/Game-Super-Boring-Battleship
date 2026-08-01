@@ -1162,6 +1162,34 @@ kbd { display: inline-block; margin-right: 3px; padding: 3px 5px; color: #e5eeee
   border-top: 1px solid rgba(174, 205, 204, .16);
 }
 .settings-group > label { display: block; margin-bottom: 12px; color: #c6d8d7; font-size: 12px; font-weight: 700; letter-spacing: .06em; }
+
+.profile-language {
+  display: grid;
+  gap: 5px;
+  min-width: 150px;
+  color: #8fb0b1;
+  font-size: 9px;
+}
+.profile-language select,
+.language-settings select {
+  min-height: 34px;
+  padding: 6px 28px 6px 9px;
+  color: #e0ece7;
+  border: 1px solid #4b7e82;
+  background: #09242c;
+  font: inherit;
+  cursor: pointer;
+}
+.language-settings {
+  display: grid;
+  gap: 8px;
+}
+.language-settings > label { margin-bottom: 2px; }
+.language-settings small { color: #77999b; font-size: 9px; line-height: 1.5; }
+body[data-locale="de-DE"] .game-menu-card,
+body[data-locale="ru-RU"] .game-menu-card { letter-spacing: 0; }
+body[data-locale="de-DE"] .menu-tabs button,
+body[data-locale="ru-RU"] .menu-tabs button { font-size: 11px; }
 .game-menu-card .sensitivity-row { grid-template-columns: 76px 1fr 48px; min-height: 38px; }
 .mode-choice { display: grid; grid-template-columns: 1fr 1fr; gap: 11px; margin-top: 22px; }
 .mode-card {
