@@ -129,6 +129,7 @@ function applyControlSettings(next: GameSettings): void {
   input.setSteeringSensitivity(next.steeringSensitivity);
   view.setAimSensitivity(next.aimSensitivity);
   audio.configure(next.masterVolume, next.muted);
+  tacticalMap?.setLocale(next.locale);
   saveGameSettings(next);
 }
 
@@ -136,6 +137,7 @@ applyControlSettings(settings);
 const gameShell = root.querySelector<HTMLElement>(".game-shell");
 if (!gameShell) throw new Error("Missing game shell");
 tacticalMap = new TacticalMap(gameShell, {
+  locale: settings.locale,
   onOpen: () => {
     input.setSuppressed(true);
     view.releasePointerLock();

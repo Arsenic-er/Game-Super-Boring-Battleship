@@ -29,6 +29,26 @@ export function mountTraversed(previous: number | undefined, current: number): b
   return audioAngularDelta(previous, current) > AUDIO.traverseEpsilonRadians;
 }
 
+export type CombatShotSoundKind =
+  | "depthChargeDrop"
+  | "airMachineGun"
+  | "airBombRelease"
+  | "airTorpedoEntry"
+  | "torpedoLaunch"
+  | "secondaryGun"
+  | "mainGun";
+
+export function combatShotSoundKind(shot: Pick<ShotEvent, "kind" | "weaponSource" | "airWeapon">): CombatShotSoundKind {
+  if (shot.weaponSource === "aircraft") {
+    if (shot.airWeapon === "machineGun") return "airMachineGun";
+    if (shot.airWeapon === "aerialTorpedo") return "airTorpedoEntry";
+    return "airBombRelease";
+  }
+  if (shot.kind === "depthCharge") return "depthChargeDrop";
+  if (shot.kind === "torpedo") return "torpedoLaunch";
+  return shot.weaponSource === "secondary" ? "secondaryGun" : "mainGun";
+}
+
 export class CombatAudio {
   private context?: AudioContext;
   private master?: GainNode;
@@ -122,27 +142,35 @@ export class CombatAudio {
 
   consumeShots(shots: readonly ShotEvent[]): void {
     if (!this.context || this.context.state !== "running") return;
-    const torpedoSalvos = new Set<string>();
-    const gunSalvos = new Set<string>();
-    const depthChargePatterns = new Set<string>();
-    const secondarySalvos = new Set<string>();
+    const played = new Set<string>();
     for (const shot of shots) {
-      if (shot.kind === "depthCharge") {
-        if (depthChargePatterns.has(shot.ownerId)) continue;
-        depthChargePatterns.add(shot.ownerId);
-        this.depthChargeDrop(shot.team === "player" ? 0.13 : 0.05);
-      } else if (shot.kind === "torpedo") {
-        if (torpedoSalvos.has(shot.ownerId)) continue;
-        torpedoSalvos.add(shot.ownerId);
-        this.torpedoLaunch(shot.team === "player" ? 0.2 : 0.08);
-      } else if (shot.weaponSource === "secondary") {
-        if (secondarySalvos.has(shot.ownerId)) continue;
-        secondarySalvos.add(shot.ownerId);
-        this.secondaryBoom(shot.team === "player" ? 0.075 : 0.035);
-      } else {
-        if (gunSalvos.has(shot.ownerId)) continue;
-        gunSalvos.add(shot.ownerId);
-        this.boom(shot.team === "player" ? 0.23 : 0.1);
+      const sound = combatShotSoundKind(shot);
+      const key = `${sound}:${shot.ownerId}:${shot.salvoId ?? shot.id}`;
+      if (played.has(key)) continue;
+      played.add(key);
+      const friendly = shot.team === "player";
+      switch (sound) {
+        case "depthChargeDrop":
+          this.depthChargeDrop(friendly ? 0.13 : 0.05);
+          break;
+        case "airMachineGun":
+          this.airMachineGun(friendly ? 0.065 : 0.026);
+          break;
+        case "airBombRelease":
+          this.airBombRelease(friendly ? 0.075 : 0.028);
+          break;
+        case "airTorpedoEntry":
+          this.airTorpedoEntry(friendly ? 0.095 : 0.038);
+          break;
+        case "torpedoLaunch":
+          this.torpedoLaunch(friendly ? 0.2 : 0.08);
+          break;
+        case "secondaryGun":
+          this.secondaryBoom(friendly ? 0.075 : 0.035);
+          break;
+        case "mainGun":
+          this.boom(friendly ? 0.23 : 0.1);
+          break;
       }
     }
   }
@@ -309,6 +337,62 @@ export class CombatAudio {
     hiss.start(now);
     hiss.stop(now + 0.38);
     this.noiseBurst(volume, 0.48, 2_400);
+  }
+
+  private airMachineGun(volume: number): void {
+    const context = this.context;
+    const output = this.output();
+    if (!context || !output) return;
+    const now = context.currentTime;
+    for (let burst = 0; burst < 3; burst += 1) {
+      const start = now + burst * 0.055;
+      const oscillator = context.createOscillator();
+      const gain = context.createGain();
+      oscillator.type = "square";
+      oscillator.frequency.setValueAtTime(190 + burst * 18, start);
+      gain.gain.setValueAtTime(volume, start);
+      gain.gain.exponentialRampToValueAtTime(0.001, start + 0.035);
+      oscillator.connect(gain).connect(output);
+      oscillator.start(start);
+      oscillator.stop(start + 0.04);
+    }
+    this.noiseBurst(volume * 0.65, 0.19, 2_800);
+  }
+
+  private airBombRelease(volume: number): void {
+    const context = this.context;
+    const output = this.output();
+    if (!context || !output) return;
+    const now = context.currentTime;
+    const oscillator = context.createOscillator();
+    const gain = context.createGain();
+    oscillator.type = "triangle";
+    oscillator.frequency.setValueAtTime(240, now);
+    oscillator.frequency.exponentialRampToValueAtTime(115, now + 0.16);
+    gain.gain.setValueAtTime(volume, now);
+    gain.gain.exponentialRampToValueAtTime(0.001, now + 0.18);
+    oscillator.connect(gain).connect(output);
+    oscillator.start(now);
+    oscillator.stop(now + 0.2);
+    this.noiseBurst(volume * 0.42, 0.12, 1_650);
+  }
+
+  private airTorpedoEntry(volume: number): void {
+    const context = this.context;
+    const output = this.output();
+    if (!context || !output) return;
+    const now = context.currentTime;
+    const oscillator = context.createOscillator();
+    const gain = context.createGain();
+    oscillator.type = "sine";
+    oscillator.frequency.setValueAtTime(118, now);
+    oscillator.frequency.exponentialRampToValueAtTime(62, now + 0.26);
+    gain.gain.setValueAtTime(volume * 0.7, now);
+    gain.gain.exponentialRampToValueAtTime(0.001, now + 0.3);
+    oscillator.connect(gain).connect(output);
+    oscillator.start(now);
+    oscillator.stop(now + 0.32);
+    this.noiseBurst(volume, 0.34, 1_900);
   }
 
   private depthChargeDrop(volume: number): void {

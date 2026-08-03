@@ -55,6 +55,15 @@ import {
 } from "./environmentMaterials";
 import { createPixelVfxMaterial } from "./vfxMaterials";
 import type { PixelVfxKind } from "./vfxMaterials";
+import {
+  createAirSquadronGeometry,
+  type AirSquadronVisual,
+} from "./aircraftGeometry";
+import {
+  aircraftPitch,
+  airVisualSnapshot,
+  formationOffsets,
+} from "./aircraftPresentation";
 import type { AimProvider } from "../controllers/playerInput";
 import type {
   BattleState,
@@ -141,6 +150,7 @@ export class GameView implements AimProvider {
   private readonly ambientLight: HemisphericLight;
   private readonly sunLight: DirectionalLight;
   private readonly ships = new Map<string, ShipVisual>();
+  private readonly airSquadronVisuals = new Map<string, AirSquadronVisual>();
   private readonly projectileMeshes = new Map<number, ProjectileVisual>();
   private readonly depthChargeMeshes = new Map<number, Mesh>();
   private readonly underwaterTargetMeshes = new Map<string, TransformNode>();
@@ -783,6 +793,79 @@ export class GameView implements AimProvider {
     }
   }
 
+  private syncAirSquadrons(state: BattleState, dt: number): void {
+    const activeIds = new Set(state.airSquadrons.map((squadron) => squadron.id));
+    for (const [id, visual] of this.airSquadronVisuals) {
+      if (activeIds.has(id)) continue;
+      visual.root.dispose(false, true);
+      this.airSquadronVisuals.delete(id);
+    }
+    const player = state.ships.find((ship) => ship.team === "player");
+    const maximumDistance = this.quality === "low" ? 4_200 : 5_000;
+    for (const squadron of state.airSquadrons) {
+      const snapshot = airVisualSnapshot(squadron, state.time, "player");
+      let visual = this.airSquadronVisuals.get(squadron.id);
+      if (!snapshot) {
+        visual?.root.setEnabled(false);
+        continue;
+      }
+      const tooFar = player && Math.hypot(
+        snapshot.position.x - player.position.x,
+        snapshot.position.z - player.position.z,
+      ) > maximumDistance;
+      if (tooFar) {
+        visual?.root.setEnabled(false);
+        continue;
+      }
+      if (visual && (
+        visual.role !== snapshot.role
+        || visual.team !== squadron.team
+        || visual.capacity !== squadron.aircraftCapacity
+      )) {
+        visual.root.dispose(false, true);
+        this.airSquadronVisuals.delete(squadron.id);
+        visual = undefined;
+      }
+      if (!visual) {
+        visual = createAirSquadronGeometry(
+          this.scene,
+          squadron.id,
+          squadron.team,
+          snapshot.role,
+          squadron.aircraftCapacity,
+        );
+        visual.lastHeading = snapshot.heading;
+        this.airSquadronVisuals.set(squadron.id, visual);
+      }
+      visual.root.setEnabled(true);
+      visual.root.position.copyFrom(toVector(snapshot.position));
+      const headingDelta = wrapAngle(snapshot.heading - visual.lastHeading);
+      const targetBank = Math.max(-0.24, Math.min(0.24, -headingDelta * 3.2));
+      visual.bank += (targetBank - visual.bank) * Math.min(1, dt * 5.5);
+      visual.root.rotation.y = snapshot.heading;
+      visual.root.rotation.z = visual.bank;
+      visual.lastHeading = snapshot.heading;
+      const offsets = formationOffsets(snapshot.role, snapshot.aircraftCount, snapshot.phase);
+      for (const [index, plane] of visual.planes.entries()) {
+        const offset = offsets[index];
+        plane.root.setEnabled(Boolean(offset));
+        if (!offset) continue;
+        plane.root.position.set(
+          offset.x,
+          offset.y + Math.sin(state.time * 2.7 + index * 1.73) * 0.32,
+          offset.z,
+        );
+        plane.root.rotation.x = aircraftPitch(snapshot.role, snapshot.phase);
+        plane.root.rotation.z = Math.sin(state.time * 1.3 + index) * 0.012;
+        plane.body.visibility = snapshot.visibility;
+        plane.propeller.rotation.z += dt * (snapshot.role === "fighter" ? 34 : 27);
+        for (const blade of plane.propeller.getChildMeshes()) {
+          blade.visibility = snapshot.visibility * 0.78;
+        }
+      }
+    }
+  }
+
   private syncProjectiles(state: BattleState, perceivedTarget?: PlayerTargetView): void {
     const player = state.ships.find((ship) => ship.team === "player");
     const visibleProjectiles = state.projectiles.filter((projectile) =>
@@ -805,34 +888,42 @@ export class GameView implements AimProvider {
       let visual = this.projectileMeshes.get(projectile.id);
       if (!visual) {
         const torpedo = projectile.kind === "torpedo";
+        const aircraftWeapon = projectile.weaponSource === "aircraft";
+        const airMachineGun = aircraftWeapon && projectile.airWeapon === "machineGun";
+        const airBomb = aircraftWeapon && projectile.airWeapon === "heBomb";
+        const aerialTorpedo = aircraftWeapon && projectile.airWeapon === "aerialTorpedo";
         const secondary = projectile.weaponSource === "secondary";
         const apShell = projectile.kind === "shell" && projectile.ammoType === "ap";
         const root = new TransformNode(`${projectile.kind}-root-${projectile.id}`, this.scene);
         const shell = torpedo
           ? CreateCylinder(`torpedo-${projectile.id}`, {
-            height: 5.6,
-            diameter: 0.74,
+            height: aerialTorpedo ? 3.8 : 5.6,
+            diameter: aerialTorpedo ? 0.48 : 0.74,
             tessellation: 8,
           }, this.scene)
           : CreateBox(`shell-${projectile.id}`, {
-            width: secondary ? 0.38 : 0.72,
-            height: secondary ? 0.38 : 0.72,
-            depth: secondary ? 2.6 : 4.8,
+            width: airMachineGun ? 0.16 : airBomb ? 0.48 : secondary ? 0.38 : 0.72,
+            height: airMachineGun ? 0.16 : airBomb ? 0.48 : secondary ? 0.38 : 0.72,
+            depth: airMachineGun ? 0.7 : airBomb ? 1.65 : secondary ? 2.6 : 4.8,
           }, this.scene);
         if (torpedo) shell.rotation.x = Math.PI / 2;
         const shellMaterial = this.effectMaterial(
-          torpedo ? "projectile-torpedo" : apShell ? "projectile-ap" : "projectile-he",
+          torpedo ? "projectile-torpedo" : airMachineGun ? "projectile-air-mg" : airBomb ? "projectile-air-bomb" : apShell ? "projectile-ap" : "projectile-he",
           torpedo
             ? new Color3(0.12, 0.18, 0.17)
+            : airMachineGun ? new Color3(1, 0.72, 0.16)
+              : airBomb ? new Color3(0.18, 0.2, 0.17)
             : apShell ? new Color3(0.62, 0.86, 1) : new Color3(1, 0.78, 0.25),
           torpedo
             ? new Color3(0.34, 0.42, 0.36)
+            : airMachineGun ? new Color3(1, 0.32, 0.03)
+              : airBomb ? new Color3(0.08, 0.1, 0.08)
             : apShell ? new Color3(0.12, 0.48, 1) : new Color3(1, 0.4, 0.04),
         );
         shell.material = shellMaterial;
         shell.parent = root;
         const glow = CreateSphere(`shell-glow-${projectile.id}`, {
-          diameter: secondary ? 1.35 : 2.6,
+          diameter: airMachineGun ? 0.62 : airBomb ? 0.25 : secondary ? 1.35 : 2.6,
           segments: 4,
         }, this.scene);
         const glowMaterial = this.effectMaterial(
@@ -843,7 +934,7 @@ export class GameView implements AimProvider {
         );
         glow.material = glowMaterial;
         glow.parent = root;
-        glow.visibility = torpedo ? 0 : 1;
+        glow.visibility = torpedo || airBomb ? 0 : airMachineGun ? 0.68 : 1;
         visual = { root, shell, glow };
         this.projectileMeshes.set(projectile.id, visual);
       }
@@ -1198,6 +1289,66 @@ export class GameView implements AimProvider {
 
   consumeShots(shots: readonly ShotEvent[]): void {
     for (const shot of shots) {
+      if (shot.weaponSource === "aircraft") {
+        if (shot.airWeapon === "aerialTorpedo") {
+          const entry = CreateTorus(`air-torpedo-entry-${shot.id}`, {
+            diameter: 3.2,
+            thickness: 0.34,
+            tessellation: 10,
+          }, this.scene);
+          entry.position.copyFrom(toVector(shot.position));
+          entry.position.y = -0.23;
+          entry.material = this.effectMaterial(
+            "air-torpedo-entry-foam",
+            new Color3(0.68, 0.87, 0.9),
+            Color3.Black(),
+            0.5,
+          );
+          this.effects.push({
+            mesh: entry,
+            remaining: 0.65,
+            duration: 0.65,
+            scaleFrom: 0.2,
+            scaleTo: 1.45,
+          });
+        } else if (shot.airWeapon === "machineGun") {
+          const flash = this.pooledBillboard(
+            "air-machine-gun-flash",
+            0.9,
+            1.8,
+            this.pixelVfxMaterial("muzzle"),
+          );
+          flash.position.copyFrom(toVector(shot.position));
+          this.effects.push({
+            mesh: flash,
+            poolKey: "air-machine-gun-flash",
+            remaining: 0.07,
+            duration: 0.07,
+            scaleFrom: 0.45,
+            scaleTo: 1.05,
+          });
+        } else {
+          const release = CreateSphere(`air-bomb-release-${shot.id}`, {
+            diameter: 0.75,
+            segments: 4,
+          }, this.scene);
+          release.position.copyFrom(toVector(shot.position));
+          release.material = this.effectMaterial(
+            "air-bomb-release",
+            new Color3(0.72, 0.62, 0.4),
+            new Color3(0.2, 0.12, 0.04),
+            0.28,
+          );
+          this.effects.push({
+            mesh: release,
+            remaining: 0.12,
+            duration: 0.12,
+            scaleFrom: 0.25,
+            scaleTo: 0.85,
+          });
+        }
+        continue;
+      }
       if (shot.kind === "depthCharge") {
         const dropRing = CreateTorus(`depth-charge-drop-${shot.id}`, {
           diameter: 4.5,
@@ -1522,6 +1673,7 @@ export class GameView implements AimProvider {
     this.oceanBumpTexture.uOffset = steppedTime * 0.0021;
     this.oceanBumpTexture.vOffset = steppedTime * -0.00135;
     this.syncShips(state, perceivedTarget);
+    this.syncAirSquadrons(state, dt);
     this.syncProjectiles(state, perceivedTarget);
     this.syncUnderwaterEntities(state);
     this.syncSmokeClouds(state);
@@ -1584,6 +1736,8 @@ export class GameView implements AimProvider {
   }
 
   resetTransient(): void {
+    for (const visual of this.airSquadronVisuals.values()) visual.root.dispose(false, true);
+    this.airSquadronVisuals.clear();
     for (const visual of this.projectileMeshes.values()) visual.root.dispose(false, true);
     for (const trail of this.projectileTrails.values()) {
       trail.core.dispose();

@@ -1,5 +1,13 @@
 import type { AirMissionCommand, AircraftRole, AirSquadronState, BattleState, PlayerTargetView, ShipState } from "../sim/types";
 import { HYDRO } from "../sim/config";
+import type { GameLocale } from "../i18n/gameLocale";
+import { DEFAULT_GAME_LOCALE } from "../i18n/gameLocale";
+import { tacticalAirText, type TacticalAirText } from "../i18n/tacticalAirLocale";
+import {
+  buildAirSquadronStatusView,
+  formatAirDuration,
+  sortAirSquadronStatus,
+} from "./airSquadronStatus";
 import { isProjectileVisibleToPlayer } from "../sim/playerPerception";
 import {
   TacticalAirCommandController,
@@ -14,6 +22,7 @@ export interface MapPoint {
 export interface TacticalMapOptions {
   onOpen?: () => void;
   onClose?: () => void;
+  locale?: GameLocale;
 }
 
 export function worldToHeadingUpMap(
@@ -292,6 +301,9 @@ export class TacticalMap {
   private readonly overlay: HTMLElement;
   private readonly compassNeedle: HTMLElement;
   private readonly airCommands: TacticalAirCommandController;
+  private readonly airStatusTitle: HTMLElement;
+  private readonly airStatusList: HTMLElement;
+  private locale: GameLocale;
   private expanded = false;
   private lastDrawTime = -1;
   private lastLargeMapDrawTime = -1;
@@ -302,6 +314,7 @@ export class TacticalMap {
     parent: HTMLElement,
     private readonly options: TacticalMapOptions = {},
   ) {
+    this.locale = options.locale ?? DEFAULT_GAME_LOCALE;
     const minimapPanel = document.createElement("section");
     minimapPanel.className = "minimap panel";
     minimapPanel.setAttribute("role", "button");
@@ -340,10 +353,24 @@ export class TacticalMap {
     stage.className = "large-map-stage";
     largeMap.replaceWith(stage);
     stage.append(largeMap, airLayer);
+    const mapBody = document.createElement("div");
+    mapBody.className = "large-map-body";
+    const statusRail = document.createElement("aside");
+    statusRail.className = "air-squadron-status-rail";
+    statusRail.innerHTML = `<header><b class="air-status-title"></b><small>3</small></header><div class="air-squadron-status-list"></div>`;
+    stage.replaceWith(mapBody);
+    mapBody.append(stage, statusRail);
+    const airStatusTitle = statusRail.querySelector<HTMLElement>(".air-status-title");
+    const airStatusList = statusRail.querySelector<HTMLElement>(".air-squadron-status-list");
+    if (!airStatusTitle || !airStatusList) throw new Error("Failed to create air status rail");
     this.minimap = minimap;
     this.largeMap = largeMap;
     this.overlay = overlay;
     this.compassNeedle = compassNeedle;
+    this.airStatusTitle = airStatusTitle;
+    this.airStatusList = airStatusList;
+    this.airStatusTitle.textContent = tacticalAirText(this.locale).squadronStatus;
+    statusRail.setAttribute("aria-label", tacticalAirText(this.locale).squadronStatus);
 
     minimapPanel.addEventListener("click", () => this.open());
     this.airCommands = new TacticalAirCommandController(largeMap, airLayer, () => {
@@ -355,6 +382,17 @@ export class TacticalMap {
         this.open();
       }
     });
+  }
+
+  setLocale(locale: GameLocale): void {
+    this.locale = locale;
+    const label = tacticalAirText(locale).squadronStatus;
+    this.airStatusTitle.textContent = label;
+    this.airStatusTitle.closest("aside")?.setAttribute("aria-label", label);
+    if (this.lastState) {
+      this.renderAirStatus(this.lastState);
+      if (this.expanded) this.drawLargeMap(this.lastState, this.lastTarget);
+    }
   }
 
   open(): void {
@@ -417,6 +455,51 @@ export class TacticalMap {
       this.lastLargeMapDrawTime = state.time;
       this.drawLargeMap(state, target);
     }
+  }
+
+  private airTargetLabel(
+    state: BattleState,
+    targetId: string | undefined,
+    text: TacticalAirText,
+  ): string | undefined {
+    if (!targetId) return undefined;
+    if (targetId === "player") return text.ownShip;
+    const ship = state.ships.find(({ id }) => id === targetId);
+    if (ship) return ship.team === "player" ? text.friendlyShip : text.enemyShip;
+    const squadron = state.airSquadrons.find(({ id }) => id === targetId);
+    if (squadron) return squadron.team === "player"
+      ? text.roles[squadron.role]
+      : text.enemyAircraft;
+    return undefined;
+  }
+
+  private renderAirStatus(state: BattleState): void {
+    const text = tacticalAirText(this.locale);
+    const selected = this.airCommands.selectedIds();
+    const friendly = sortAirSquadronStatus(
+      state.airSquadrons.filter(({ team }) => team === "player"),
+    );
+    const headerCount = this.airStatusTitle.parentElement?.querySelector("small");
+    if (headerCount) headerCount.textContent = String(friendly.length);
+    this.airStatusList.innerHTML = friendly.map((squadron) => {
+      const view = buildAirSquadronStatusView(state.time, squadron);
+      const resourceLabel = view.resourceKind === "ammo" ? text.gunAmmo : text.ordnance;
+      const mission = view.missionKind ? text.missions[view.missionKind] : text.noOrder;
+      const target = this.airTargetLabel(state, view.targetId, text);
+      const missionLine = target ? `${mission} ﾂｷ ${target}` : mission;
+      const rearmLine = view.rearmRemainingSeconds === undefined
+        ? ""
+        : `<div class="air-status-rearm"><span>${text.rearming}</span><b>${view.rearmRemainingSeconds}s</b><i style="--value:${view.rearmPercent ?? 0}%"></i></div>`;
+      return `<article class="air-squadron-status${selected.has(view.id) ? " selected" : ""}" data-role="${view.role}" data-phase="${view.phase}">
+        <div class="air-status-heading"><b>[${AIR_ROLE_GLYPH[view.role]}] ${text.roles[view.role]}</b><span>${text.phases[view.phase]}</span></div>
+        <div class="air-status-numbers"><span>${text.aircraft} ${view.aircraftOperational}/${view.aircraftCapacity}</span><span>${text.airframe} ${view.strengthPercent}%</span></div>
+        <div class="air-status-meter strength"><i style="--value:${view.strengthPercent}%"></i></div>
+        <div class="air-status-numbers"><span>${text.fuel} ${formatAirDuration(view.fuelSeconds)}</span><span>${view.fuelPercent}%</span></div>
+        <div class="air-status-meter fuel"><i style="--value:${view.fuelPercent}%"></i></div>
+        <div class="air-status-resource"><span>${resourceLabel}</span><b>${view.resourceCurrent}/${view.resourceMaximum}</b></div>
+        ${rearmLine}<small>${text.mission} ﾂｷ ${missionLine}</small>
+      </article>`;
+    }).join("");
   }
 
   private drawMinimap(
@@ -624,6 +707,7 @@ export class TacticalMap {
       });
     }
     this.airCommands.sync(state, entities, { centerX: center.x, centerY: center.y, scale });
+    this.renderAirStatus(state);
     const byId = new Map(entities.map((entity) => [entity.id, entity]));
     context.save();
     context.setLineDash([5, 4]);

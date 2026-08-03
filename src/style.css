@@ -912,18 +912,80 @@ kbd { display: inline-block; margin-right: 3px; padding: 3px 5px; color: #e5eeee
 
 .large-map-card {
   position: relative;
-  width: min(880px, 94vw);
+  width: min(1160px, 96vw);
   padding: 18px;
   border: 1px solid rgba(171, 211, 208, .4);
   background: #061923;
   box-shadow: 0 28px 90px rgba(0, 0, 0, .52);
 }
 
+.large-map-body {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(240px, 278px);
+  gap: 14px;
+  align-items: start;
+}
 .large-map-stage {
   position: relative;
   width: min(100%, 68vh);
   margin: 0 auto;
   aspect-ratio: 1;
+}
+.air-squadron-status-rail {
+  min-width: 0;
+  max-height: 68vh;
+  overflow: auto;
+  border: 1px solid rgba(127, 214, 207, .42);
+  background: rgba(3, 19, 27, .94);
+}
+.air-squadron-status-rail > header {
+  position: sticky;
+  top: 0;
+  z-index: 2;
+  display: flex;
+  justify-content: space-between;
+  padding: 11px 12px 9px;
+  color: #f0d38d;
+  border-bottom: 1px solid rgba(127, 214, 207, .24);
+  background: #071e28;
+  font-size: 11px;
+}
+.air-squadron-status-list { display: grid; gap: 7px; padding: 8px; }
+.air-squadron-status {
+  min-width: 0;
+  padding: 9px;
+  color: #bdd7d5;
+  border: 1px solid rgba(104, 174, 174, .28);
+  background: rgba(9, 37, 47, .86);
+  font: 700 9px/1.45 "Fusion Bold Pixel", "Microsoft YaHei", sans-serif;
+  overflow-wrap: anywhere;
+}
+.air-squadron-status.selected { border-color: #f1d785; box-shadow: inset 3px 0 0 #f1d785; }
+.air-squadron-status[data-phase="destroyed"] { filter: saturate(.35); opacity: .64; }
+.air-status-heading,
+.air-status-numbers,
+.air-status-resource,
+.air-status-rearm { display: flex; justify-content: space-between; gap: 8px; align-items: center; }
+.air-status-heading b { min-width: 0; color: #e7f5ef; }
+.air-status-heading span { flex: 0 0 auto; color: #8fdcd3; }
+.air-status-numbers { margin-top: 7px; color: #8faeae; }
+.air-status-meter,
+.air-status-rearm { position: relative; overflow: hidden; height: 5px; margin-top: 3px; background: #102e38; }
+.air-status-meter i,
+.air-status-rearm i { position: absolute; inset: 0 auto 0 0; width: var(--value); background: #69c7b0; }
+.air-status-meter.fuel i { background: #d7ba68; }
+.air-status-resource { margin-top: 7px; color: #9fc2c0; }
+.air-status-resource b { color: #f0d38d; }
+.air-status-rearm { height: 18px; margin-top: 7px; padding: 0 5px; }
+.air-status-rearm span,
+.air-status-rearm b { position: relative; z-index: 1; color: #ecf7f3; }
+.air-status-rearm i { opacity: .45; background: #4ea6bc; }
+.air-squadron-status > small { display: block; margin-top: 7px; color: #819fa0; }
+@media (max-width: 900px) {
+  .map-overlay { align-items: start; overflow: auto; }
+  .large-map-body { grid-template-columns: 1fr; }
+  .air-squadron-status-rail { max-height: none; }
+  .air-squadron-status-list { grid-template-columns: repeat(3, minmax(0, 1fr)); }
 }
 .large-map-stage .large-map-canvas {
   width: 100%;
