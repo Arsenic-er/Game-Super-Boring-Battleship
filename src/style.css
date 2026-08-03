@@ -809,6 +809,36 @@ button { font: inherit; }
 .controls span { color: #a9c0c1; font-size: 11px; }
 kbd { display: inline-block; margin-right: 3px; padding: 3px 5px; color: #e5eeee; border: 1px solid rgba(209, 231, 230, .35); background: rgba(0, 0, 0, .22); font: 700 10px "Fusion Bold Pixel", "Microsoft YaHei", sans-serif; }
 
+.game-shell.game-active:not(.hud-details-held) .hud-tactical,
+.game-shell.game-active.aiming .hud-tactical {
+  opacity: 0;
+  visibility: hidden;
+  pointer-events: none;
+}
+.game-shell.game-active:not(.hud-details-held) .weapon-bar { bottom: 18px; }
+.game-shell.game-active:not(.hud-details-held) .own-status { bottom: 18px; }
+.game-shell.game-active.hud-details-held .aux-hud-hint {
+  opacity: 0;
+  visibility: hidden;
+}
+.aux-hud-hint {
+  position: absolute;
+  left: 50%;
+  bottom: calc(100% + 7px);
+  width: max-content;
+  transform: translateX(-50%);
+  padding: 5px 9px;
+  color: #95b6b7;
+  border: 1px solid rgba(93, 164, 170, .42);
+  background: rgba(4, 23, 29, .78);
+  box-shadow: 2px 2px 0 rgba(0, 0, 0, .34);
+  font-size: 9px;
+  pointer-events: none;
+}
+.aux-hud-hint kbd { padding: 2px 4px; font-size: 8px; }
+.weapon-bar,
+.own-status { transition: bottom 80ms linear; }
+
 .weapon-bar {
   left: 50%;
   bottom: 66px;

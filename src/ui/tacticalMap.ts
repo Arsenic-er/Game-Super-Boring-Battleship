@@ -316,7 +316,7 @@ export class TacticalMap {
   ) {
     this.locale = options.locale ?? DEFAULT_GAME_LOCALE;
     const minimapPanel = document.createElement("section");
-    minimapPanel.className = "minimap panel";
+    minimapPanel.className = "minimap panel hud-tactical";
     minimapPanel.setAttribute("role", "button");
     minimapPanel.setAttribute("tabindex", "0");
     minimapPanel.setAttribute("aria-label", "展开实时战术地图");

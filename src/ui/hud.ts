@@ -200,12 +200,12 @@ export class Hud {
       <main class="game-shell">
         <canvas id="game-canvas" aria-label="3D 驱逐舰战斗画面"></canvas>
         <div class="vignette" aria-hidden="true"></div>
-        <header class="topbar">
+        <header class="topbar hud-tactical">
           <div class="brand"><span>DD-01</span><strong>灰海行动</strong><small id="mode-label">单人原型 · 1943</small></div>
           <div class="battle-clock"><span id="time-label">剩余时间</span><strong id="battle-time">10:00</strong></div>
           <button id="quality" class="ghost-button" type="button">画质：低</button>
         </header>
-        <section id="objective-score" class="objective-score" aria-label="中央目标区积分">
+        <section id="objective-score" class="objective-score hud-tactical" aria-label="中央目标区积分">
           <div class="objective-score-row">
             <strong id="player-score">0</strong>
             <span>中央目标区 A</span>
@@ -243,7 +243,7 @@ export class Hud {
           <div class="metric-row weapon-status"><span id="reload-label">主炮装填</span><strong id="reload">火炮就绪 · 100%</strong></div>
           <div id="modules" class="modules"></div>
         </section>
-        <section id="target-status" class="panel target-status">
+        <section id="target-status" class="panel target-status hud-tactical">
           <p class="eyebrow">目标 · 敌方驱逐舰</p>
           <div class="bar-label"><span>舰体估计</span><span id="enemy-text">100%</span></div>
           <div class="bar enemy"><i id="enemy-fill"></i></div>
@@ -254,7 +254,7 @@ export class Hud {
           <div class="metric-row"><span>弹着时间</span><strong id="flight-time">3.1 s</strong></div>
           <div class="metric-row"><span>散布椭圆</span><strong id="dispersion">±20 m</strong></div>
         </section>
-        <section id="telemetry" class="panel telemetry" hidden>
+        <section id="telemetry" class="panel telemetry hud-tactical" hidden>
           <p class="eyebrow">海试性能遥测</p>
           <div class="metric-row"><span>最高航速</span><strong data-telemetry="max-speed">0.0 kn</strong></div>
           <div class="metric-row"><span>即时转向率</span><strong data-telemetry="turn-rate">0.0°/s</strong></div>
@@ -265,7 +265,7 @@ export class Hud {
           <small>无攻击 AI · 静止碰撞靶船 · 水下训练靶 · 无时间限制</small>
         </section>
         <section id="salvo-ribbons" class="salvo-ribbons" aria-live="polite">
-          <strong id="damage-counter">累计伤害 0</strong>
+          <strong id="damage-counter" class="hud-tactical">累计伤害 0</strong>
           <div id="salvo-ribbon-list" class="salvo-ribbon-list"></div>
         </section>
         <section id="feedback" class="feedback-stack" aria-live="polite"></section>
@@ -304,14 +304,15 @@ export class Hud {
         </div>
         <img id="game-cursor" class="game-cursor neon-arrow" src="./assets/cursors/neon-arrow.png" alt="" aria-hidden="true" />
         <section id="weapon-bar" class="weapon-bar panel" aria-label="武器选择">
+          <small class="aux-hud-hint"><kbd>Tab</kbd> 按住查看战术信息与键位</small>
           <button type="button" data-weapon="mainGun"><kbd>1</kbd><span>主炮</span><small>HE 高爆弹 · Q 切换</small></button>
           <button type="button" data-weapon="torpedo"><kbd>2</kbd><span>鱼雷</span><small>双雷齐射</small></button>
           <button type="button" data-weapon="aircraft"><kbd>3</kbd><span>航空指挥</span><small>M 大地图 · C 指令</small></button>
         </section>
-        <section class="controls panel">
+        <section class="controls panel hud-tactical">
           <span><kbd>W</kbd><kbd>S</kbd> 车钟</span><span><kbd>A</kbd><kbd>D</kbd> 舵</span><span><kbd>移动鼠标</kbd> 视角</span>
           <span><kbd>滚轮</kbd> 测距</span><span><kbd>R</kbd> 瞄准开关</span>
-          <span><kbd>Q</kbd> HE / AP</span><span><kbd>Space</kbd> 齐射</span><span><kbd>E</kbd> 烟幕</span><span><kbd>F</kbd> 水听</span><span><kbd>4</kbd> 损管优先</span><span><kbd>H</kbd> 舰体抢修</span><span><kbd>M</kbd> 地图</span><span><kbd>F3</kbd> 调试</span>
+          <span><kbd>Q</kbd> HE / AP</span><span><kbd>Space</kbd> 齐射</span><span><kbd>E</kbd> 烟幕</span><span><kbd>F</kbd> 水听</span><span><kbd>4</kbd> 损管优先</span><span><kbd>H</kbd> 舰体抢修</span><span><kbd>M</kbd> 地图</span><span><kbd>F3</kbd> 调试</span><span><kbd>Tab</kbd> 按住查看战术信息与键位</span>
         </section>
         <section id="result" class="result-card" hidden>
           <p class="eyebrow">战斗结束</p><h1></h1><p id="result-detail"></p>

@@ -21,6 +21,7 @@ import { PlayerPerceptionTracker } from "./sim/playerPerception";
 import type { BattleState, ControlCommand, GameMode } from "./sim/types";
 import { GameMenus } from "./ui/gameMenus";
 import { Hud } from "./ui/hud";
+import { auxiliaryHudVisible } from "./ui/auxiliaryHud";
 import { TacticalMap } from "./ui/tacticalMap";
 import { DeveloperPanel } from "./ui/developerPanel";
 
@@ -52,6 +53,7 @@ let currentMode: GameMode = "battle";
 let battleRewarded = false;
 
 function startMode(mode: GameMode): void {
+  gameShell?.classList.remove("hud-details-held");
   currentMode = mode;
   battleRewarded = false;
   const equipment = battleLoadout(profile);
@@ -86,6 +88,7 @@ function restart(): void {
 }
 
 function returnToMainMenu(): void {
+  gameShell?.classList.remove("hud-details-held");
   started = false;
   paused = true;
   accumulator = 0;
@@ -139,6 +142,7 @@ if (!gameShell) throw new Error("Missing game shell");
 tacticalMap = new TacticalMap(gameShell, {
   locale: settings.locale,
   onOpen: () => {
+    gameShell.classList.remove("hud-details-held");
     input.setSuppressed(true);
     view.releasePointerLock();
     gameShell.classList.add("map-active");
@@ -161,12 +165,14 @@ hud.setWeaponSelectHandler((slot) => {
 menus = new GameMenus(gameShell, settings, profile, view.getQuality(), {
   onStart: startMode,
   onPause: () => {
+    gameShell.classList.remove("hud-details-held");
     view.releasePointerLock();
     gameShell.classList.remove("game-active");
     paused = true;
     accumulator = 0;
   },
   onResume: () => {
+    gameShell.classList.remove("hud-details-held");
     audio.unlock();
     gameShell.classList.add("game-active");
     view.requestPointerLock();
@@ -184,6 +190,7 @@ menus = new GameMenus(gameShell, settings, profile, view.getQuality(), {
 });
 developerPanel = new DeveloperPanel(gameShell, () => state, {
   onOpen: () => {
+    gameShell.classList.remove("hud-details-held");
     paused = true;
     accumulator = 0;
     gameShell.classList.remove("game-active");
@@ -202,6 +209,23 @@ developerPanel = new DeveloperPanel(gameShell, () => state, {
 
 window.addEventListener("keydown", (event) => {
   if (!started || state.status !== "running") return;
+  if (event.code === "Tab" && !event.altKey && !event.ctrlKey && !event.metaKey && !event.shiftKey) {
+    const visible = auxiliaryHudVisible(true, {
+      started,
+      paused,
+      running: state.status === "running",
+      mapOpen: tacticalMap.isExpanded(),
+      menuOpen: menus.isOpen(),
+      developerOpen: Boolean(developerPanel?.isOpen()),
+    });
+    if (visible) {
+      event.preventDefault();
+      gameShell.classList.add("hud-details-held");
+    } else {
+      gameShell.classList.remove("hud-details-held");
+    }
+    return;
+  }
   if (event.code === "Digit3" && !event.repeat) {
     if (menus.isOpen() || developerPanel?.isOpen()) return;
     event.preventDefault();
@@ -235,6 +259,20 @@ window.addEventListener("keydown", (event) => {
     else if (input.exitAiming()) return;
     else menus.handleEscape();
   }
+});
+
+window.addEventListener("keyup", (event) => {
+  if (event.code !== "Tab") return;
+  const held = gameShell.classList.contains("hud-details-held");
+  gameShell.classList.remove("hud-details-held");
+  if (held) event.preventDefault();
+});
+window.addEventListener("blur", () => gameShell.classList.remove("hud-details-held"));
+document.addEventListener("visibilitychange", () => {
+  if (document.hidden) gameShell.classList.remove("hud-details-held");
+});
+document.addEventListener("pointerlockchange", () => {
+  if (document.pointerLockElement !== hud.canvas) gameShell.classList.remove("hud-details-held");
 });
 
 view.engine.runRenderLoop(() => {
@@ -287,6 +325,7 @@ view.engine.runRenderLoop(() => {
     input.selectedTorpedoSpread,
   );
   if (state.status !== "running") {
+    gameShell.classList.remove("hud-details-held");
     tacticalMap.close();
     if (currentMode === "battle" && !battleRewarded) {
       const economy = awardBattleResult(profile, state.status);

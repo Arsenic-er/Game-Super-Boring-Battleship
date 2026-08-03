@@ -12,7 +12,7 @@ export class ControlSettingsPanel {
   ) {
     this.settings = { ...initialSettings };
     const panel = document.createElement("section");
-    panel.className = "control-settings panel";
+    panel.className = "control-settings panel hud-tactical";
     panel.setAttribute("aria-label", "操控灵敏度快速设置");
     panel.innerHTML = `
       <div class="settings-heading">

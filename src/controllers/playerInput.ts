@@ -22,6 +22,15 @@ export function fireCommandActive(pressedThisFrame: boolean, spaceHeld: boolean)
   return pressedThisFrame || spaceHeld;
 }
 
+const GAMEPLAY_KEY_CODES = new Set([
+  "Space", "KeyW", "KeyS", "KeyA", "KeyD", "KeyE", "KeyF", "KeyG",
+  "KeyQ", "KeyR", "KeyH", "Digit1", "Digit2", "Digit3", "Digit4",
+]);
+
+export function isGameplayKeyCode(code: string): boolean {
+  return GAMEPLAY_KEY_CODES.has(code);
+}
+
 export interface AimProvider {
   aimPoint(ship: ShipState, range: number): Vec3;
   setAiming(active: boolean): void;
@@ -47,12 +56,14 @@ export class PlayerInput {
   constructor(canvas: HTMLCanvasElement, private readonly aimProvider: AimProvider) {
     window.addEventListener("keydown", this.onKeyDown);
     window.addEventListener("keyup", this.onKeyUp);
+    window.addEventListener("blur", this.cancelHeldInputs);
+    document.addEventListener("visibilitychange", this.onVisibilityChange);
     canvas.addEventListener("wheel", this.onWheel, { passive: false });
   }
 
   private onKeyDown = (event: KeyboardEvent): void => {
     if (this.suppressed) {
-      event.preventDefault();
+      if (isGameplayKeyCode(event.code)) event.preventDefault();
       return;
     }
     this.pressed.add(event.code);
@@ -84,13 +95,25 @@ export class PlayerInput {
         (index + 1) % DAMAGE_CONTROL_PRIORITIES.length
       ] ?? "balanced";
     }
-    if (["Space", "KeyW", "KeyS", "KeyA", "KeyD", "KeyE", "KeyF", "KeyG", "KeyQ", "KeyR", "KeyH", "Digit1", "Digit2", "Digit3", "Digit4"].includes(event.code)) {
+    if (isGameplayKeyCode(event.code)) {
       event.preventDefault();
     }
   };
 
   private onKeyUp = (event: KeyboardEvent): void => {
     this.pressed.delete(event.code);
+  };
+
+  private cancelHeldInputs = (): void => {
+    this.pressed.clear();
+    this.firePressed = false;
+    this.smokePressed = false;
+    this.hydroPressed = false;
+    this.depthChargePressed = false;
+  };
+
+  private onVisibilityChange = (): void => {
+    if (document.hidden) this.cancelHeldInputs();
   };
 
   private maximumAimRange(ship = this.activeShip): number {
@@ -209,11 +232,7 @@ export class PlayerInput {
   setSuppressed(suppressed: boolean): void {
     this.suppressed = suppressed;
     if (!suppressed) return;
-    this.pressed.clear();
-    this.firePressed = false;
-    this.smokePressed = false;
-    this.hydroPressed = false;
-    this.depthChargePressed = false;
+    this.cancelHeldInputs();
   }
 
   reset(): void {
