@@ -72,6 +72,67 @@ export interface TorpedoLauncherVisual {
   root: TransformNode;
 }
 
+export interface ChamferedBoxSpec {
+  width: number;
+  height: number;
+  depth: number;
+  chamfer?: number;
+  topScale?: number;
+}
+
+/** Low-poly naval deckhouse with clipped corners and inward-sloping walls. */
+export function createChamferedBox(
+  scene: Scene,
+  name: string,
+  spec: ChamferedBoxSpec,
+): Mesh {
+  const halfWidth = spec.width / 2;
+  const halfDepth = spec.depth / 2;
+  const chamfer = Math.min(
+    Math.max(0.04, spec.chamfer ?? Math.min(spec.width, spec.depth) * 0.12),
+    halfWidth * 0.46,
+    halfDepth * 0.46,
+  );
+  const topScale = Math.min(1, Math.max(0.68, spec.topScale ?? 0.86));
+  const ring = (scale: number, y: number): number[] => {
+    const width = halfWidth * scale;
+    const depth = halfDepth * scale;
+    const cut = chamfer * scale;
+    return [
+      -width + cut, y, -depth,
+      width - cut, y, -depth,
+      width, y, -depth + cut,
+      width, y, depth - cut,
+      width - cut, y, depth,
+      -width + cut, y, depth,
+      -width, y, depth - cut,
+      -width, y, -depth + cut,
+    ];
+  };
+  const positions = [
+    ...ring(1, -spec.height / 2),
+    ...ring(topScale, spec.height / 2),
+  ];
+  const indices: number[] = [];
+  for (let index = 1; index < 7; index += 1) {
+    indices.push(0, index + 1, index, 8, 8 + index, 8 + index + 1);
+  }
+  for (let index = 0; index < 8; index += 1) {
+    const next = (index + 1) % 8;
+    indices.push(index, next, 8 + next, index, 8 + next, 8 + index);
+  }
+  const normals: number[] = [];
+  VertexData.ComputeNormals(positions, indices, normals);
+  const vertexData = new VertexData();
+  vertexData.positions = positions;
+  vertexData.indices = indices;
+  vertexData.normals = normals;
+  const mesh = new Mesh(name, scene);
+  vertexData.applyToMesh(mesh);
+  mesh.convertToFlatShadedMesh();
+  return mesh;
+}
+
 /** Adds class-specific massing without creating non-functional weapon mounts. */
 export function createHullClassSilhouette(
   scene: Scene,
@@ -91,7 +152,13 @@ export function createHullClassSilhouette(
     z: number,
     material: Material,
   ): Mesh => {
-    const mesh = CreateBox(`${name}-${suffix}`, { width, height, depth }, scene);
+    const mesh = createChamferedBox(scene, `${name}-${suffix}`, {
+      width,
+      height,
+      depth,
+      chamfer: Math.min(width, depth) * 0.13,
+      topScale: height > 1 ? 0.84 : 0.96,
+    });
     mesh.position.set(x, y, z);
     mesh.material = material;
     mesh.parent = parent;
@@ -173,7 +240,13 @@ export function createDestroyerV3Superstructure(
     z: number,
     material: Material,
   ): Mesh => {
-    const mesh = CreateBox(`${name}-${suffix}`, { width, height, depth }, scene);
+    const mesh = createChamferedBox(scene, `${name}-${suffix}`, {
+      width,
+      height,
+      depth,
+      chamfer: Math.min(width, depth) * 0.13,
+      topScale: height > 1 ? 0.84 : 0.96,
+    });
     mesh.position.set(x, y, z);
     mesh.material = material;
     mesh.parent = parent;
@@ -321,11 +394,13 @@ export function createMainGunVisual(
   }, scene);
   mount.material = palette.deck;
   mount.parent = root;
-  const house = CreateBox(`${name}-gun-house`, {
+  const house = createChamferedBox(scene, `${name}-gun-house`, {
     width: definition.visual.houseWidth,
     height: multiBarrel ? 2.55 : 2.25,
     depth: multiBarrel ? 4.7 : 4.1,
-  }, scene);
+    chamfer: 0.42,
+    topScale: 0.78,
+  });
   house.position.set(0, 1.45, 0.75);
   house.material = palette.accent;
   house.parent = root;

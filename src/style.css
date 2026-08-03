@@ -27,17 +27,6 @@
   image-rendering: pixelated;
 }
 
-.game-shell::after {
-  content: "";
-  position: fixed;
-  z-index: 90;
-  inset: 0;
-  pointer-events: none;
-  opacity: .08;
-  background: repeating-linear-gradient(0deg, transparent 0 3px, #90e7e9 3px 4px);
-  mix-blend-mode: screen;
-}
-
 .topbar,
 .panel,
 .battle-clock,
@@ -333,6 +322,10 @@ button { font: inherit; }
   font-size: 11px;
   line-height: 1.3;
 }
+.weapon-status.waiting { border-left-color: #d6ae66; background: rgba(172, 120, 40, .14); }
+.weapon-status.waiting strong { color: #f0cc82; }
+.weapon-status.blocked { border-left-color: #d96f5e; background: rgba(153, 54, 44, .16); }
+.weapon-status.blocked strong { color: #f1a18f; }
 .metric-row.correction strong { color: #d7a46b; }
 .metric-row.correction strong.matched { color: #83c9a7; }
 .bar { height: 5px; overflow: hidden; background: rgba(218, 232, 229, .13); }
@@ -657,6 +650,7 @@ button { font: inherit; }
   font-weight: 700;
 }
 .scope-reload.blocked { color: #f0a07a; border-color: rgba(230, 119, 79, .5); }
+.scope-reload.waiting { color: #f1cd82; border-color: rgba(218, 174, 91, .54); }
 .scope-exit-hint {
   position: absolute;
   left: 50%;

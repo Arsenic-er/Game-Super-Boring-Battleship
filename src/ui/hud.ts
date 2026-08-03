@@ -129,6 +129,7 @@ export class Hud {
   private readonly rangeCorrection: HTMLElement;
   private readonly reload: HTMLElement;
   private readonly reloadLabel: HTMLElement;
+  private readonly weaponStatus: HTMLElement;
   private readonly flightTime: HTMLElement;
   private readonly dispersion: HTMLElement;
   private readonly hullFill: HTMLElement;
@@ -333,6 +334,7 @@ export class Hud {
     this.rangeCorrection = find("#range-correction");
     this.reload = find("#reload");
     this.reloadLabel = find("#reload-label");
+    this.weaponStatus = find(".weapon-status");
     this.flightTime = find("#flight-time");
     this.dispersion = find("#dispersion");
     this.hullFill = find("#hull-fill");
@@ -790,13 +792,14 @@ export class Hud {
     const bearingMounts = functionalMounts.filter((mount) =>
       mainBatteryMountCanBear(player, mount.mountIndex));
     const readyMounts = bearingMounts.filter((mount) => mount.reloadRemaining <= 0);
-    const reloadPercent = Math.round(functionalMounts.length > 0
-      ? functionalMounts.reduce(
+    const reloadDisplayMounts = bearingMounts.length > 0 ? bearingMounts : functionalMounts;
+    const reloadPercent = Math.round(reloadDisplayMounts.length > 0
+      ? reloadDisplayMounts.reduce(
         (sum, mount) => sum + clamp(1 - mount.reloadRemaining / reloadDuration, 0, 1),
         0,
-      ) / functionalMounts.length * 100
+      ) / reloadDisplayMounts.length * 100
       : 0);
-    const nextReload = functionalMounts.reduce(
+    const nextReload = bearingMounts.reduce(
       (minimum, mount) => mount.reloadRemaining > 0
         ? Math.min(minimum, mount.reloadRemaining)
         : minimum,
@@ -811,13 +814,15 @@ export class Hud {
     );
     const fireBlocked = isGunFireBlocked(player);
     const bearingBlocked = bearingMounts.length === 0;
+    const mainGunWaiting = !fireBlocked && !bearingBlocked && readyMounts.length === 0;
     this.reload.textContent = fireBlocked
       ? "主炮塔全部损坏 · 0%"
       : bearingBlocked
         ? `目标位于全炮塔死角 · 装填保持 ${reloadPercent}%`
       : readyMounts.length > 0
         ? `可开火 ${readyMounts.length}/${bearingMounts.length} 座 · 射界 ${bearingMounts.length}/${functionalMounts.length} · 平均装填 ${reloadPercent}%${Number.isFinite(traverseError) && traverseError > 2.5 ? ` · 最近炮塔差 ${traverseError.toFixed(1)}°` : ""}`
-        : `射界 ${bearingMounts.length}/${functionalMounts.length} · 装填 ${reloadPercent}% · ${Number.isFinite(nextReload) ? `${nextReload.toFixed(1)} s 后首座就绪` : "已停止"}${player.pendingAmmoType ? ` · 切换至 ${ammoLabels[player.pendingAmmoType]}` : ""}`;
+        : `射界 ${bearingMounts.length}/${functionalMounts.length} · 射界内装填 ${reloadPercent}% · ${Number.isFinite(nextReload) ? `${(Math.ceil(nextReload * 10) / 10).toFixed(1)} s 后可射 · 按住 Space 自动齐射` : "已停止"}${player.pendingAmmoType ? ` · 切换至 ${ammoLabels[player.pendingAmmoType]}` : ""}`;
+    this.weaponStatus.className = `metric-row weapon-status${fireBlocked || bearingBlocked ? " blocked" : mainGunWaiting ? " waiting" : ""}`;
     const primaryMount = functionalMounts.reduce<typeof functionalMounts[number] | undefined>(
       (closest, mount) => !closest
         || Math.abs(turretAlignmentError(player, mount.mountIndex))
@@ -850,6 +855,7 @@ export class Hud {
     this.scopeGun.textContent = `${shellSelection} · ${gunDefinition.name}`;
     this.scopeReload.textContent = this.reload.textContent ?? "--";
     this.scopeReload.classList.toggle("blocked", fireBlocked || bearingBlocked);
+    this.scopeReload.classList.toggle("waiting", mainGunWaiting);
     const torpedoSolution = torpedoLaunchSolution(
       player,
       player.aimPoint,
@@ -909,10 +915,28 @@ export class Hud {
           || player.torpedoReloadRemaining > 0
           || player.torpedoesLoaded <= 0,
       );
+      this.scopeReload.classList.toggle(
+        "waiting",
+        player.torpedoReloadRemaining > 0 && player.modules.torpedoTubes.health > 0,
+      );
+      this.weaponStatus.className = `metric-row weapon-status${player.modules.torpedoTubes.health <= 0 || !torpedoSolution.allowed || !actualSectorAllowed || player.torpedoesLoaded <= 0 ? " blocked" : player.torpedoReloadRemaining > 0 ? " waiting" : ""}`;
       this.scopeBarrelMarker.style.visibility = "hidden";
       this.aimMode.textContent = torpedoSolution.allowed
         ? `鱼雷模式 · ${actualSide} · 管架偏差 ${launcherErrorDegrees.toFixed(1)}° · Q 切换扇面`
         : `鱼雷模式 · 艏艉死区 · 转至侧舷`;
+    } else if (selectedWeapon === "aircraft") {
+      this.reloadLabel.textContent = "航空作战指挥";
+      this.reload.textContent = "航空兵不使用 Space 直接开火 · 按 M 打开地图 · C 下达指令";
+      this.flightTime.textContent = "由机群火控解算";
+      this.dispersion.textContent = "选择机群后指定敌舰或敌方机群";
+      this.scopeGun.textContent = "航空指挥已选择";
+      this.scopeFlightTime.textContent = "自主攻击";
+      this.scopeDispersion.textContent = "M 战术地图 · C 指令菜单";
+      this.scopeReload.textContent = "按 1 切回主炮 · 按 2 切换鱼雷";
+      this.scopeReload.classList.remove("blocked", "waiting");
+      this.weaponStatus.className = "metric-row weapon-status waiting";
+      this.scopeBarrelMarker.style.visibility = "hidden";
+      this.aimMode.textContent = "航空指挥模式 · M 打开战术地图 · C 下达任务";
     } else {
       this.scopeBarrelMarker.style.visibility = "";
     }

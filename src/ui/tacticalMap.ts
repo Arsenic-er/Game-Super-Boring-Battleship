@@ -377,7 +377,7 @@ export class TacticalMap {
       if (this.lastState) this.drawLargeMap(this.lastState, this.lastTarget);
     });
     minimapPanel.addEventListener("keydown", (event) => {
-      if (event.code === "Enter" || event.code === "Space") {
+      if (event.code === "Enter") {
         event.preventDefault();
         this.open();
       }

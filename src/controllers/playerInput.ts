@@ -18,6 +18,10 @@ const DAMAGE_CONTROL_PRIORITIES: readonly DamageControlPriority[] = [
   "module",
 ];
 
+export function fireCommandActive(pressedThisFrame: boolean, spaceHeld: boolean): boolean {
+  return pressedThisFrame || spaceHeld;
+}
+
 export interface AimProvider {
   aimPoint(ship: ShipState, range: number): Vec3;
   setAiming(active: boolean): void;
@@ -141,7 +145,7 @@ export class PlayerInput {
     }
     const steeringInput = (this.pressed.has("KeyD") ? 1 : 0)
       - (this.pressed.has("KeyA") ? 1 : 0);
-    const fire = this.firePressed;
+    const fire = fireCommandActive(this.firePressed, this.pressed.has("Space"));
     this.firePressed = false;
     const activateSmoke = this.smokePressed;
     this.smokePressed = false;

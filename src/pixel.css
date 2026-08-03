@@ -6,11 +6,6 @@ body[data-locale="es-ES"], body[data-locale="de-DE"], body[data-locale="ru-RU"] 
   font-family: "Fusion Bold Pixel", "Segoe UI", "Arial", sans-serif;
 }
 
-.game-shell::after {
-  content: ""; position: fixed; z-index: 90; inset: 0; pointer-events: none; opacity: .07;
-  background: repeating-linear-gradient(0deg, transparent 0 3px, #90e7e9 3px 4px); mix-blend-mode: screen;
-}
-
 .topbar { height: 68px; border-bottom: 3px solid #4da3a9; background: linear-gradient(90deg, rgba(4,24,30,.96), rgba(7,41,46,.91) 45%, rgba(4,24,30,.96)); box-shadow: 0 4px 0 rgba(0,0,0,.46); }
 .brand > span, .battle-clock, .ghost-button, .panel, .control-settings, .minimap, .developer-panel, .result-card {
   border: 2px solid #4da3a9; border-radius: 0; box-shadow: 4px 4px 0 rgba(0,0,0,.48); backdrop-filter: none;
