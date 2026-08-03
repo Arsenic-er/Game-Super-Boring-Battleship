@@ -471,6 +471,53 @@ export function createTorpedoLauncherVisual(
   return { root };
 }
 
+/** Moving underwater fittings for larger hulls without destroyer deck clutter. */
+export function createNavalMotionParts(
+  scene: Scene,
+  parent: TransformNode,
+  name: string,
+  palette: DestroyerV3Palette,
+): DestroyerV3MotionParts {
+  const rudder = new TransformNode(`${name}-rudder-pivot`, scene);
+  rudder.position.set(0, -0.05, -54.2);
+  rudder.parent = parent;
+  const rudderBlade = CreateBox(`${name}-rudder`, {
+    width: 0.42,
+    height: 3.7,
+    depth: 4.5,
+  }, scene);
+  rudderBlade.position.set(0, -1.4, 1.4);
+  rudderBlade.material = palette.dark;
+  rudderBlade.parent = rudder;
+
+  const propellers = [-1, 1].map((side) => {
+    const propeller = new TransformNode(`${name}-propeller-${side}`, scene);
+    propeller.position.set(side * 2.7, 0.05, -52.4);
+    propeller.parent = parent;
+    const hub = CreateCylinder(`${name}-propeller-hub-${side}`, {
+      height: 1.7,
+      diameterTop: 0.62,
+      diameterBottom: 0.82,
+      tessellation: 8,
+    }, scene);
+    hub.rotation.x = Math.PI / 2;
+    hub.material = palette.dark;
+    hub.parent = propeller;
+    for (let blade = 0; blade < 3; blade += 1) {
+      const fin = CreateBox(`${name}-propeller-${side}-blade-${blade}`, {
+        width: 0.48,
+        height: 3.1,
+        depth: 0.2,
+      }, scene);
+      fin.rotation.z = blade * Math.PI * 2 / 3;
+      fin.material = palette.accent;
+      fin.parent = propeller;
+    }
+    return propeller;
+  });
+  return { rudder, propellers };
+}
+
 /** A low-cost multi-station hull with a continuous sheer line and underwater chine. */
 export function createDestroyerHull(
   scene: Scene,
@@ -539,18 +586,47 @@ export function createDestroyerHull(
   const deck = new Mesh(`${spec.name}-deck`, scene);
   const deckPositions: number[] = [];
   const deckUvs: number[] = [];
+  const deckThickness = 0.34;
   for (const [stationIndex, station] of stations.entries()) {
     const halfWidth = spec.beam * 0.5 * station.width * 0.96;
     const z = spec.length * station.z;
-    deckPositions.push(-halfWidth, station.deck + 0.06, z, halfWidth, station.deck + 0.06, z);
-    deckUvs.push(0, stationIndex / (stations.length - 1), 1, stationIndex / (stations.length - 1));
+    const topY = station.deck + 0.07;
+    const bottomY = station.deck - deckThickness;
+    deckPositions.push(
+      -halfWidth, topY, z,
+      halfWidth, topY, z,
+      -halfWidth, bottomY, z,
+      halfWidth, bottomY, z,
+    );
+    const v = stationIndex / (stations.length - 1);
+    deckUvs.push(0, v, 1, v, 0, v, 1, v);
   }
   const deckIndices: number[] = [];
   for (let station = 0; station < stations.length - 1; station += 1) {
-    const current = station * 2;
-    const next = current + 2;
-    deckIndices.push(current, next, next + 1, current, next + 1, current + 1);
+    const current = station * 4;
+    const next = current + 4;
+    // Babylon uses a left-handed face convention: top faces wind clockwise.
+    deckIndices.push(
+      current, next + 1, next,
+      current, current + 1, next + 1,
+      current + 2, next + 2, next + 3,
+      current + 2, next + 3, current + 3,
+      current, next, next + 2,
+      current, next + 2, current + 2,
+      current + 1, next + 3, next + 1,
+      current + 1, current + 3, next + 3,
+    );
   }
+  const stern = 0;
+  deckIndices.push(
+    stern, stern + 3, stern + 1,
+    stern, stern + 2, stern + 3,
+  );
+  const bow = (stations.length - 1) * 4;
+  deckIndices.push(
+    bow, bow + 1, bow + 3,
+    bow, bow + 3, bow + 2,
+  );
   const deckNormals: number[] = [];
   VertexData.ComputeNormals(deckPositions, deckIndices, deckNormals);
   const deckData = new VertexData();

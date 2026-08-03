@@ -1,3 +1,4 @@
+import { Material } from "@babylonjs/core/Materials/material";
 import { StandardMaterial } from "@babylonjs/core/Materials/standardMaterial";
 import { Texture } from "@babylonjs/core/Materials/Textures/texture";
 import { Color3 } from "@babylonjs/core/Maths/math.color";
@@ -33,6 +34,7 @@ function atlasRegion(
   texture.vScale = 0.5;
   texture.uOffset = column * 0.5;
   texture.vOffset = row * 0.5;
+  texture.hasAlpha = false;
   return texture;
 }
 
@@ -47,6 +49,10 @@ function texturedMaterial(
   material.diffuseColor = tint;
   material.specularColor = new Color3(0.12, 0.15, 0.16);
   material.specularPower = 28;
+  material.alpha = 1;
+  material.transparencyMode = Material.MATERIAL_OPAQUE;
+  material.useAlphaFromDiffuseTexture = false;
+  material.backFaceCulling = true;
   return material;
 }
 

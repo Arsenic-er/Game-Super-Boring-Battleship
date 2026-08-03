@@ -42,6 +42,7 @@ import {
   createDestroyerHull,
   createDestroyerV3Superstructure,
   createHullClassSilhouette,
+  createNavalMotionParts,
   createMainGunVisual,
   createTorpedoLauncherVisual,
 } from "./shipGeometry";
@@ -64,6 +65,8 @@ import {
   airVisualSnapshot,
   formationOffsets,
 } from "./aircraftPresentation";
+import { aimingCameraPlan, cameraTransitionValue } from "./combatCamera";
+import { applyBodyVisibility, ownShipBodyVisibility } from "./shipAimPresentation";
 import type { AimProvider } from "../controllers/playerInput";
 import type {
   BattleState,
@@ -81,6 +84,8 @@ interface ShipVisual {
   shipClassId: ShipClassId;
   armamentSignature: string;
   root: TransformNode;
+  bodyMeshes: Mesh[];
+  bodyVisibility: number;
   turrets: TransformNode[];
   gunCradles: TransformNode[];
   gunBarrels: Mesh[];
@@ -172,6 +177,7 @@ export class GameView implements AimProvider {
   private readonly torpedoLauncherLines: LinesMesh[] = [];
   private torpedoLeadLine?: LinesMesh;
   private aiming = false;
+  private enteringAiming = false;
   private mouseLookSensitivity = 1;
   private lastPointerX?: number;
   private lastPointerY?: number;
@@ -506,8 +512,12 @@ export class GameView implements AimProvider {
       deckMaterial,
     });
 
-    const motion = createDestroyerV3Superstructure(this.scene, root, ship.id, palette);
+    const motion = ship.hullId === "destroyer"
+      ? createDestroyerV3Superstructure(this.scene, root, ship.id, palette)
+      : createNavalMotionParts(this.scene, root, ship.id, palette);
     createHullClassSilhouette(this.scene, root, ship.id, ship.hullId, palette, hullDefinition.visualVariant);
+    const bodyMeshes = root.getChildMeshes(false)
+      .filter((mesh): mesh is Mesh => mesh instanceof Mesh);
     const gunDefinition = getMainBattery(ship.shipClassId, ship.mainGunId, ship.mainGunMounts);
     const guns = gunDefinition.mounts.map((mount, index) => {
       const gun = createMainGunVisual(this.scene, root, `${ship.id}-mount-${index}`, {
@@ -626,6 +636,8 @@ export class GameView implements AimProvider {
       shipClassId: ship.shipClassId,
       armamentSignature: shipArmamentSignature(ship),
       root,
+      bodyMeshes,
+      bodyVisibility: 1,
       turrets: guns.map((gun) => gun.root),
       gunCradles: guns.map((gun) => gun.cradle),
       gunBarrels: guns.flatMap((gun) => gun.barrels),
@@ -652,6 +664,7 @@ export class GameView implements AimProvider {
   }
 
   setAiming(active: boolean): void {
+    this.enteringAiming = active && !this.aiming;
     this.aiming = active;
   }
 
@@ -700,6 +713,11 @@ export class GameView implements AimProvider {
       const visible = isShipVisibleToPlayer(ship, state.mode, perceivedTarget);
       visual.root.setEnabled(visible);
       if (!visible) continue;
+      const bodyVisibility = ownShipBodyVisibility(ship.id, this.aiming);
+      if (visual.bodyVisibility !== bodyVisibility) {
+        applyBodyVisibility(visual.bodyMeshes, bodyVisibility);
+        visual.bodyVisibility = bodyVisibility;
+      }
       const phase = ship.team === "enemy" ? 1.8 : 0;
       const longWave = Math.sin(state.time * 0.53 + phase);
       const shortWave = Math.sin(state.time * 0.91 + phase * 1.7);
@@ -1705,19 +1723,33 @@ export class GameView implements AimProvider {
       const aimX = player.aimPoint.x - player.position.x;
       const aimZ = player.aimPoint.z - player.position.z;
       const aimLength = Math.max(1, Math.hypot(aimX, aimZ));
-      const scopeFocusDistance = this.aiming ? 145 : 0;
       const skyLook = Math.max(0, this.camera.beta - 1.42);
+      const aimCamera = this.aiming ? aimingCameraPlan({
+        length: playerHull.length,
+        beam: playerHull.beam,
+        deckHeight: playerHull.deckHeight,
+        renderScaleY: playerHull.renderScale.y,
+        heading: player.heading,
+        cameraAlpha: this.camera.alpha,
+        beta: this.camera.beta,
+      }) : undefined;
+      const scopeFocusDistance = aimCamera?.focusDistance ?? 0;
       const target = new Vector3(
         player.position.x + aimX / aimLength * scopeFocusDistance,
-        (this.aiming ? 7 : 4) * playerHull.renderScale.y
-          + skyLook * (this.aiming ? 85 : 170),
+        aimCamera?.targetHeight ?? 4 * playerHull.renderScale.y + skyLook * 170,
         player.position.z + aimZ / aimLength * scopeFocusDistance,
       );
-      if (state.time < 0.12) this.camera.target.copyFrom(target);
+      if (state.time < 0.12 || this.enteringAiming) this.camera.target.copyFrom(target);
       else Vector3.LerpToRef(this.camera.target, target, 0.16, this.camera.target);
-      const targetRadius = (this.aiming ? 78 : 205) * cameraScale;
-      this.camera.radius += (targetRadius - this.camera.radius) * 0.14;
-      this.camera.fov += ((this.aiming ? 0.44 : 0.8) - this.camera.fov) * 0.14;
+      const targetRadius = aimCamera?.radius ?? 205 * cameraScale;
+      const targetFov = aimCamera?.fov ?? 0.8;
+      this.camera.radius = cameraTransitionValue(
+        this.camera.radius,
+        targetRadius,
+        this.enteringAiming,
+      );
+      this.camera.fov = cameraTransitionValue(this.camera.fov, targetFov, false);
+      this.enteringAiming = false;
     }
     this.syncWaterAtmosphere();
     this.updateEffects(dt);
@@ -1757,6 +1789,8 @@ export class GameView implements AimProvider {
     this.camera.beta = 1.08;
     this.camera.radius = 205;
     this.camera.fov = 0.8;
+    this.aiming = false;
+    this.enteringAiming = false;
   }
 
   render(): void {

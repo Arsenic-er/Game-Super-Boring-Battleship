@@ -18,6 +18,7 @@ import {
   createDestroyerHull,
   createDestroyerV3Superstructure,
   createHullClassSilhouette,
+  createNavalMotionParts,
   createMainGunVisual,
   createTorpedoLauncherVisual,
 } from "./shipGeometry";
@@ -30,7 +31,7 @@ export class DockPreview {
   private readonly camera: ArcRotateCamera;
   private readonly shipRoot: TransformNode;
   private readonly palette: PixelShipPalette;
-  private readonly propellers: TransformNode[];
+  private propellers: TransformNode[] = [];
   private classDetailRoot?: TransformNode;
   private shipClassId: ShipClassId = DEFAULT_SHIP_CLASS_ID;
   private turrets: TransformNode[] = [];
@@ -54,14 +55,6 @@ export class DockPreview {
     this.shipRoot = new TransformNode("dock-ship", this.scene);
     this.palette = createPixelShipPalette(this.scene, "dock", "ally");
     this.buildHull();
-    const motion = createDestroyerV3Superstructure(
-      this.scene,
-      this.shipRoot,
-      "dock",
-      this.palette,
-    );
-    this.propellers = motion.propellers;
-    this.setMainGun("mk1-single");
     this.setTorpedo(DEFAULT_TORPEDO_ID);
     this.setShipClass(DEFAULT_SHIP_CLASS_ID);
     let lastRender = 0;
@@ -130,9 +123,13 @@ export class DockPreview {
     this.shipClassId = id;
     const hull = getShipClass(id);
     this.shipRoot.scaling.set(hull.renderScale.x, hull.renderScale.y, hull.renderScale.z);
-    this.classDetailRoot?.dispose(false, true);
+    this.classDetailRoot?.dispose(false, false);
     this.classDetailRoot = new TransformNode(`dock-${id}-class-details`, this.scene);
     this.classDetailRoot.parent = this.shipRoot;
+    const motion = hull.hullId === "destroyer"
+      ? createDestroyerV3Superstructure(this.scene, this.classDetailRoot, `dock-${id}`, this.palette)
+      : createNavalMotionParts(this.scene, this.classDetailRoot, `dock-${id}`, this.palette);
+    this.propellers = motion.propellers;
     createHullClassSilhouette(
       this.scene,
       this.classDetailRoot,
