@@ -1,6 +1,6 @@
 import { GUN, TORPEDO } from "../sim/config";
 import { getTorpedo } from "../ships/torpedoes";
-import { getMainBattery } from "../ships/mainBatteries";
+import { effectiveMainBattery } from "../ships/mainBatteries";
 import type {
   AmmoType,
   ControlCommand,
@@ -123,11 +123,7 @@ export class PlayerInput {
         : TORPEDO.maximumRangeMeters;
     }
     if (this.weaponSlot === "mainGun" && ship) {
-      return getMainBattery(
-        ship.shipClassId,
-        ship.mainGunId,
-        ship.mainGunMounts,
-      ).maximumRangeMeters;
+      return effectiveMainBattery(ship).maximumRangeMeters;
     }
     return GUN.maxAimRange;
   }

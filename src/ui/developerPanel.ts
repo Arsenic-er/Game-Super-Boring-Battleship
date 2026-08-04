@@ -1,11 +1,17 @@
+import "./developerPanelSandbox.css";
 import { COMPARTMENT_MAX_HEALTH, HYDRO, SMOKE } from "../sim/config";
-import { getShipClass } from "../ships/classes";
+import { getShipClass, SHIP_CLASSES, SHIP_CLASS_IDS } from "../ships/classes";
 import { mainBatteryMountCanBear, torpedoLauncherAlignmentError } from "../sim/simulation";
 import type { BattleState, CompartmentId, ModuleId, ShipState } from "../sim/types";
-import { getTorpedo } from "../ships/torpedoes";
-import { getSecondaryGun } from "../ships/secondaryGuns";
+import { getTorpedo, TORPEDO_DEFINITIONS } from "../ships/torpedoes";
+import { getSecondaryGun, SECONDARY_GUNS } from "../ships/secondaryGuns";
 import { getShipArmorProfile } from "../ships/armorProfiles";
-import { getMainBattery } from "../ships/mainBatteries";
+import { effectiveMainBattery } from "../ships/mainBatteries";
+import { MAIN_GUN_OPTIONS } from "../ships/components";
+import {
+  bindDeveloperSandboxControls,
+  refreshDeveloperSandboxControls,
+} from "./developerPanelSandbox";
 
 export type CursorStyle = "neon-arrow" | "neon-hand" | "crosshair";
 
@@ -39,6 +45,7 @@ const clamp = (value: number, min: number, max: number): number =>
 export class DeveloperPanel {
   private readonly element: HTMLElement;
   private readonly shipSelect: HTMLSelectElement;
+  private readonly entitySelect: HTMLSelectElement;
   private readonly live: HTMLElement;
   private readonly perception: HTMLElement;
   private readonly torpedoStatus: HTMLElement;
@@ -54,9 +61,58 @@ export class DeveloperPanel {
     this.element = document.createElement("aside");
     this.element.className = "developer-panel";
     this.element.hidden = true;
+    const shipClassOptions = SHIP_CLASS_IDS.map((id) =>
+      `<option value="${id}">${SHIP_CLASSES[id].name} · ${SHIP_CLASSES[id].englishName}</option>`).join("");
+    const gunOptions = MAIN_GUN_OPTIONS.map((gun) =>
+      `<option value="${gun.id}">${gun.name}</option>`).join("");
+    const torpedoOptions = Object.values(TORPEDO_DEFINITIONS).map((torpedo) =>
+      `<option value="${torpedo.id}">${torpedo.name}</option>`).join("");
+    const secondaryOptions = Object.values(SECONDARY_GUNS).map((gun) =>
+      `<option value="${gun.id}">${gun.shortLabel}</option>`).join("");
     this.element.innerHTML = `
       <header><div><small>DEVELOPER TOOLS · F3</small><h2>舰船状态调试器</h2></div><button data-action="close" type="button">×</button></header>
       <label class="dev-select"><span>调试对象</span><select data-role="ship"></select></label>
+      <section class="dev-section dev-options dev-sandbox-options">
+        <h3>开发者模式</h3>
+        <div class="dev-sandbox-status" data-role="sandbox-status">未启用</div>
+        <label><input data-role="developer-enabled" type="checkbox" /> 启用所选舰开发者覆盖</label>
+        <label><input data-role="developer-unrestricted" type="checkbox" /> 解除舰体武器限制</label>
+        <label><input data-role="developer-infinite" type="checkbox" /> 无限鱼雷与深弹</label>
+        <label><input data-role="developer-instant" type="checkbox" /> 即时装填（0.2s 安全间隔）</label>
+        ${this.devField("speedMultiplier", "极速倍率", .1, 6, .1)}
+        <label><input data-role="developer-speed-lock" type="checkbox" /> 锁定绝对航速</label>
+        ${this.devField("forcedSpeedKnots", "锁定航速 kn", -40, 200, 1)}
+      </section>
+      <section class="dev-section dev-loadout">
+        <h3>自由舰体与武器</h3>
+        <label class="dev-select"><span>舰体型号</span><select data-loadout="shipClassId">${shipClassOptions}</select></label>
+        <label class="dev-select"><span>主炮方案</span><select data-loadout="mainBatteryClassId">${shipClassOptions}</select></label>
+        <label class="dev-select"><span>炮术组件</span><select data-loadout="mainGunId">${gunOptions}</select></label>
+        ${this.loadoutNumber("mainGunMounts", "主炮座", 1, 8)}
+        <label class="dev-select"><span>鱼雷型号</span><select data-loadout="torpedoId">${torpedoOptions}</select></label>
+        ${this.loadoutNumber("torpedoLauncherMounts", "鱼雷座", 0, 8)}
+        <label class="dev-select"><span>副炮型号</span><select data-loadout="secondaryGunId">${secondaryOptions}</select></label>
+        ${this.loadoutNumber("secondaryGunMounts", "副炮座", 0, 12)}
+        ${this.loadoutNumber("depthChargeMounts", "深弹架", 0, 8)}
+        ${this.loadoutNumber("antiAirMounts", "防空座", 0, 16)}
+        <button class="dev-wide-action" data-action="apply-loadout" type="button">应用舰体与武器配置</button>
+      </section>
+      <section class="dev-section dev-entity-tools">
+        <h3>战场实体编辑器</h3>
+        <label class="dev-select"><span>场上实体</span><select data-role="entity"></select></label>
+        <div class="dev-spawn-grid">
+          <label>阵营<select data-spawn="team"><option value="player">己方</option><option value="enemy">敌方</option></select></label>
+          <label>舰级<select data-spawn="ship-class">${shipClassOptions}</select></label>
+          <label>飞机<select data-spawn="air-role"><option value="fighter">战斗机</option><option value="diveBomber">俯冲轰炸机</option><option value="torpedoBomber">鱼雷机</option></select></label>
+          <label>飞机数<input data-spawn="air-count" type="number" min="1" max="12" value="5" /></label>
+        </div>
+        <div class="dev-entity-actions">
+          <button data-action="spawn-ship" type="button">＋ 添加舰船</button>
+          <button data-action="spawn-air" type="button">＋ 添加机群</button>
+          <button class="danger" data-action="remove-entity" type="button">－ 移除所选</button>
+          <button class="danger" data-action="clear-dev-entities" type="button">清除新增实体</button>
+        </div>
+      </section>
       <div class="dev-live" data-role="live">等待状态</div>
       <div class="dev-perception" data-role="perception">感知：无遥测</div>
       <div class="dev-perception" data-role="torpedo">鱼雷：等待状态</div>
@@ -100,6 +156,8 @@ export class DeveloperPanel {
         <button data-action="critical" type="button">设为重伤</button>
         <button data-action="reset" type="button">完全修复</button>
         <button data-action="sink" type="button">生命归零</button>
+        <button data-action="reload-all" type="button">全部武器立即装填</button>
+        <button data-action="refill-air" type="button">补满己方飞机资源</button>
         <button data-action="torpedo-reload" type="button">鱼雷立即装填</button>
         <button data-action="torpedo-incoming" type="button">生成来袭鱼雷</button>
         <button data-action="torpedo-clear" type="button">清除水中鱼雷</button>
@@ -112,13 +170,16 @@ export class DeveloperPanel {
       </div>`;
     parent.append(this.element);
     const shipSelect = this.element.querySelector<HTMLSelectElement>('[data-role="ship"]');
+    const entitySelect = this.element.querySelector<HTMLSelectElement>('[data-role="entity"]');
+    const sandboxStatus = this.element.querySelector<HTMLElement>('[data-role="sandbox-status"]');
     const live = this.element.querySelector<HTMLElement>('[data-role="live"]');
     const perception = this.element.querySelector<HTMLElement>('[data-role="perception"]');
     const torpedoStatus = this.element.querySelector<HTMLElement>('[data-role="torpedo"]');
     const secondaryStatus = this.element.querySelector<HTMLElement>('[data-role="secondary"]');
     const armorStatus = this.element.querySelector<HTMLElement>('[data-role="armor"]');
-    if (!shipSelect || !live || !perception || !torpedoStatus || !secondaryStatus || !armorStatus) throw new Error("Missing developer panel controls");
+    if (!shipSelect || !entitySelect || !sandboxStatus || !live || !perception || !torpedoStatus || !secondaryStatus || !armorStatus) throw new Error("Missing developer panel controls");
     this.shipSelect = shipSelect;
+    this.entitySelect = entitySelect;
     this.live = live;
     this.perception = perception;
     this.torpedoStatus = torpedoStatus;
@@ -135,6 +196,14 @@ export class DeveloperPanel {
     return `<label class="dev-range"><span>${label}</span><input data-${kind}="${id}" type="range" min="0" max="100" step="1" /><output>100%</output></label>`;
   }
 
+  private devField(id: string, label: string, min: number, max: number, step: number): string {
+    return `<label class="dev-range"><span>${label}</span><input data-dev-field="${id}" type="range" min="${min}" max="${max}" step="${step}" /><output>0</output></label>`;
+  }
+
+  private loadoutNumber(id: string, label: string, min: number, max: number): string {
+    return `<label class="dev-select"><span>${label}</span><input data-loadout-number="${id}" type="number" min="${min}" max="${max}" step="1" /></label>`;
+  }
+
   private selectedShip(): ShipState | undefined {
     return this.getState().ships.find((ship) => ship.id === this.shipSelect.value);
   }
@@ -143,9 +212,22 @@ export class DeveloperPanel {
     const ships = this.getState().ships;
     const previous = this.shipSelect.value;
     this.shipSelect.innerHTML = ships.map((ship) =>
-      `<option value="${ship.id}">${ship.id === "player" ? "本舰" : ship.isTestTarget ? "碰撞靶船" : "敌舰 AI"}</option>`
+      `<option value="${ship.id}">${ship.id === "player" ? "本舰" : ship.team === "player" ? "己方" : ship.aiControlled || ship.id === "enemy" ? "敌方 AI" : "敌方靶舰"} · ${getShipClass(ship.shipClassId).name} · ${ship.id}</option>`
     ).join("");
     if (ships.some((ship) => ship.id === previous)) this.shipSelect.value = previous;
+    this.syncEntityOptions();
+  }
+
+  private syncEntityOptions(): void {
+    const state = this.getState();
+    const previous = this.entitySelect.value;
+    this.entitySelect.innerHTML = [
+      ...state.ships.map((ship) => `<option value="${ship.id}">[舰] ${ship.team === "player" ? "己方" : "敌方"} · ${getShipClass(ship.shipClassId).name} · ${ship.id}</option>`),
+      ...state.airSquadrons.map((squadron) => `<option value="${squadron.id}">[航空] ${squadron.team === "player" ? "己方" : "敌方"} · ${squadron.role} · ${squadron.id}</option>`),
+    ].join("");
+    if ([...state.ships, ...state.airSquadrons].some(({ id }) => id === previous)) {
+      this.entitySelect.value = previous;
+    }
   }
 
   private bindControls(): void {
@@ -206,6 +288,13 @@ export class DeveloperPanel {
     colliders?.addEventListener("change", () => this.callbacks.onDebugColliders(Boolean(colliders.checked)));
     const cursor = this.element.querySelector<HTMLSelectElement>('[data-role="cursor-style"]');
     cursor?.addEventListener("change", () => this.callbacks.onCursorStyle(cursor.value as CursorStyle));
+    bindDeveloperSandboxControls({
+      root: this.element,
+      getState: this.getState,
+      getSelectedShip: () => this.selectedShip(),
+      selectShip: (id) => { this.shipSelect.value = id; },
+      refresh: () => this.refresh(),
+    });
     for (const button of this.element.querySelectorAll<HTMLButtonElement>("button[data-action]")) {
       button.addEventListener("click", () => this.runAction(button.dataset.action ?? ""));
     }
@@ -356,6 +445,7 @@ export class DeveloperPanel {
     this.syncShipOptions();
     const ship = this.selectedShip();
     if (!ship) return;
+    refreshDeveloperSandboxControls(this.element, this.getState(), ship);
     const values: Record<string, number> = {
       hull: ship.hull,
       recoverableHull: ship.recoverableHull,
@@ -420,7 +510,9 @@ export class DeveloperPanel {
     if (!this.open) return;
     const ship = this.selectedShip();
     if (!ship) return;
-    this.live.textContent = `速度 ${ship.speedKnots.toFixed(1)} kn · 转向率 ${(ship.turnRateRadians * 180 / Math.PI).toFixed(2)}°/s · 坐标 ${ship.position.x.toFixed(0)}, ${ship.position.z.toFixed(0)} · 水听 ${ship.hydroActiveRemaining > 0 ? `启用 ${ship.hydroActiveRemaining.toFixed(1)}s` : ship.hydroCooldownRemaining > 0 ? `冷却 ${ship.hydroCooldownRemaining.toFixed(0)}s` : `就绪 ${ship.hydroCharges}`}`;
+    const speedOverride = ship.developer?.enabled && ship.developer.forcedSpeedKnots !== undefined
+      ? ` · 开发锁速 ${ship.developer.forcedSpeedKnots.toFixed(0)} kn` : "";
+    this.live.textContent = `速度 ${ship.speedKnots.toFixed(1)} kn${speedOverride} · 转向率 ${(ship.turnRateRadians * 180 / Math.PI).toFixed(2)}°/s · 坐标 ${ship.position.x.toFixed(0)}, ${ship.position.z.toFixed(0)} · 水听 ${ship.hydroActiveRemaining > 0 ? `启用 ${ship.hydroActiveRemaining.toFixed(1)}s` : ship.hydroCooldownRemaining > 0 ? `冷却 ${ship.hydroCooldownRemaining.toFixed(0)}s` : `就绪 ${ship.hydroCharges}`}`;
     const tubeRatio = ship.modules.torpedoTubes.health / ship.modules.torpedoTubes.maxHealth;
     const reloadEta = tubeRatio > 0 ? ship.torpedoReloadRemaining / tubeRatio : Number.POSITIVE_INFINITY;
     const relativeLauncher = ((ship.torpedoLauncherHeading - ship.heading) * 180 / Math.PI + 540) % 360 - 180;
@@ -439,7 +531,7 @@ export class DeveloperPanel {
       ? `副炮 · ${ship.secondaryBatteryStatus} · 目标 ${ship.secondaryTargetId ?? "无"} · 确认 ${ship.secondaryAcquisitionSamples} 次 · 左/右装填 ${Number.isFinite(portReload) ? portReload.toFixed(1) : "-"}/${Number.isFinite(starboardReload) ? starboardReload.toFixed(1) : "-"} s · ${[...new Set(secondaryReloads.map((mount) => mount.model))].join(" / ")}`
       : "副炮 · 未安装";
     const armor = getShipArmorProfile(ship.shipClassId);
-    const battery = getMainBattery(ship.shipClassId, ship.mainGunId, ship.mainGunMounts);
+    const battery = effectiveMainBattery(ship);
     const mainTurrets = ship.mainBatteryMounts.map((mount) =>
       `#${mount.mountIndex + 1} ${Math.round(mount.health / mount.maxHealth * 100)}%/${mount.reloadRemaining.toFixed(1)}s/${mainBatteryMountCanBear(ship, mount.mountIndex) ? "射界内" : "遮挡"}`
     ).join(" · ");

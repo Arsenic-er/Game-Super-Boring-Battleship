@@ -238,6 +238,16 @@ export interface MainBatteryMountState {
   lastFiredAt?: number;
 }
 
+export interface DeveloperShipOverrides {
+  enabled: boolean;
+  unrestrictedWeapons: boolean;
+  infiniteAmmunition: boolean;
+  instantReload: boolean;
+  speedMultiplier: number;
+  forcedSpeedKnots?: number;
+  mainBatteryClassId?: ShipClassId;
+}
+
 export interface ShipState {
   id: string;
   team: Team;
@@ -308,6 +318,10 @@ export interface ShipState {
   distanceTravelled: number;
   turnRateRadians: number;
   isTestTarget?: boolean;
+  developer?: DeveloperShipOverrides;
+  developerSpawned?: boolean;
+  aiControlled?: boolean;
+  countsForVictory?: boolean;
 }
 
 export interface SmokeCloudState {

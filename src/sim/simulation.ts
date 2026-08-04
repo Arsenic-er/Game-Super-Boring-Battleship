@@ -35,6 +35,7 @@ import { getSecondaryGun } from "../ships/secondaryGuns";
 import type { SecondaryGunId } from "../ships/secondaryGuns";
 import {
   getMainBattery,
+  effectiveMainBattery,
   mainBatteryMountLocalPosition,
   mainBatteryMuzzleLocalHeight,
   MAIN_BATTERY_TRAVERSE_LIMIT_RADIANS,
@@ -100,6 +101,12 @@ const zeroCommand: ControlCommand = {
 
 const clamp = (value: number, min: number, max: number): number =>
   Math.min(max, Math.max(min, value));
+
+export const DEVELOPER_MIN_RELOAD_SECONDS = .2;
+const reloadDurationFor = (ship: Readonly<ShipState>, normalSeconds: number): number =>
+  ship.developer?.enabled && ship.developer.instantReload
+    ? DEVELOPER_MIN_RELOAD_SECONDS
+    : normalSeconds;
 
 export function mainGunBloomRemaining(
   time: number,
@@ -292,6 +299,78 @@ function createShip(
     distanceTravelled: 0,
     turnRateRadians: 0,
   };
+}
+
+export interface DeveloperShipStateOptions {
+  id: string;
+  team: Team;
+  shipClassId: ShipClassId;
+  position: Vec3;
+  heading?: number;
+  mainGunId?: MainGunId;
+  torpedoId?: TorpedoId;
+  mainGunMounts?: number;
+  torpedoLauncherMounts?: number;
+  depthChargeMounts?: number;
+  antiAirMounts?: number;
+  secondaryGunIds?: SecondaryGunId[];
+  performance?: ShipPerformanceModifiers;
+  developer?: ShipState["developer"];
+  developerSpawned?: boolean;
+  aiControlled?: boolean;
+  countsForVictory?: boolean;
+}
+
+/** Full ship factory for the developer sandbox; keeps runtime spawning aligned with battle setup. */
+export function createDeveloperShipState(options: DeveloperShipStateOptions): ShipState {
+  const definition = getShipClass(options.shipClassId);
+  const heading = options.heading ?? 0;
+  const mainGunMounts = Math.max(1, options.mainGunMounts ?? definition.starterSlots.mainGun);
+  const secondaryGunIds = options.secondaryGunIds ?? Array.from(
+    { length: definition.starterSlots.sideGun },
+    () => "sideGun-common" as const,
+  );
+  const ship = createShip(
+    options.id,
+    options.team,
+    options.position.x,
+    options.position.z,
+    heading,
+    options.mainGunId ?? DEFAULT_MAIN_GUN_ID,
+    options.torpedoId ?? DEFAULT_TORPEDO_ID,
+    options.performance,
+    options.shipClassId,
+    mainGunMounts,
+    Math.max(0, options.torpedoLauncherMounts ?? definition.starterSlots.torpedo),
+    Math.max(0, options.depthChargeMounts ?? definition.starterSlots.depthCharge),
+    Math.max(0, options.antiAirMounts ?? definition.starterSlots.antiAir),
+    1,
+    secondaryGunIds,
+  );
+  ship.position.y = options.position.y;
+  ship.previousPosition = { ...ship.position };
+  ship.speedKnots = 0;
+  ship.throttle = 0;
+  ship.developer = options.developer ? { ...options.developer } : undefined;
+  if (ship.developer?.mainBatteryClassId) {
+    ship.mainBatteryMounts = createMainBatteryMounts(
+      ship.developer.mainBatteryClassId,
+      ship.mainGunId,
+      ship.mainGunMounts,
+      heading,
+    );
+  }
+  ship.developerSpawned = options.developerSpawned;
+  ship.aiControlled = options.aiControlled;
+  ship.countsForVictory = options.countsForVictory;
+  if (ship.torpedoLauncherMounts > 0) {
+    ship.torpedoesLoaded = 2;
+    ship.torpedoReserveSalvos = getTorpedo(ship.torpedoId).reserveSalvos;
+  }
+  if (ship.developer?.unrestrictedWeapons && ship.depthChargeMounts > 0) {
+    ship.depthChargeSalvos = DEPTH_CHARGE.salvos;
+  }
+  return ship;
 }
 
 export function createInitialState(
@@ -527,9 +606,11 @@ function moveShip(ship: ShipState, command: ControlCommand, dt: number): void {
     && command.ammoType !== ship.pendingAmmoType
   ) {
     ship.pendingAmmoType = command.ammoType;
-    const gunDefinition = getMainBattery(ship.shipClassId, ship.mainGunId, ship.mainGunMounts);
+    const gunDefinition = effectiveMainBattery(ship);
     const gunRatio = Math.max(0.25, moduleRatio(ship, "gun"));
-    const switchDuration = gunDefinition.reloadSeconds * ship.performance.reloadMultiplier / gunRatio;
+    const switchDuration = reloadDurationFor(
+      ship, gunDefinition.reloadSeconds * ship.performance.reloadMultiplier / gunRatio,
+    );
     for (const mount of ship.mainBatteryMounts) {
       mount.reloadRemaining = Math.max(mount.reloadRemaining, switchDuration);
     }
@@ -547,7 +628,11 @@ function moveShip(ship: ShipState, command: ControlCommand, dt: number): void {
     rudderShiftRate * dt,
   );
   const floodingSpeedFactor = 1 - clamp(ship.flooding / 100, 0, 1) * 0.32;
-  const equippedMaxSpeed = hullDefinition.maxSpeedKnots * ship.performance.maxSpeedMultiplier;
+  const developerSpeedMultiplier = ship.developer?.enabled
+    ? clamp(ship.developer.speedMultiplier, .1, 6)
+    : 1;
+  const equippedMaxSpeed = hullDefinition.maxSpeedKnots
+    * ship.performance.maxSpeedMultiplier * developerSpeedMultiplier;
   const effectiveMaxSpeed = equippedMaxSpeed * engineRatio * floodingSpeedFactor * Math.max(0, ship.throttle);
   const reverseTarget = ship.throttle < 0 ? equippedMaxSpeed * ship.throttle * 0.28 : effectiveMaxSpeed;
   const orderedSpeed = ship.throttle < 0 ? reverseTarget : effectiveMaxSpeed;
@@ -560,6 +645,9 @@ function moveShip(ship: ShipState, command: ControlCommand, dt: number): void {
     : hullDefinition.brakingKnotsPerSecond * (0.45 + engineRatio * 0.55))
     * ship.performance.accelerationMultiplier;
   ship.speedKnots += clamp(targetSpeed - ship.speedKnots, -rate * dt, rate * dt);
+  if (ship.developer?.enabled && ship.developer.forcedSpeedKnots !== undefined) {
+    ship.speedKnots = clamp(ship.developer.forcedSpeedKnots, -40, 200);
+  }
 
   const speedRatio = clamp(Math.abs(ship.speedKnots) / equippedMaxSpeed, 0, 1);
   const turnAuthority = steeringRatio * (0.2 + 0.8 * speedRatio);
@@ -575,7 +663,7 @@ function moveShip(ship: ShipState, command: ControlCommand, dt: number): void {
   ship.position.z += moveZ;
   ship.distanceTravelled += Math.hypot(moveX, moveZ);
   const gunRatio = moduleRatio(ship, "gun");
-  const gunDefinition = getMainBattery(ship.shipClassId, ship.mainGunId, ship.mainGunMounts);
+  const gunDefinition = effectiveMainBattery(ship);
   const traverseRate = gunRatio <= 0
     ? 0
     : gunDefinition.traverseDegreesPerSecond * Math.PI / 180 * (0.3 + gunRatio * 0.7);
@@ -694,13 +782,13 @@ export function gunMuzzleOrigin(ship: ShipState): Vec3 {
 }
 
 export function gunMuzzleOrigins(ship: ShipState): Vec3[] {
-  const battery = getMainBattery(ship.shipClassId, ship.mainGunId, ship.mainGunMounts);
+  const battery = effectiveMainBattery(ship);
   return battery.mounts.flatMap((_, mountIndex) => gunMuzzleOriginsForMount(ship, mountIndex));
 }
 
 function gunMuzzleOriginsForMount(ship: ShipState, mountIndex: number): Vec3[] {
   const hull = getShipClass(ship.shipClassId);
-  const gunDefinition = getMainBattery(ship.shipClassId, ship.mainGunId, ship.mainGunMounts);
+  const gunDefinition = effectiveMainBattery(ship);
   const mount = gunDefinition.mounts[mountIndex];
   if (!mount) return [];
   const turretHeading = ship.mainBatteryMounts[mountIndex]?.heading ?? ship.turretHeading;
@@ -758,7 +846,7 @@ function dispersedAimPoint(
   const forwardZ = dz / range;
   const rightX = forwardZ;
   const rightZ = -forwardX;
-  const gunDefinition = getMainBattery(ship.shipClassId, ship.mainGunId, ship.mainGunMounts);
+  const gunDefinition = effectiveMainBattery(ship);
   const dispersion = dispersionAtRange(
     range,
     moduleRatio(ship, "gun"),
@@ -777,7 +865,7 @@ function dispersedAimPoint(
 
 function fireGun(state: BattleState, ship: ShipState): void {
   if (ship.modules.gun.health <= 0) return;
-  const gunDefinition = getMainBattery(ship.shipClassId, ship.mainGunId, ship.mainGunMounts);
+  const gunDefinition = effectiveMainBattery(ship);
   const requestedRange = Math.hypot(
     ship.aimPoint.x - ship.position.x,
     ship.aimPoint.z - ship.position.z,
@@ -790,7 +878,9 @@ function fireGun(state: BattleState, ship: ShipState): void {
   let firedShells = 0;
   let salvoId: number | undefined;
   const gunRatio = Math.max(0.25, moduleRatio(ship, "gun"));
-  const reloadDuration = gunDefinition.reloadSeconds * ship.performance.reloadMultiplier / gunRatio;
+  const reloadDuration = reloadDurationFor(
+    ship, gunDefinition.reloadSeconds * ship.performance.reloadMultiplier / gunRatio,
+  );
   for (const mount of ship.mainBatteryMounts) {
     if (
       mount.reloadRemaining > 0
@@ -1011,8 +1101,10 @@ function updateSecondaryBattery(state: BattleState, ship: ShipState, dt: number)
       weaponSource: "secondary",
       position: copyVec(origin),
     });
-    mount.reloadRemaining = definition.reloadSeconds
-      * ship.performance.reloadMultiplier / gunRatio;
+    mount.reloadRemaining = reloadDurationFor(
+      ship,
+      definition.reloadSeconds * ship.performance.reloadMultiplier / gunRatio,
+    );
     fired = true;
   }
   if (fired) {
@@ -1307,9 +1399,10 @@ function fireTorpedoes(state: BattleState, ship: ShipState): void {
   }
   ship.torpedoesLoaded = 0;
   ship.torpedoReloadDuration = torpedo.reloadSeconds;
-  if (ship.torpedoReserveSalvos > 0) {
-    ship.torpedoReserveSalvos -= 1;
-    ship.torpedoReloadRemaining = ship.torpedoReloadDuration;
+  const infinite = Boolean(ship.developer?.enabled && ship.developer.infiniteAmmunition);
+  if (infinite || ship.torpedoReserveSalvos > 0) {
+    if (!infinite) ship.torpedoReserveSalvos -= 1;
+    ship.torpedoReloadRemaining = reloadDurationFor(ship, ship.torpedoReloadDuration);
   } else {
     ship.torpedoReloadRemaining = 0;
   }
@@ -1325,7 +1418,7 @@ function rejectDepthChargeFire(
 }
 
 function deployDepthChargePattern(state: BattleState, ship: ShipState): void {
-  if (ship.hullId !== "destroyer") {
+  if (ship.hullId !== "destroyer" && !(ship.developer?.enabled && ship.developer.unrestrictedWeapons)) {
     rejectDepthChargeFire(state, ship, "wrong-hull");
     return;
   }
@@ -1337,7 +1430,8 @@ function deployDepthChargePattern(state: BattleState, ship: ShipState): void {
     rejectDepthChargeFire(state, ship, "reloading");
     return;
   }
-  if (ship.depthChargeSalvos <= 0) {
+  const infinite = Boolean(ship.developer?.enabled && ship.developer.infiniteAmmunition);
+  if (ship.depthChargeSalvos <= 0 && !infinite) {
     rejectDepthChargeFire(state, ship, "empty");
     return;
   }
@@ -1390,9 +1484,9 @@ function deployDepthChargePattern(state: BattleState, ship: ShipState): void {
     kind: "depthCharge",
     position: copyVec(ship.position),
   });
-  ship.depthChargeSalvos -= 1;
-  ship.depthChargeReloadRemaining = ship.depthChargeSalvos > 0
-    ? DEPTH_CHARGE.reloadSeconds
+  if (!infinite) ship.depthChargeSalvos -= 1;
+  ship.depthChargeReloadRemaining = infinite || ship.depthChargeSalvos > 0
+    ? reloadDurationFor(ship, DEPTH_CHARGE.reloadSeconds)
     : 0;
   ship.depthChargeFireRejectReason = undefined;
   ship.depthChargeFireRejectedAt = undefined;
@@ -2399,10 +2493,15 @@ export function updateObjective(state: BattleState, dt: number): void {
 }
 
 function updateStatus(state: BattleState): void {
-  const player = state.ships.find((ship) => ship.team === "player");
-  const enemy = state.ships.find((ship) => ship.team === "enemy");
+  const player = state.ships.find((ship) => ship.id === "player");
+  if (player?.developer?.enabled) {
+    state.status = "running";
+    state.endReason = undefined;
+    return;
+  }
+  const enemies = state.ships.filter((ship) => ship.team === "enemy" && ship.countsForVictory !== false);
   const playerDestroyed = !player || player.hull <= 0;
-  const enemyDestroyed = !enemy || enemy.hull <= 0;
+  const enemyDestroyed = enemies.length === 0 || enemies.every((enemy) => enemy.hull <= 0);
   if (playerDestroyed && enemyDestroyed) {
     state.objective.scores.player = Math.min(
       OBJECTIVE.scoreToWin,
@@ -2439,7 +2538,10 @@ function updateStatus(state: BattleState): void {
   } else if (state.time >= BATTLE_DURATION_SECONDS) {
     const scoreDifference = state.objective.scores.player - state.objective.scores.enemy;
     const playerRatio = player.hull / player.maxHull;
-    const enemyRatio = enemy.hull / enemy.maxHull;
+    const enemyRatio = enemies.reduce(
+      (total, enemy) => total + enemy.hull / enemy.maxHull,
+      0,
+    ) / Math.max(1, enemies.length);
     state.status = Math.abs(scoreDifference) >= 1
       ? scoreDifference > 0 ? "player-won" : "enemy-won"
       : Math.abs(playerRatio - enemyRatio) < 0.01
@@ -2569,7 +2671,7 @@ export function observe(state: BattleState, shipId: string) {
         * SENSOR.highSpeedDetectionBonusMeters;
     const targetMainBatteryRange = Math.min(
       SENSOR.gunBloomDetectionMeters,
-      getMainBattery(target.shipClassId, target.mainGunId, target.mainGunMounts)
+      effectiveMainBattery(target)
         .maximumRangeMeters,
     );
     const detectionRange = recentlyFiredMainGun

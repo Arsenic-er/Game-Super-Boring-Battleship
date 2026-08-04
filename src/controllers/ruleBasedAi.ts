@@ -8,7 +8,7 @@ import {
   TORPEDO,
 } from "../sim/config";
 import { getTorpedo } from "../ships/torpedoes";
-import { getMainBattery } from "../ships/mainBatteries";
+import { effectiveMainBattery } from "../ships/mainBatteries";
 import {
   mainBatteryMountCanBear,
   torpedoInterceptPoint,
@@ -289,11 +289,7 @@ export class RuleBasedAi implements Controller {
     if (manoeuvre > 0.55) this.nextEstimateAt = Math.min(this.nextEstimateAt, observation.time + 1.5);
 
     if (observation.time >= this.nextEstimateAt) {
-      const mainBatteryRange = getMainBattery(
-        observation.self.shipClassId,
-        observation.self.mainGunId,
-        observation.self.mainGunMounts,
-      ).maximumRangeMeters;
+      const mainBatteryRange = effectiveMainBattery(observation.self).maximumRangeMeters;
       const rangeErrorFraction = 0.13 + (1 - this.solutionQuality) * 0.2;
       const bearingErrorRadians = 0.03 + (1 - this.solutionQuality) * 0.09;
       this.estimatedRange = clamp(
@@ -324,11 +320,7 @@ export class RuleBasedAi implements Controller {
     bearing: number,
   ): Vec3 {
     const estimatedBearing = bearing + this.bearingError;
-    const muzzleVelocity = getMainBattery(
-      observation.self.shipClassId,
-      observation.self.mainGunId,
-      observation.self.mainGunMounts,
-    ).muzzleVelocity;
+    const muzzleVelocity = effectiveMainBattery(observation.self).muzzleVelocity;
     const flightTime = this.estimatedRange / muzzleVelocity;
     const targetSpeed = target.speedKnots * KNOT_TO_MPS;
     return {
@@ -345,11 +337,7 @@ export class RuleBasedAi implements Controller {
   }
 
   command(observation: Observation): ControlCommand {
-    const mainBatteryRange = getMainBattery(
-      observation.self.shipClassId,
-      observation.self.mainGunId,
-      observation.self.mainGunMounts,
-    ).maximumRangeMeters;
+    const mainBatteryRange = effectiveMainBattery(observation.self).maximumRangeMeters;
     const perception = this.updatePerception(observation);
     const target = perception.track;
     const objective = observation.objective;

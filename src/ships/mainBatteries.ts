@@ -1,4 +1,4 @@
-import type { ShellPenetrationProfile } from "../sim/types";
+import type { ShellPenetrationProfile, ShipState } from "../sim/types";
 import type { MainGunId, MainGunVisualDefinition } from "./components";
 import { getMainGun } from "./components";
 import type { ShipClassId } from "./classes";
@@ -287,6 +287,19 @@ export function getMainBattery(
     shellProfile: mainBatteryShellProfile(shipClassId, historical.caliberMm),
     mounts: historical.mounts.slice(0, mountCount),
   };
+}
+
+/** Resolves an optional developer-only historical battery independently of the hull. */
+export function effectiveMainBattery(
+  ship: Readonly<Pick<ShipState, "shipClassId" | "mainGunId" | "mainGunMounts" | "developer">>,
+): EffectiveMainBatteryDefinition {
+  return getMainBattery(
+    ship.developer?.enabled && ship.developer.mainBatteryClassId
+      ? ship.developer.mainBatteryClassId
+      : ship.shipClassId,
+    ship.mainGunId,
+    ship.mainGunMounts,
+  );
 }
 
 export function mainBatteryBarrelCount(definition: EffectiveMainBatteryDefinition): number {

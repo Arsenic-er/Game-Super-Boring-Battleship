@@ -11,7 +11,7 @@ import {
   torpedoThreatsFor,
   turretAlignmentError,
 } from "../sim/simulation";
-import { getMainBattery, mainBatteryBarrelCount } from "../ships/mainBatteries";
+import { effectiveMainBattery, mainBatteryBarrelCount } from "../ships/mainBatteries";
 import { getShipClass } from "../ships/classes";
 import { getTorpedo } from "../ships/torpedoes";
 import { getSecondaryGun } from "../ships/secondaryGuns";
@@ -589,7 +589,7 @@ export class Hud {
       ? `${ammoLabels[player.ammoType]} → ${ammoLabels[player.pendingAmmoType]}`
       : ammoLabels[player.ammoType];
     const torpedoDefinition = getTorpedo(player.torpedoId);
-    const gunDefinition = getMainBattery(player.shipClassId, player.mainGunId, player.mainGunMounts);
+    const gunDefinition = effectiveMainBattery(player);
     const torpedoThreats = torpedoThreatsFor(state, player.id);
     const nearestTorpedo = torpedoThreats[0];
     this.torpedoWarning.hidden = !nearestTorpedo;

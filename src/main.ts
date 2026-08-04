@@ -43,7 +43,15 @@ let input: PlayerInput;
 let tacticalMap: TacticalMap;
 let menus: GameMenus;
 let developerPanel: DeveloperPanel | undefined;
-let ai = new RuleBasedAi();
+let enemyAiByShipId = new Map<string, RuleBasedAi>();
+const actorSeed = (id: string): number => {
+  let seed = 2_166_136_261;
+  for (let index = 0; index < id.length; index += 1) {
+    seed ^= id.charCodeAt(index);
+    seed = Math.imul(seed, 16_777_619);
+  }
+  return seed >>> 0;
+};
 const playerPerception = new PlayerPerceptionTracker();
 const audio = new CombatAudio();
 let started = false;
@@ -73,7 +81,7 @@ function startMode(mode: GameMode): void {
   developerPanel?.close();
   menus?.closeAll();
   hud.resetMetrics();
-  ai = new RuleBasedAi(state.randomSeed ^ 0xa11ce);
+  enemyAiByShipId = new Map();
   playerPerception.reset();
   audio.unlock();
   started = true;
@@ -290,8 +298,19 @@ view.engine.runRenderLoop(() => {
       const airMissions = tacticalMap.consumeAirMissions();
       if (airMissions.length > 0) playerCommand.airMissions = airMissions;
       commands.set("player", playerCommand);
-      if (state.mode === "battle" && state.ships.some((ship) => ship.id === "enemy")) {
-        commands.set("enemy", ai.command(observe(state, "enemy")));
+      const enemyShips = state.ships.filter((ship) =>
+        ship.hull > 0 && ship.team === "enemy" && (ship.id === "enemy" || ship.aiControlled));
+      const activeEnemyIds = new Set(enemyShips.map(({ id }) => id));
+      for (const id of enemyAiByShipId.keys()) {
+        if (!activeEnemyIds.has(id)) enemyAiByShipId.delete(id);
+      }
+      for (const enemyShip of enemyShips) {
+        let controller = enemyAiByShipId.get(enemyShip.id);
+        if (!controller) {
+          controller = new RuleBasedAi(state.randomSeed ^ actorSeed(enemyShip.id));
+          enemyAiByShipId.set(enemyShip.id, controller);
+        }
+        commands.set(enemyShip.id, controller.command(observe(state, enemyShip.id)));
       }
       stepSimulation(state, commands, FIXED_STEP);
       tacticalMap.handleAirEvents(state.airEvents);

@@ -31,7 +31,7 @@ import {
   turretAimPoint,
 } from "../sim/simulation";
 import {
-  getMainBattery,
+  effectiveMainBattery,
   mainBatteryMountLocalPosition,
 } from "../ships/mainBatteries";
 import type { HullId } from "../ships/hulls";
@@ -133,6 +133,7 @@ interface SmokeCloudVisual {
 const toVector = (value: Vec3): Vector3 => new Vector3(value.x, value.y, value.z);
 const shipArmamentSignature = (ship: ShipState): string => [
   ship.shipClassId,
+  ship.developer?.enabled ? ship.developer.mainBatteryClassId : "standard",
   ship.mainGunId,
   ship.mainGunMounts,
   ship.torpedoId,
@@ -518,7 +519,7 @@ export class GameView implements AimProvider {
     createHullClassSilhouette(this.scene, root, ship.id, ship.hullId, palette, hullDefinition.visualVariant);
     const bodyMeshes = root.getChildMeshes(false)
       .filter((mesh): mesh is Mesh => mesh instanceof Mesh);
-    const gunDefinition = getMainBattery(ship.shipClassId, ship.mainGunId, ship.mainGunMounts);
+    const gunDefinition = effectiveMainBattery(ship);
     const guns = gunDefinition.mounts.map((mount, index) => {
       const gun = createMainGunVisual(this.scene, root, `${ship.id}-mount-${index}`, {
         ...gunDefinition,
@@ -536,7 +537,7 @@ export class GameView implements AimProvider {
       torpedoDefinition,
       palette,
     );
-    torpedo.root.setEnabled(hullDefinition.slotCounts.torpedo > 0 && ship.torpedoLauncherMounts > 0);
+    torpedo.root.setEnabled(ship.torpedoLauncherMounts > 0);
 
     const secondaryTurrets = ship.secondaryMounts.map((mount, index) => {
       const turret = new TransformNode(`${ship.id}-secondary-${index}`, this.scene);
@@ -696,6 +697,15 @@ export class GameView implements AimProvider {
   }
 
   private syncShips(state: BattleState, perceivedTarget?: PlayerTargetView): void {
+    const activeIds = new Set(state.ships.map(({ id }) => id));
+    for (const [id, visual] of this.ships) {
+      if (activeIds.has(id)) continue;
+      visual.root.dispose(false, true);
+      this.ships.delete(id);
+    }
+    const developerMode = Boolean(
+      state.ships.find(({ id }) => id === "player")?.developer?.enabled,
+    );
     for (const ship of state.ships) {
       let visual = this.ships.get(ship.id);
       if (visual && (
@@ -710,7 +720,9 @@ export class GameView implements AimProvider {
         visual = this.createShip(ship);
         this.ships.set(ship.id, visual);
       }
-      const visible = isShipVisibleToPlayer(ship, state.mode, perceivedTarget);
+      const visible = developerMode
+        ? ship.hull > 0
+        : isShipVisibleToPlayer(ship, state.mode, perceivedTarget);
       visual.root.setEnabled(visible);
       if (!visible) continue;
       const bodyVisibility = ownShipBodyVisibility(ship.id, this.aiming);
@@ -742,7 +754,7 @@ export class GameView implements AimProvider {
         muzzle,
         turretAimPoint(ship, muzzle),
         3,
-        getMainBattery(ship.shipClassId, ship.mainGunId, ship.mainGunMounts).muzzleVelocity,
+        effectiveMainBattery(ship).muzzleVelocity,
       );
       if (elevationPath.length >= 2) {
         const first = elevationPath[0];
@@ -1180,11 +1192,7 @@ export class GameView implements AimProvider {
 
   syncAimArc(player: ShipState, weaponSlot: WeaponSlot): void {
     const origin = gunMuzzleOrigin(player);
-    const muzzleVelocity = getMainBattery(
-      player.shipClassId,
-      player.mainGunId,
-      player.mainGunMounts,
-    ).muzzleVelocity;
+    const muzzleVelocity = effectiveMainBattery(player).muzzleVelocity;
     const points = predictTrajectory(origin, player.aimPoint, 28, muzzleVelocity).map(toVector);
     const barrelPoints = predictTrajectory(
       origin,
