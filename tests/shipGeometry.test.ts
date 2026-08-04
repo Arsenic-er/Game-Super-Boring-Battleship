@@ -5,7 +5,12 @@ import { StandardMaterial } from "@babylonjs/core/Materials/standardMaterial";
 import { TransformNode } from "@babylonjs/core/Meshes/transformNode";
 import { Scene } from "@babylonjs/core/scene";
 import { describe, expect, it } from "vitest";
-import { createChamferedBox, createDestroyerHull, createHullClassSilhouette } from "../src/render/shipGeometry";
+import {
+  createChamferedBox,
+  createDestroyerHull,
+  createHullClassSilhouette,
+  hullStationsFor,
+} from "../src/render/shipGeometry";
 
 describe("naval deckhouse geometry", () => {
   it("uses clipped corners and sloped walls instead of an axis-aligned box", () => {
@@ -85,6 +90,17 @@ describe("naval deckhouse geometry", () => {
     engine.dispose();
   });
 
+  it("uses dedicated destroyer, cruiser and battleship hull lines", () => {
+    const destroyer = hullStationsFor("destroyer");
+    const cruiser = hullStationsFor("lightCruiser");
+    const battleship = hullStationsFor("battleship");
+    expect(cruiser.length).toBeGreaterThan(destroyer.length);
+    expect(battleship.length).toBeGreaterThan(cruiser.length);
+    expect(battleship[0]!.width).toBeGreaterThan(destroyer[0]!.width);
+    expect(battleship.at(-2)!.width).toBeLessThan(battleship[8]!.width);
+    expect(battleship.at(-1)!.deck).toBeGreaterThan(cruiser.at(-1)!.deck);
+  });
+
   it("builds layered cruiser and battleship superstructures for every variant", () => {
     const engine = new NullEngine();
     const scene = new Scene(engine);
@@ -101,7 +117,9 @@ describe("naval deckhouse geometry", () => {
         const meshes = root.getChildMeshes(false);
         const tiers = meshes.filter((mesh) => mesh.name.includes("bridge-tier"));
         expect(tiers.length).toBeGreaterThanOrEqual(hullId === "battleship" ? 4 : 3);
-        expect(meshes.length).toBeLessThan(45);
+        expect(meshes.some((mesh) => mesh.name.includes("lifeboat"))).toBe(true);
+        expect(meshes.some((mesh) => mesh.name.includes("portholes"))).toBe(true);
+        expect(meshes.length).toBeLessThan(60);
         for (const mesh of meshes) {
           const positions = mesh.getVerticesData(VertexBuffer.PositionKind) ?? [];
           expect(positions.length).toBeGreaterThan(0);

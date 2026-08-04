@@ -61,9 +61,8 @@ import {
   type AirSquadronVisual,
 } from "./aircraftGeometry";
 import {
-  aircraftPitch,
+  aircraftFormationPose,
   airVisualSnapshot,
-  formationOffsets,
 } from "./aircraftPresentation";
 import { aimingCameraPlan, cameraTransitionValue } from "./combatCamera";
 import { applyBodyVisibility, ownShipBodyVisibility } from "./shipAimPresentation";
@@ -508,6 +507,7 @@ export class GameView implements AimProvider {
       name: ship.id,
       length: 112,
       beam: 11,
+      hullId: ship.hullId,
       hullMaterial,
       deckMaterial,
     });
@@ -863,18 +863,21 @@ export class GameView implements AimProvider {
       visual.root.rotation.y = snapshot.heading;
       visual.root.rotation.z = visual.bank;
       visual.lastHeading = snapshot.heading;
-      const offsets = formationOffsets(snapshot.role, snapshot.aircraftCount, snapshot.phase);
       for (const [index, plane] of visual.planes.entries()) {
-        const offset = offsets[index];
-        plane.root.setEnabled(Boolean(offset));
-        if (!offset) continue;
-        plane.root.position.set(
-          offset.x,
-          offset.y + Math.sin(state.time * 2.7 + index * 1.73) * 0.32,
-          offset.z,
+        const pose = aircraftFormationPose(
+          snapshot.role,
+          index,
+          snapshot.aircraftCount,
+          snapshot.phase,
+          state.time,
+          squadron.id,
         );
-        plane.root.rotation.x = aircraftPitch(snapshot.role, snapshot.phase);
-        plane.root.rotation.z = Math.sin(state.time * 1.3 + index) * 0.012;
+        plane.root.setEnabled(Boolean(pose));
+        if (!pose) continue;
+        plane.root.position.set(
+          pose.x, pose.y, pose.z,
+        );
+        plane.root.rotation.set(pose.pitch, pose.yaw, pose.bank);
         plane.body.visibility = snapshot.visibility;
         plane.propeller.rotation.z += dt * (snapshot.role === "fighter" ? 34 : 27);
         for (const blade of plane.propeller.getChildMeshes()) {

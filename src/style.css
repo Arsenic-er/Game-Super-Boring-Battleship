@@ -320,7 +320,7 @@ button { font: inherit; }
   background: rgba(3, 21, 28, .91);
   box-shadow: 4px 4px 0 rgba(0, 0, 0, .55);
   backdrop-filter: none;
-  transition: opacity 100ms linear;
+  transition: opacity 100ms linear, visibility 0s linear 100ms;
 }
 .ship-dashboard.panel::before { inset: 4px; }
 .bridge-dial {
@@ -936,6 +936,12 @@ kbd { display: inline-block; margin-right: 3px; padding: 3px 5px; color: #e5eeee
   pointer-events: none;
 }
 .game-shell.game-active:not(.hud-details-held) .weapon-bar { bottom: 18px; }
+.game-shell.game-active.hud-details-held .ship-dashboard {
+  opacity: 0;
+  visibility: hidden;
+  pointer-events: none;
+  transition-delay: 0s;
+}
 .game-shell.game-active.hud-details-held .aux-hud-hint {
   opacity: 0;
   visibility: hidden;
@@ -1216,8 +1222,28 @@ kbd { display: inline-block; margin-right: 3px; padding: 3px 5px; color: #e5eeee
 .large-map-heading { display: flex; align-items: center; justify-content: space-between; margin-bottom: 12px; }
 .large-map-heading .eyebrow { margin-bottom: 5px; }
 .large-map-heading h2 { margin: 0; font-size: 18px; letter-spacing: .1em; }
+.large-map-tools { display: flex; align-items: center; gap: 15px; }
 .large-map-north { display: grid; place-items: center; color: #dca081; font: 700 11px "Fusion Bold Pixel", "Microsoft YaHei", sans-serif; }
 .large-map-north b { color: #f3eee3; font-size: 27px; line-height: 22px; }
+.map-zoom-controls {
+  display: grid;
+  grid-template-columns: 30px minmax(110px, auto) 30px 52px;
+  align-items: center;
+  border: 1px solid rgba(109, 184, 184, .42);
+  background: #071e27;
+}
+.map-zoom-controls button {
+  height: 30px;
+  padding: 0 7px;
+  color: #d7ece8;
+  border: 0;
+  border-left: 1px solid rgba(109, 184, 184, .3);
+  background: #10343d;
+  cursor: pointer;
+}
+.map-zoom-controls button:first-child { border-right: 1px solid rgba(109, 184, 184, .3); border-left: 0; }
+.map-zoom-controls button:hover { color: #071a21; background: #8bd8cf; }
+.map-zoom-label { padding: 0 8px; color: #eed18c; font: 700 9px/30px "Fusion Bold Pixel", "Microsoft YaHei", sans-serif; text-align: center; white-space: nowrap; }
 .large-map-canvas { display: block; width: 100%; aspect-ratio: 1; max-height: 68vh; border: 1px solid rgba(166, 207, 206, .28); image-rendering: pixelated; contain: strict; }
 .large-map-card footer { display: flex; justify-content: center; align-items: center; gap: 12px; margin-top: 12px; color: #8eabad; font-size: 10px; }
 
@@ -1532,6 +1558,8 @@ body[data-locale="ru-RU"] .menu-tabs button { font-size: 11px; }
   .controls { display: none; }
   .weapon-bar { bottom: 14px; grid-template-columns: repeat(3, 118px); transform: translateX(-50%) scale(.86); }
   .control-settings { right: 10px; bottom: 14px; transform: scale(.86); transform-origin: right bottom; }
+  .large-map-heading { align-items: flex-start; gap: 8px; }
+  .large-map-tools { gap: 7px; }
   .brand small { display: none; }
   .upgrade-grid { grid-template-columns: 1fr; }
   .profile-strip { align-items: stretch; flex-direction: column; }

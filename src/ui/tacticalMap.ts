@@ -38,6 +38,62 @@ export function worldToHeadingUpMap(
   return { x: centerX + right * scale, y: centerY - forward * scale };
 }
 
+export const LARGE_MAP_MAX_HALF_EXTENT = 6_000;
+export const LARGE_MAP_MIN_HALF_EXTENT = 1_200;
+
+export interface LargeMapView {
+  centerX: number;
+  centerZ: number;
+  halfExtent: number;
+}
+
+export function clampLargeMapView(view: Readonly<LargeMapView>): LargeMapView {
+  const halfExtent = Math.min(
+    LARGE_MAP_MAX_HALF_EXTENT,
+    Math.max(LARGE_MAP_MIN_HALF_EXTENT, view.halfExtent),
+  );
+  const centerLimit = LARGE_MAP_MAX_HALF_EXTENT - halfExtent;
+  return {
+    centerX: Math.min(centerLimit, Math.max(-centerLimit, view.centerX)),
+    centerZ: Math.min(centerLimit, Math.max(-centerLimit, view.centerZ)),
+    halfExtent,
+  };
+}
+
+export function largeMapScale(
+  width: number,
+  height: number,
+  halfExtent: number,
+): number {
+  return Math.min(width, height) * .46 / Math.max(1, halfExtent);
+}
+
+/** Zooms around the world point under the cursor instead of jumping to center. */
+export function zoomLargeMapView(
+  view: Readonly<LargeMapView>,
+  anchor: Readonly<MapPoint>,
+  width: number,
+  height: number,
+  direction: "in" | "out",
+): LargeMapView {
+  const centerX = width / 2;
+  const centerY = height / 2;
+  const oldScale = largeMapScale(width, height, view.halfExtent);
+  const anchorWorldX = view.centerX + (anchor.x - centerX) / oldScale;
+  const anchorWorldZ = view.centerZ + (centerY - anchor.y) / oldScale;
+  const nextHalfExtent = view.halfExtent * (direction === "in" ? .8 : 1.25);
+  const clampedExtent = Math.min(
+    LARGE_MAP_MAX_HALF_EXTENT,
+    Math.max(LARGE_MAP_MIN_HALF_EXTENT, nextHalfExtent),
+  );
+  const nextScale = largeMapScale(width, height, clampedExtent);
+  return clampLargeMapView({
+    centerX: anchorWorldX - (anchor.x - centerX) / nextScale,
+    centerZ: anchorWorldZ - (centerY - anchor.y) / nextScale,
+    halfExtent: clampedExtent,
+  });
+}
+
 function resizeCanvas(
   canvas: HTMLCanvasElement,
   pixelRatioCap = 1.25,
@@ -301,6 +357,8 @@ export class TacticalMap {
   private readonly overlay: HTMLElement;
   private readonly compassNeedle: HTMLElement;
   private readonly airCommands: TacticalAirCommandController;
+  private readonly zoomLabel: HTMLOutputElement;
+  private readonly zoomButtons: HTMLButtonElement[];
   private readonly airStatusTitle: HTMLElement;
   private readonly airStatusList: HTMLElement;
   private locale: GameLocale;
@@ -309,6 +367,7 @@ export class TacticalMap {
   private lastLargeMapDrawTime = -1;
   private lastState?: BattleState;
   private lastTarget?: PlayerTargetView;
+  private largeMapView: LargeMapView = { centerX: 0, centerZ: 0, halfExtent: LARGE_MAP_MAX_HALF_EXTENT };
 
   constructor(
     parent: HTMLElement,
@@ -335,17 +394,29 @@ export class TacticalMap {
       <section class="large-map-card" role="dialog" aria-modal="true" aria-label="大战术地图">
         <div class="large-map-heading">
           <div><p class="eyebrow">作战区域</p><h2>北向上战术地图</h2></div>
-          <div class="large-map-north"><b>↑</b><span>N</span></div>
+          <div class="large-map-tools">
+            <div class="large-map-north"><b>↑</b><span>N</span></div>
+            <div class="map-zoom-controls" aria-label="地图缩放">
+              <button type="button" data-map-zoom="out" title="缩小地图">−</button>
+              <output class="map-zoom-label">100% · 12 km</output>
+              <button type="button" data-map-zoom="in" title="放大地图">＋</button>
+              <button type="button" data-map-zoom="reset">全局</button>
+            </div>
+          </div>
         </div>
         <canvas class="large-map-canvas" aria-label="完整作战区域"></canvas>
-        <footer><span>绿色：本舰</span><span>红色：敌舰</span><kbd>M</kbd><span>开关地图</span><kbd>ESC</kbd><span>退出</span></footer>
+        <footer><span>滚轮 / ＋−：缩放</span><kbd>0</kbd><span>返回全局</span><kbd>M</kbd><span>开关地图</span><kbd>ESC</kbd><span>退出</span></footer>
       </section>`;
 
     parent.append(minimapPanel, overlay);
     const minimap = minimapPanel.querySelector<HTMLCanvasElement>(".minimap-canvas");
     const largeMap = overlay.querySelector<HTMLCanvasElement>(".large-map-canvas");
     const compassNeedle = minimapPanel.querySelector<HTMLElement>(".compass-needle");
-    if (!minimap || !largeMap || !compassNeedle) throw new Error("Failed to create tactical map");
+    const zoomLabel = overlay.querySelector<HTMLOutputElement>(".map-zoom-label");
+    const zoomButtons = Array.from(overlay.querySelectorAll<HTMLButtonElement>("[data-map-zoom]"));
+    if (!minimap || !largeMap || !compassNeedle || !zoomLabel || zoomButtons.length !== 3) {
+      throw new Error("Failed to create tactical map");
+    }
     const airLayer = document.createElement("div");
     airLayer.className = "air-command-layer";
     airLayer.innerHTML = `<div class="map-marquee" hidden></div><div class="map-patrol-preview" hidden></div><div class="air-command-status">\u5de6\u952e\u6846\u9009\u5df1\u65b9\u673a\u7fa4 \u00b7 \u53f3\u952e\u7a7a\u5730\u79fb\u52a8 \u00b7 C\u6253\u5f00\u6307\u4ee4\u83dc\u5355</div><aside class="air-command-palette" hidden><strong>\u822a\u7a7a\u6307\u4ee4 C</strong><button data-air-command="defendShip">\u62a4\u536b\u53cb\u519b</button><button data-air-command="interceptSquadron">\u653b\u51fb\u654c\u65b9\u673a\u7fa4</button><button data-air-command="patrolArea">\u8bbe\u7f6e\u5de1\u903b\u8303\u56f4</button><button data-air-command="strikeShip">\u653b\u51fb\u654c\u65b9\u8230\u8239</button><button data-air-command="recall">\u5168\u90e8\u8fd4\u822a</button><button data-air-command="close">\u5173\u95ed</button></aside><aside class="air-context-menu" hidden><strong>\u53cb\u519b\u76ee\u6807</strong><button data-air-context="guard">\u62a4\u536b\u8be5\u76ee\u6807</button><button data-air-context="patrol">\u5728\u76ee\u6807\u5468\u56f4\u5de1\u903b</button><button data-air-context="move">\u79fb\u52a8\u81f3\u76ee\u6807</button><button data-air-context="close">\u5173\u95ed</button></aside>`;
@@ -367,6 +438,8 @@ export class TacticalMap {
     this.largeMap = largeMap;
     this.overlay = overlay;
     this.compassNeedle = compassNeedle;
+    this.zoomLabel = zoomLabel;
+    this.zoomButtons = zoomButtons;
     this.airStatusTitle = airStatusTitle;
     this.airStatusList = airStatusList;
     this.airStatusTitle.textContent = tacticalAirText(this.locale).squadronStatus;
@@ -382,6 +455,20 @@ export class TacticalMap {
         this.open();
       }
     });
+    largeMap.addEventListener("wheel", (event) => {
+      if (event.buttons !== 0 || event.deltaY === 0) return;
+      event.preventDefault();
+      const rect = largeMap.getBoundingClientRect();
+      this.changeLargeMapZoom(event.deltaY < 0 ? "in" : "out", {
+        x: event.clientX - rect.left,
+        y: event.clientY - rect.top,
+      });
+    }, { passive: false });
+    this.zoomButtons.forEach((button) => button.addEventListener("click", () => {
+      const action = button.dataset.mapZoom;
+      if (action === "reset") this.resetLargeMapView();
+      else this.changeLargeMapZoom(action === "in" ? "in" : "out");
+    }));
   }
 
   setLocale(locale: GameLocale): void {
@@ -415,6 +502,21 @@ export class TacticalMap {
   }
 
   handleKeyDown(event: KeyboardEvent): boolean {
+    if (["Equal", "NumpadAdd"].includes(event.code)) {
+      event.preventDefault();
+      this.changeLargeMapZoom("in");
+      return true;
+    }
+    if (["Minus", "NumpadSubtract"].includes(event.code)) {
+      event.preventDefault();
+      this.changeLargeMapZoom("out");
+      return true;
+    }
+    if (["Digit0", "Numpad0", "Home"].includes(event.code)) {
+      event.preventDefault();
+      this.resetLargeMapView();
+      return true;
+    }
     return this.airCommands.handleKeyDown(event);
   }
 
@@ -428,6 +530,37 @@ export class TacticalMap {
 
   resetForBattle(): void {
     this.airCommands.resetForBattle();
+    this.largeMapView = { centerX: 0, centerZ: 0, halfExtent: LARGE_MAP_MAX_HALF_EXTENT };
+    this.updateZoomLabel();
+  }
+
+  private resetLargeMapView(): void {
+    this.largeMapView = { centerX: 0, centerZ: 0, halfExtent: LARGE_MAP_MAX_HALF_EXTENT };
+    this.updateZoomLabel();
+    if (this.lastState) this.drawLargeMap(this.lastState, this.lastTarget);
+  }
+
+  private changeLargeMapZoom(direction: "in" | "out", anchor?: MapPoint): void {
+    const width = this.largeMap.clientWidth;
+    const height = this.largeMap.clientHeight;
+    if (width <= 0 || height <= 0) return;
+    this.largeMapView = zoomLargeMapView(
+      this.largeMapView,
+      anchor ?? { x: width / 2, y: height / 2 },
+      width,
+      height,
+      direction,
+    );
+    this.updateZoomLabel();
+    if (this.lastState) this.drawLargeMap(this.lastState, this.lastTarget);
+  }
+
+  private updateZoomLabel(): void {
+    const percent = Math.round(
+      LARGE_MAP_MAX_HALF_EXTENT / this.largeMapView.halfExtent * 100,
+    );
+    const spanKm = this.largeMapView.halfExtent * 2 / 1_000;
+    this.zoomLabel.textContent = `${percent}% · ${spanKm.toFixed(spanKm % 1 ? 1 : 0)} km`;
   }
 
   toggle(): void {
@@ -596,10 +729,14 @@ export class TacticalMap {
     const width = this.largeMap.clientWidth;
     const height = this.largeMap.clientHeight;
     const center = { x: width / 2, y: height / 2 };
-    const halfExtent = 6_000;
-    const scale = Math.min(width, height) * 0.46 / halfExtent;
+    const { centerX: worldCenterX, centerZ: worldCenterZ, halfExtent } = this.largeMapView;
+    const scale = largeMapScale(width, height, halfExtent);
     const project = (x: number, z: number): MapPoint =>
-      ({ x: center.x + x * scale, y: center.y - z * scale });
+      ({
+        x: center.x + (x - worldCenterX) * scale,
+        y: center.y - (z - worldCenterZ) * scale,
+      });
+    this.updateZoomLabel();
     context.clearRect(0, 0, width, height);
     context.fillStyle = "#071f2a";
     context.fillRect(0, 0, width, height);
@@ -607,24 +744,28 @@ export class TacticalMap {
     context.fillStyle = "rgba(174, 211, 212, .5)";
     context.font = "10px monospace";
     context.lineWidth = 1;
-    for (let meters = -halfExtent; meters <= halfExtent; meters += 1_000) {
-      const x = center.x + meters * scale;
-      const y = center.y - meters * scale;
+    const gridStep = halfExtent >= 5_000 ? 1_000 : halfExtent >= 2_500 ? 500 : 250;
+    const visibleMinimumX = Math.max(-LARGE_MAP_MAX_HALF_EXTENT, worldCenterX - halfExtent);
+    const visibleMaximumX = Math.min(LARGE_MAP_MAX_HALF_EXTENT, worldCenterX + halfExtent);
+    const visibleMinimumZ = Math.max(-LARGE_MAP_MAX_HALF_EXTENT, worldCenterZ - halfExtent);
+    const visibleMaximumZ = Math.min(LARGE_MAP_MAX_HALF_EXTENT, worldCenterZ + halfExtent);
+    for (let meters = Math.ceil(visibleMinimumX / gridStep) * gridStep; meters <= visibleMaximumX; meters += gridStep) {
+      const x = project(meters, worldCenterZ).x;
       context.beginPath();
-      context.moveTo(x, center.y - halfExtent * scale);
-      context.lineTo(x, center.y + halfExtent * scale);
-      context.moveTo(center.x - halfExtent * scale, y);
-      context.lineTo(center.x + halfExtent * scale, y);
+      context.moveTo(x, 0);
+      context.lineTo(x, height);
       context.stroke();
-      if (meters !== 0) context.fillText(`${Math.abs(meters / 1_000)} km`, center.x + 4, y - 3);
+    }
+    for (let meters = Math.ceil(visibleMinimumZ / gridStep) * gridStep; meters <= visibleMaximumZ; meters += gridStep) {
+      const y = project(worldCenterX, meters).y;
+      context.beginPath(); context.moveTo(0, y); context.lineTo(width, y); context.stroke();
+      context.fillText(`${meters / 1_000} km`, 5, y - 3);
     }
     context.strokeStyle = "rgba(192, 224, 221, .48)";
-    context.strokeRect(
-      center.x - halfExtent * scale,
-      center.y - halfExtent * scale,
-      halfExtent * 2 * scale,
-      halfExtent * 2 * scale,
-    );
+    const boundaryNorthWest = project(-LARGE_MAP_MAX_HALF_EXTENT, LARGE_MAP_MAX_HALF_EXTENT);
+    const boundarySouthEast = project(LARGE_MAP_MAX_HALF_EXTENT, -LARGE_MAP_MAX_HALF_EXTENT);
+    context.strokeRect(boundaryNorthWest.x, boundaryNorthWest.y,
+      boundarySouthEast.x - boundaryNorthWest.x, boundarySouthEast.y - boundaryNorthWest.y);
     drawSmoke(
       context,
       state,
@@ -634,10 +775,7 @@ export class TacticalMap {
     drawObjective(
       context,
       state,
-      {
-        x: center.x + state.objective.center.x * scale,
-        y: center.y - state.objective.center.z * scale,
-      },
+      project(state.objective.center.x, state.objective.center.z),
       state.objective.radius * scale,
     );
     const entities: TacticalMapEntity[] = [];
@@ -661,10 +799,7 @@ export class TacticalMap {
     }
     const player = state.ships.find((ship) => ship.team === "player");
     if (player) {
-      const point = {
-        x: center.x + player.position.x * scale,
-        y: center.y - player.position.z * scale,
-      };
+      const point = project(player.position.x, player.position.z);
       drawHydroRange(context, player, point, scale);
       drawShip(context, player, point, player.heading, true);
       drawDetectedTorpedoes(
@@ -706,7 +841,10 @@ export class TacticalMap {
         role: contact.observedRole,
       });
     }
-    this.airCommands.sync(state, entities, { centerX: center.x, centerY: center.y, scale });
+    this.airCommands.sync(state, entities, {
+      centerX: center.x, centerY: center.y, scale,
+      worldCenterX, worldCenterZ,
+    });
     this.renderAirStatus(state);
     const byId = new Map(entities.map((entity) => [entity.id, entity]));
     context.save();
@@ -747,10 +885,7 @@ export class TacticalMap {
       }, project(position.x, position.z), false, false, pending.has(id));
     }
     if (target) {
-      const point = {
-        x: center.x + target.position.x * scale,
-        y: center.y - target.position.z * scale,
-      };
+      const point = project(target.position.x, target.position.z);
       if (pending.has(target.id)) {
         context.strokeStyle = "#ffb65c";
         context.lineWidth = 2;

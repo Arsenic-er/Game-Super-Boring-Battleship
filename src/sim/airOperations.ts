@@ -15,6 +15,7 @@ import type {
   BattleState,
   Vec3,
 } from "./types";
+import { airSquadronTargetAltitude } from "./airFlightModel";
 import type { HullId } from "../ships/hulls";
 import { getShipClass } from "../ships/classes";
 import type { ShipClassId } from "../ships/classes";
@@ -676,9 +677,10 @@ export function deployFleetAirSupport(state: BattleState): void {
     const controllerId = team === "player" ? "player" : "enemy";
     const side = team === "player" ? -1 : 1;
     roles.forEach((role, index) => {
-      const position = { x: (index - 1) * 340, y: 180, z: side * 5_200 };
+      const id = `${team}-${role}-1`;
+      const position = { x: (index - 1) * 340, y: airSquadronTargetAltitude(role, "outbound", id, state.time), z: side * 5_200 };
       const squadron = createAirSquadronState({
-        id: `${team}-${role}-1`,
+        id,
         controllerId,
         team,
         role,

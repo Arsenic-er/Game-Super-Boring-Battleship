@@ -31,6 +31,7 @@ export class DockPreview {
   private readonly camera: ArcRotateCamera;
   private readonly shipRoot: TransformNode;
   private readonly palette: PixelShipPalette;
+  private hullRoot?: TransformNode;
   private propellers: TransformNode[] = [];
   private classDetailRoot?: TransformNode;
   private shipClassId: ShipClassId = DEFAULT_SHIP_CLASS_ID;
@@ -54,7 +55,6 @@ export class DockPreview {
     key.intensity = 1.25;
     this.shipRoot = new TransformNode("dock-ship", this.scene);
     this.palette = createPixelShipPalette(this.scene, "dock", "ally");
-    this.buildHull();
     this.setTorpedo(DEFAULT_TORPEDO_ID);
     this.setShipClass(DEFAULT_SHIP_CLASS_ID);
     let lastRender = 0;
@@ -74,16 +74,6 @@ export class DockPreview {
       }
     });
     window.addEventListener("resize", () => this.engine.resize());
-  }
-
-  private buildHull(): void {
-    createDestroyerHull(this.scene, this.shipRoot, {
-      name: "dock",
-      length: 112,
-      beam: 11,
-      hullMaterial: this.palette.hull,
-      deckMaterial: this.palette.deck,
-    });
   }
 
   setMainGun(id: MainGunId): void {
@@ -123,6 +113,17 @@ export class DockPreview {
     this.shipClassId = id;
     const hull = getShipClass(id);
     this.shipRoot.scaling.set(hull.renderScale.x, hull.renderScale.y, hull.renderScale.z);
+    this.hullRoot?.dispose(false, true);
+    this.hullRoot = new TransformNode(`dock-${id}-hull-root`, this.scene);
+    this.hullRoot.parent = this.shipRoot;
+    createDestroyerHull(this.scene, this.hullRoot, {
+      name: `dock-${id}`,
+      length: 112,
+      beam: 11,
+      hullId: hull.hullId,
+      hullMaterial: this.palette.hull,
+      deckMaterial: this.palette.deck,
+    });
     this.classDetailRoot?.dispose(false, false);
     this.classDetailRoot = new TransformNode(`dock-${id}-class-details`, this.scene);
     this.classDetailRoot.parent = this.shipRoot;

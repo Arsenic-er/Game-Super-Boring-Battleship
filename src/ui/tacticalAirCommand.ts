@@ -25,6 +25,8 @@ export interface NorthUpProjection {
   centerX: number;
   centerY: number;
   scale: number;
+  worldCenterX?: number;
+  worldCenterZ?: number;
 }
 
 export interface SelectionRect {
@@ -73,9 +75,11 @@ export function northUpMapToWorld(
   projection: Readonly<NorthUpProjection>,
 ): Vec3 {
   return {
-    x: (point.x - projection.centerX) / projection.scale,
+    x: (projection.worldCenterX ?? 0)
+      + (point.x - projection.centerX) / projection.scale,
     y: 180,
-    z: (projection.centerY - point.y) / projection.scale,
+    z: (projection.worldCenterZ ?? 0)
+      + (projection.centerY - point.y) / projection.scale,
   };
 }
 

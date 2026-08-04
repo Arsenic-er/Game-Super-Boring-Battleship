@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import { createAirSquadronState } from "../src/sim/airOperations";
 import {
   AIR_VISUAL_CONTACT_SECONDS,
+  aircraftFormationPose,
   airVisualSnapshot,
   formationOffsets,
 } from "../src/render/aircraftPresentation";
@@ -64,5 +65,23 @@ describe("aircraft presentation", () => {
     expect(torpedo[0]?.x).not.toBe(fighter[0]?.x);
     expect(Math.abs(torpedo[0]?.x ?? 0)).toBeGreaterThan(0);
     expect(formationOffsets("diveBomber", 99, "attackRun")).toHaveLength(12);
+  });
+
+  it("gives each aircraft a smooth non-parallel local pose", () => {
+    const lead = aircraftFormationPose("fighter", 0, 5, "outbound", 12, "alpha")!;
+    const wingman = aircraftFormationPose("fighter", 1, 5, "outbound", 12, "alpha")!;
+    const later = aircraftFormationPose("fighter", 0, 5, "outbound", 12.1, "alpha")!;
+    expect(lead.y).not.toBe(wingman.y);
+    expect(lead.yaw).not.toBe(wingman.yaw);
+    expect(later.y).not.toBe(lead.y);
+    expect(Math.abs(later.y - lead.y)).toBeLessThan(1);
+  });
+
+  it("changes formation and attitude for role-specific attack runs", () => {
+    const torpedo = formationOffsets("torpedoBomber", 5, "attackRun");
+    const dive = aircraftFormationPose("diveBomber", 0, 5, "attackRun", 2, "dive")!;
+    expect(Math.max(...torpedo.map(({ x }) => x)) - Math.min(...torpedo.map(({ x }) => x)))
+      .toBeGreaterThan(70);
+    expect(dive.pitch).toBeLessThan(-.7);
   });
 });

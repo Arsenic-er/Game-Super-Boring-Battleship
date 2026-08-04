@@ -40,6 +40,7 @@ export interface DestroyerHullSpec {
   name: string;
   length: number;
   beam: number;
+  hullId?: HullId;
   hullMaterial: Material;
   deckMaterial: Material;
 }
@@ -276,6 +277,68 @@ export function createHullClassSilhouette(
     });
     return y;
   };
+  const navalFittings = (kind: "cruiser" | "battleship"): void => {
+    const boatZ = kind === "battleship" ? -17 : -14;
+    const deckEdge = kind === "battleship" ? 4.75 : 4.62;
+    for (const side of [-1, 1]) {
+      const boat = CreateCylinder(`${name}-${kind}-lifeboat-${side}`, {
+        height: kind === "battleship" ? 6.8 : 5.7,
+        diameterTop: .75,
+        diameterBottom: 1.55,
+        tessellation: 8,
+      }, scene);
+      boat.rotation.x = Math.PI / 2;
+      boat.position.set(side * 4.15, 6.35, boatZ);
+      boat.material = palette.accent;
+      boat.parent = parent;
+      box(`${kind}-boat-cradle-${side}`, .62, .42, kind === "battleship" ? 7.2 : 6.1, side * 4.15, 5.72, boatZ, palette.dark);
+      box(`${kind}-fore-rail-${side}`, .16, .54, 20, side * deckEdge, 6.08, 30, palette.dark);
+      box(`${kind}-aft-rail-${side}`, .16, .5, 24, side * deckEdge, 5.28, -37, palette.dark);
+    }
+    for (const side of [-1, 1]) {
+      const breakwater = box(
+        `${kind}-breakwater-${side}`,
+        kind === "battleship" ? 5.2 : 4.3,
+        .88,
+        .3,
+        side * 1.8,
+        6.18,
+        kind === "battleship" ? 24 : 22,
+        palette.structure,
+      );
+      breakwater.rotation.y = side * .54;
+      const vent = CreateCylinder(`${name}-${kind}-vent-${side}`, {
+        height: 2.5,
+        diameterTop: .72,
+        diameterBottom: 1.08,
+        tessellation: 8,
+      }, scene);
+      vent.position.set(side * 2.6, 7.1, kind === "battleship" ? -22 : -20);
+      vent.material = palette.dark;
+      vent.parent = parent;
+    }
+    const portholes: Mesh[] = [];
+    for (const side of [-1, 1]) {
+      for (const [index, z] of [-31, -22, -12, 1, 15].entries()) {
+        const porthole = CreateCylinder(`${name}-${kind}-porthole-${side}-${index}`, {
+          height: .12,
+          diameter: .34,
+          tessellation: 8,
+        }, scene);
+        porthole.rotation.z = Math.PI / 2;
+        porthole.position.set(side * 5.02, 4.58 + Math.max(0, z) * .013, z);
+        porthole.material = palette.dark;
+        portholes.push(porthole);
+      }
+    }
+    const merged = Mesh.MergeMeshes(portholes, true, true);
+    if (merged) {
+      merged.name = `${name}-${kind}-portholes`;
+      merged.material = palette.dark;
+      merged.parent = parent;
+      merged.isPickable = false;
+    }
+  };
   if (hullId === "destroyer") {
     if (variant === 1) box("j-class-aft-shelter", 5.6, 2.1, 8, 0, 6.1, -27, palette.structure);
     if (variant === 2) box("kagero-long-forecastle", 6.2, 1.2, 18, 0, 5.9, 29, palette.deck);
@@ -316,6 +379,7 @@ export function createHullClassSilhouette(
     if (variant === 1) rangefinder("edinburgh-aft-control", 4.8, 10.2, -27);
     if (variant === 3) box("agano-flag-platform", 6.5, .65, 4.2, 0, bridgeTop + 2.1, profile.bridgeZ - .5, palette.accent);
     if (variant === 4) rangefinder("dido-aa-director", 6.4, bridgeTop + 2.2, profile.bridgeZ - .6);
+    navalFittings("cruiser");
     return;
   }
   const battleshipProfiles = [
@@ -360,6 +424,7 @@ export function createHullClassSilhouette(
     box("yamato-command-roof", 6.2, .55, 5.2, 0, bridgeTop + 3.3, profile.bridgeZ, palette.accent);
   }
   if (variant === 4) box("richelieu-aft-air-platform", 8.6, .72, 8, 0, 9.2, -20, palette.accent);
+  navalFittings("battleship");
 }
 
 /** Shared modular WWII destroyer fittings used by both battle and dock views. */
@@ -657,27 +722,63 @@ export function createNavalMotionParts(
   return { rudder, propellers };
 }
 
+export interface HullStation {
+  z: number;
+  width: number;
+  deck: number;
+  keel: number;
+}
+
+const DESTROYER_HULL_STATIONS: readonly HullStation[] = [
+  { z: -0.5, width: 0.68, deck: 4.28, keel: 0.15 },
+  { z: -0.46, width: 0.78, deck: 4.34, keel: -0.72 },
+  { z: -0.39, width: 0.88, deck: 4.42, keel: -1.08 },
+  { z: -0.3, width: 0.95, deck: 4.5, keel: -1.32 },
+  { z: -0.18, width: 0.99, deck: 4.58, keel: -1.45 },
+  { z: -0.05, width: 1, deck: 4.68, keel: -1.5 },
+  { z: 0.08, width: 0.99, deck: 4.78, keel: -1.48 },
+  { z: 0.2, width: 0.95, deck: 4.94, keel: -1.34 },
+  { z: 0.3, width: 0.84, deck: 5.12, keel: -1.08 },
+  { z: 0.38, width: 0.69, deck: 5.32, keel: -0.68 },
+  { z: 0.44, width: 0.49, deck: 5.5, keel: -0.2 },
+  { z: 0.475, width: 0.27, deck: 5.7, keel: 0.22 },
+  { z: 0.5, width: 0.035, deck: 5.88, keel: 0.72 },
+];
+
+const CRUISER_HULL_STATIONS: readonly HullStation[] = [
+  { z: -.5, width: .72, deck: 4.34, keel: -.05 }, { z: -.46, width: .82, deck: 4.4, keel: -.82 },
+  { z: -.39, width: .91, deck: 4.48, keel: -1.22 }, { z: -.3, width: .97, deck: 4.55, keel: -1.48 },
+  { z: -.2, width: 1, deck: 4.62, keel: -1.62 }, { z: -.08, width: 1, deck: 4.68, keel: -1.68 },
+  { z: .05, width: .995, deck: 4.76, keel: -1.66 }, { z: .17, width: .98, deck: 4.88, keel: -1.56 },
+  { z: .27, width: .93, deck: 5.04, keel: -1.35 }, { z: .35, width: .82, deck: 5.24, keel: -1.02 },
+  { z: .41, width: .67, deck: 5.45, keel: -.62 }, { z: .455, width: .48, deck: 5.66, keel: -.12 },
+  { z: .482, width: .27, deck: 5.84, keel: .34 }, { z: .5, width: .045, deck: 6.02, keel: .82 },
+];
+
+const BATTLESHIP_HULL_STATIONS: readonly HullStation[] = [
+  { z: -.5, width: .78, deck: 4.42, keel: -.12 }, { z: -.465, width: .87, deck: 4.46, keel: -.82 },
+  { z: -.41, width: .94, deck: 4.5, keel: -1.3 }, { z: -.34, width: .98, deck: 4.54, keel: -1.58 },
+  { z: -.25, width: 1, deck: 4.58, keel: -1.78 }, { z: -.14, width: 1, deck: 4.62, keel: -1.88 },
+  { z: -.02, width: 1, deck: 4.68, keel: -1.92 }, { z: .1, width: .995, deck: 4.76, keel: -1.9 },
+  { z: .21, width: .98, deck: 4.88, keel: -1.76 }, { z: .3, width: .93, deck: 5.05, keel: -1.5 },
+  { z: .37, width: .84, deck: 5.27, keel: -1.14 }, { z: .42, width: .72, deck: 5.5, keel: -.74 },
+  { z: .458, width: .56, deck: 5.72, keel: -.28 }, { z: .48, width: .38, deck: 5.9, keel: .18 },
+  { z: .493, width: .2, deck: 6.05, keel: .56 }, { z: .5, width: .055, deck: 6.18, keel: .92 },
+];
+
+export function hullStationsFor(hullId: HullId = "destroyer"): readonly HullStation[] {
+  if (hullId === "lightCruiser") return CRUISER_HULL_STATIONS;
+  if (hullId === "battleship") return BATTLESHIP_HULL_STATIONS;
+  return DESTROYER_HULL_STATIONS;
+}
+
 /** A low-cost multi-station hull with a continuous sheer line and underwater chine. */
 export function createDestroyerHull(
   scene: Scene,
   parent: TransformNode,
   spec: DestroyerHullSpec,
 ): { hull: Mesh; deck: Mesh } {
-  const stations = [
-    { z: -0.5, width: 0.68, deck: 4.28, keel: 0.15 },
-    { z: -0.46, width: 0.78, deck: 4.34, keel: -0.72 },
-    { z: -0.39, width: 0.88, deck: 4.42, keel: -1.08 },
-    { z: -0.3, width: 0.95, deck: 4.5, keel: -1.32 },
-    { z: -0.18, width: 0.99, deck: 4.58, keel: -1.45 },
-    { z: -0.05, width: 1, deck: 4.68, keel: -1.5 },
-    { z: 0.08, width: 0.99, deck: 4.78, keel: -1.48 },
-    { z: 0.2, width: 0.95, deck: 4.94, keel: -1.34 },
-    { z: 0.3, width: 0.84, deck: 5.12, keel: -1.08 },
-    { z: 0.38, width: 0.69, deck: 5.32, keel: -0.68 },
-    { z: 0.44, width: 0.49, deck: 5.5, keel: -0.2 },
-    { z: 0.475, width: 0.27, deck: 5.7, keel: 0.22 },
-    { z: 0.5, width: 0.035, deck: 5.88, keel: 0.72 },
-  ] as const;
+  const stations = hullStationsFor(spec.hullId);
   const hull = new Mesh(`${spec.name}-hull`, scene);
   const positions: number[] = [];
   const uvs: number[] = [];

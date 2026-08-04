@@ -53,6 +53,16 @@ describe("RTS tactical air command helpers", () => {
     )).toEqual({ x: 2_000, y: 180, z: 3_000 });
   });
 
+  it("inverts a zoomed projection around a non-zero world center", () => {
+    expect(northUpMapToWorld(
+      { x: 350, y: 100 },
+      {
+        centerX: 250, centerY: 250, scale: 0.1,
+        worldCenterX: -500, worldCenterZ: 700,
+      },
+    )).toEqual({ x: 500, y: 180, z: 2_200 });
+  });
+
   it("filters guard and intercept orders to fighters", () => {
     const selected = [
       { id: "fighter-1", role: "fighter" as const },

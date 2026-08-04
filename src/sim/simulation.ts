@@ -86,6 +86,7 @@ import {
   shipAntiAirProfile,
 } from "./airOperations";
 import type { AirMissionIssueResult, AirMissionTrustedData } from "./airOperations";
+import { advanceAirKinematics } from "./airFlightModel";
 
 const zeroCommand: ControlCommand = {
   throttle: 0,
@@ -2943,26 +2944,30 @@ function moveAirSquadron(
       z: destination.z + Math.cos(angle) * radius,
     };
   }
-  const dx = destination.x - squadron.position.x;
-  const dz = destination.z - squadron.position.z;
-  const distance = Math.hypot(dx, dz);
   const canMove = isAirSquadronAirborne(squadron.phase)
     && !["launching", "landing", "rearming", "destroyed"].includes(squadron.phase);
-  const step = canMove
-    ? Math.min(distance, AIR_NAVIGATION.speedMetersPerSecond[squadron.role] * dt)
-    : 0;
-  const position = distance <= 0.001 ? copyVec(squadron.position) : {
-    x: squadron.position.x + dx / distance * step,
-    y: squadron.position.y,
-    z: squadron.position.z + dz / distance * step,
-  };
+  const kinematics = advanceAirKinematics({
+    id: squadron.id,
+    role: squadron.role,
+    phase: squadron.phase,
+    position: squadron.position,
+    heading: squadron.heading,
+    destination,
+    speedMetersPerSecond: AIR_NAVIGATION.speedMetersPerSecond[squadron.role],
+    dt,
+    time: state.time,
+    canMove,
+  });
   const moved: AirSquadronState = {
     ...squadron,
     previousPosition: copyVec(squadron.position),
-    position,
-    heading: distance <= 0.001 ? squadron.heading : Math.atan2(dx, dz),
+    position: kinematics.position,
+    heading: kinematics.heading,
   };
-  const remaining = Math.hypot(destination.x - position.x, destination.z - position.z);
+  const remaining = Math.hypot(
+    destination.x - kinematics.position.x,
+    destination.z - kinematics.position.z,
+  );
   const missionArrivalRadius = airMissionApproachRadius(squadron);
   let advanced = advanceAirSquadronPhase(moved, state.time, {
     contactValid,
