@@ -298,7 +298,135 @@ button { font: inherit; }
   backdrop-filter: blur(5px);
 }
 
-.own-status { left: 22px; bottom: 72px; }
+.own-status-details {
+  left: 18px;
+  top: 88px;
+  bottom: auto;
+  width: 286px;
+  max-height: calc(100vh - 116px);
+  overflow: auto;
+}
+.ship-dashboard.panel {
+  left: 18px;
+  bottom: 18px;
+  display: grid;
+  grid-template-columns: 92px 92px minmax(176px, 1fr);
+  gap: 9px;
+  box-sizing: border-box;
+  width: 402px;
+  min-height: 126px;
+  padding: 9px;
+  border-color: rgba(91, 180, 187, .68);
+  background: rgba(3, 21, 28, .91);
+  box-shadow: 4px 4px 0 rgba(0, 0, 0, .55);
+  backdrop-filter: none;
+  transition: opacity 100ms linear;
+}
+.ship-dashboard.panel::before { inset: 4px; }
+.bridge-dial {
+  position: relative;
+  align-self: center;
+  box-sizing: border-box;
+  width: 88px;
+  height: 88px;
+  overflow: hidden;
+  border: 2px solid #426b6e;
+  border-radius: 50%;
+  background: radial-gradient(circle, #0b2930 0 46%, #061a21 47% 100%);
+  box-shadow: inset 0 0 0 3px #07161b;
+}
+.bridge-dial strong {
+  position: absolute;
+  z-index: 3;
+  left: 50%;
+  bottom: 19px;
+  transform: translateX(-50%);
+  color: #f2efd0;
+  font: 700 14px/1 "Fusion Bold Pixel", "Microsoft YaHei", sans-serif;
+  text-shadow: 2px 2px 0 #02090c;
+}
+.bridge-dial small {
+  position: absolute;
+  z-index: 3;
+  left: 50%;
+  bottom: 7px;
+  transform: translateX(-50%);
+  color: #7da1a2;
+  font-size: 7px;
+  text-transform: uppercase;
+}
+.dial-ticks {
+  position: absolute;
+  inset: 7px;
+  border: 1px dashed rgba(135, 190, 186, .55);
+  border-radius: 50%;
+  background: repeating-conic-gradient(from -128deg, #8fb9b7 0 1deg, transparent 1deg 17deg);
+  -webkit-mask: radial-gradient(circle, transparent 0 83%, #000 84%);
+  mask: radial-gradient(circle, transparent 0 83%, #000 84%);
+}
+.dial-needle {
+  position: absolute;
+  z-index: 2;
+  left: 50%;
+  bottom: 43px;
+  width: 2px;
+  height: 31px;
+  transform: translateX(-50%) rotate(-128deg);
+  transform-origin: 50% 100%;
+  background: #e0bd74;
+  box-shadow: 1px 0 0 #02090c;
+}
+.compass-rose {
+  position: absolute;
+  inset: 8px;
+  border: 1px solid rgba(107, 162, 163, .44);
+  border-radius: 50%;
+}
+.compass-rose::before,
+.compass-rose::after {
+  content: "";
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  background: rgba(108, 160, 162, .32);
+  transform: translate(-50%, -50%);
+}
+.compass-rose::before { width: 100%; height: 1px; }
+.compass-rose::after { width: 1px; height: 100%; }
+.compass-rose b { position: absolute; color: #80aaa8; font-size: 7px; }
+.compass-rose b:nth-child(1) { left: 50%; top: 2px; transform: translateX(-50%); color: #de8d78; }
+.compass-rose b:nth-child(2) { right: 3px; top: 50%; transform: translateY(-50%); }
+.compass-rose b:nth-child(3) { left: 50%; bottom: 2px; transform: translateX(-50%); }
+.compass-rose b:nth-child(4) { left: 3px; top: 50%; transform: translateY(-50%); }
+.compass-dial::after {
+  content: "";
+  position: absolute;
+  z-index: 2;
+  left: 50%;
+  top: 4px;
+  width: 0;
+  height: 0;
+  transform: translateX(-50%);
+  border-right: 4px solid transparent;
+  border-bottom: 9px solid #f0e0a7;
+  border-left: 4px solid transparent;
+}
+.bridge-controls { --throttle-position: 50%; --rudder-position: 50%; display: grid; align-content: center; gap: 7px; min-width: 0; }
+.bridge-control { display: grid; grid-template-columns: 36px 1fr; gap: 4px 8px; align-items: center; }
+.bridge-control span { color: #83a2a3; font-size: 8px; }
+.bridge-control strong { overflow: hidden; color: #e9e8cf; font-size: 9px; text-align: right; text-overflow: ellipsis; white-space: nowrap; }
+.bridge-scale { position: relative; grid-column: 1 / -1; height: 7px; border: 1px solid #355c60; background: linear-gradient(90deg, #243f46, #0b242b 49%, #456a5d 51%, #284b41); }
+.bridge-scale::after { content: ""; position: absolute; left: 50%; top: -2px; width: 1px; height: 11px; background: #bdc9be; opacity: .58; }
+.bridge-scale i { position: absolute; top: -3px; width: 5px; height: 13px; transform: translateX(-50%); background: #e1bb6e; box-shadow: 1px 1px 0 #02090c; }
+.telegraph-control .bridge-scale i { left: var(--throttle-position); }
+.rudder-control .bridge-scale i { left: var(--rudder-position); background: #79d1c3; }
+.dashboard-health .bar-label { margin: 3px 0; }
+.dashboard-health .bar-label span { font-size: 8px; }
+.dashboard-health .health-track { height: 5px; }
+.dashboard-health .recoverable-health { height: 3px; }
+.ship-dashboard .repair-hint,
+.ship-dashboard .damage-state { margin: 0; min-height: 0; padding: 3px 5px; font-size: 7px; }
+.ship-dashboard [hidden] { display: none; }
 .target-status { right: 22px; top: 318px; }
 .target-status.contact-acquiring { border-color: rgba(228, 205, 123, .55); }
 .target-status.contact-lost { border-color: rgba(228, 185, 123, .42); background: rgba(27, 31, 26, .82); }
@@ -468,16 +596,8 @@ button { font: inherit; }
 }
 
 #aim-mode {
-  position: absolute;
-  left: 50%;
-  top: 82px;
-  width: 240px;
-  transform: translateX(-50%);
-  color: rgba(174, 198, 198, .78);
-  text-align: center;
-  font: 700 9px/1 "Fusion Bold Pixel", "Microsoft YaHei", sans-serif;
+  display: none !important;
 }
-#aim-mode.active { color: #e0c789; text-shadow: 0 1px 6px rgba(0, 0, 0, .8); }
 
 .gun-sight {
   position: fixed;
@@ -490,7 +610,7 @@ button { font: inherit; }
 }
 .game-shell.aiming .gun-sight { display: grid; }
 .game-shell.aiming .reticle { opacity: 0; }
-.game-shell.aiming .own-status,
+.game-shell.aiming .own-status-details,
 .game-shell.aiming .target-status,
 .game-shell.aiming .telemetry,
 .game-shell.aiming .controls,
@@ -816,7 +936,6 @@ kbd { display: inline-block; margin-right: 3px; padding: 3px 5px; color: #e5eeee
   pointer-events: none;
 }
 .game-shell.game-active:not(.hud-details-held) .weapon-bar { bottom: 18px; }
-.game-shell.game-active:not(.hud-details-held) .own-status { bottom: 18px; }
 .game-shell.game-active.hud-details-held .aux-hud-hint {
   opacity: 0;
   visibility: hidden;
@@ -836,8 +955,7 @@ kbd { display: inline-block; margin-right: 3px; padding: 3px 5px; color: #e5eeee
   pointer-events: none;
 }
 .aux-hud-hint kbd { padding: 2px 4px; font-size: 8px; }
-.weapon-bar,
-.own-status { transition: bottom 80ms linear; }
+.weapon-bar { transition: bottom 80ms linear; }
 
 .weapon-bar {
   left: 50%;
@@ -871,6 +989,7 @@ kbd { display: inline-block; margin-right: 3px; padding: 3px 5px; color: #e5eeee
 .weapon-bar button.selected::after { content: "已选择"; position: absolute; right: 7px; top: 6px; color: #70e6f1; font-size: 8px; }
 .weapon-bar button.reserved { opacity: .68; border-style: dashed; }
 .game-shell.aiming .weapon-bar { opacity: .32; }
+.game-shell.aiming .ship-dashboard { opacity: .32; }
 
 .control-settings {
   right: 22px;
@@ -1405,7 +1524,8 @@ body[data-locale="ru-RU"] .menu-tabs button { font-size: 11px; }
 
 @media (max-width: 760px) {
   .panel { transform: scale(.88); }
-  .own-status { transform-origin: left bottom; left: 10px; }
+  .own-status-details { transform-origin: left top; left: 10px; }
+  .ship-dashboard.panel { left: 10px; bottom: 10px; transform: scale(.82); transform-origin: left bottom; }
   .target-status { transform-origin: right top; right: 10px; }
   .minimap { right: 10px; transform: scale(.82); transform-origin: right top; }
   .target-status { top: 276px; }
@@ -1421,4 +1541,13 @@ body[data-locale="ru-RU"] .menu-tabs button { font-size: 11px; }
   .game-menu-card { padding: 22px; }
   .menu-controls { grid-template-columns: 1fr 1fr; }
   .mode-choice { grid-template-columns: 1fr; }
+}
+
+@media (max-width: 1180px), (max-height: 760px) {
+  .ship-dashboard.panel { width: 360px; grid-template-columns: 78px 78px minmax(160px, 1fr); transform: scale(.9); transform-origin: left bottom; }
+  .bridge-dial { width: 76px; height: 76px; }
+  .dial-needle { bottom: 37px; height: 26px; }
+  .bridge-dial strong { bottom: 16px; font-size: 12px; }
+  .bridge-dial small { bottom: 5px; }
+  .weapon-bar { grid-template-columns: repeat(3, 132px); }
 }

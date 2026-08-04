@@ -94,32 +94,62 @@ export function createChamferedBox(
     halfDepth * 0.46,
   );
   const topScale = Math.min(1, Math.max(0.68, spec.topScale ?? 0.86));
-  const ring = (scale: number, y: number): number[] => {
+  const ring = (scale: number, y: number): Array<readonly [number, number, number]> => {
     const width = halfWidth * scale;
     const depth = halfDepth * scale;
     const cut = chamfer * scale;
     return [
-      -width + cut, y, -depth,
-      width - cut, y, -depth,
-      width, y, -depth + cut,
-      width, y, depth - cut,
-      width - cut, y, depth,
-      -width + cut, y, depth,
-      -width, y, depth - cut,
-      -width, y, -depth + cut,
+      [-width + cut, y, -depth],
+      [width - cut, y, -depth],
+      [width, y, -depth + cut],
+      [width, y, depth - cut],
+      [width - cut, y, depth],
+      [-width + cut, y, depth],
+      [-width, y, depth - cut],
+      [-width, y, -depth + cut],
     ];
   };
-  const positions = [
-    ...ring(1, -spec.height / 2),
-    ...ring(topScale, spec.height / 2),
-  ];
+  const bottom = ring(1, -spec.height / 2);
+  const top = ring(topScale, spec.height / 2);
+  const positions: number[] = [];
+  const uvs: number[] = [];
   const indices: number[] = [];
+  const pushVertex = (point: readonly [number, number, number], u: number, v: number): number => {
+    const index = positions.length / 3;
+    positions.push(...point);
+    uvs.push(u, v);
+    return index;
+  };
+  const planarUv = (point: readonly [number, number, number]): readonly [number, number] => [
+    point[0] / spec.width + 0.5,
+    point[2] / spec.depth + 0.5,
+  ];
+  // The caps and every wall use independent vertices. This creates clean UV
+  // seams and stable flat normals instead of sampling one dark atlas pixel.
   for (let index = 1; index < 7; index += 1) {
-    indices.push(0, index + 1, index, 8, 8 + index, 8 + index + 1);
+    const bottomPoints = [bottom[0], bottom[index], bottom[index + 1]] as const;
+    const bottomStart = positions.length / 3;
+    for (const point of bottomPoints) {
+      const [u, v] = planarUv(point);
+      pushVertex(point, u, v);
+    }
+    indices.push(bottomStart, bottomStart + 1, bottomStart + 2);
+    const topPoints = [top[0], top[index + 1], top[index]] as const;
+    const topStart = positions.length / 3;
+    for (const point of topPoints) {
+      const [u, v] = planarUv(point);
+      pushVertex(point, u, v);
+    }
+    indices.push(topStart, topStart + 1, topStart + 2);
   }
   for (let index = 0; index < 8; index += 1) {
     const next = (index + 1) % 8;
-    indices.push(index, next, 8 + next, index, 8 + next, 8 + index);
+    const start = positions.length / 3;
+    pushVertex(bottom[index], 0, 0);
+    pushVertex(top[index], 0, 1);
+    pushVertex(top[next], 1, 1);
+    pushVertex(bottom[next], 1, 0);
+    indices.push(start, start + 1, start + 2, start, start + 2, start + 3);
   }
   const normals: number[] = [];
   VertexData.ComputeNormals(positions, indices, normals);
@@ -127,9 +157,9 @@ export function createChamferedBox(
   vertexData.positions = positions;
   vertexData.indices = indices;
   vertexData.normals = normals;
+  vertexData.uvs = uvs;
   const mesh = new Mesh(name, scene);
   vertexData.applyToMesh(mesh);
-  mesh.convertToFlatShadedMesh();
   return mesh;
 }
 
@@ -180,7 +210,71 @@ export function createHullClassSilhouette(
     mesh.position.set(x, y, z);
     mesh.material = palette.dark;
     mesh.parent = parent;
+    const cap = CreateCylinder(`${name}-${suffix}-cap`, {
+      diameter: diameter * 1.08,
+      height: Math.max(.35, height * .06),
+      tessellation: 8,
+    }, scene);
+    cap.position.set(x, y + height / 2, z);
+    cap.material = palette.accent;
+    cap.parent = parent;
     return mesh;
+  };
+  const windowBand = (
+    suffix: string,
+    width: number,
+    x: number,
+    y: number,
+    z: number,
+  ): Mesh => box(suffix, width, .42, .34, x, y, z, palette.dark);
+  const mast = (
+    suffix: string,
+    x: number,
+    baseY: number,
+    z: number,
+    height: number,
+    yardWidth: number,
+  ): void => {
+    const pole = CreateCylinder(`${name}-${suffix}-pole`, {
+      diameterTop: .24,
+      diameterBottom: .44,
+      height,
+      tessellation: 6,
+    }, scene);
+    pole.position.set(x, baseY + height / 2, z);
+    pole.material = palette.dark;
+    pole.parent = parent;
+    box(`${suffix}-yard`, yardWidth, .28, .34, x, baseY + height * .72, z, palette.dark);
+  };
+  const rangefinder = (
+    suffix: string,
+    width: number,
+    y: number,
+    z: number,
+  ): void => {
+    const body = CreateCylinder(`${name}-${suffix}`, {
+      diameter: .92,
+      height: width,
+      tessellation: 8,
+    }, scene);
+    body.position.set(0, y, z);
+    body.rotation.z = Math.PI / 2;
+    body.material = palette.accent;
+    body.parent = parent;
+  };
+  const bridgeStack = (
+    prefix: string,
+    z: number,
+    baseY: number,
+    layers: ReadonlyArray<readonly [number, number, number]>,
+  ): number => {
+    let y = baseY;
+    layers.forEach(([width, height, depth], index) => {
+      box(`${prefix}-tier-${index + 1}`, width, height, depth, 0, y + height / 2, z, palette.structure);
+      y += height;
+      if (index > 0) windowBand(`${prefix}-windows-${index + 1}`, width * .78, 0, y - height * .34, z + depth / 2 + .12);
+    });
+    return y;
   };
   if (hullId === "destroyer") {
     if (variant === 1) box("j-class-aft-shelter", 5.6, 2.1, 8, 0, 6.1, -27, palette.structure);
@@ -196,31 +290,76 @@ export function createHullClassSilhouette(
     return;
   }
   if (hullId === "lightCruiser") {
-    box("cruiser-forward-deckhouse", 6.8, 3.2, 9.5, 0, 7.2, 11, palette.structure);
-    box("cruiser-armored-bridge", 5.2, 4.8, 6.4, 0, 10.8, 7.5, palette.structure);
-    box("cruiser-aft-deckhouse", 6.2, 2.4, 11, 0, 6.8, -23, palette.structure);
-    funnel("cruiser-funnel-forward", 0, 11.2, -4, 3.8, 9.5);
-    funnel("cruiser-funnel-aft", 0, 10.2, -14, 3.3, 8.2);
-    box("cruiser-port-bulge", 1.1, 1.4, 54, -5.6, 2.2, -5, palette.dark);
-    box("cruiser-starboard-bulge", 1.1, 1.4, 54, 5.6, 2.2, -5, palette.dark);
-    if (variant === 1) box("edinburgh-aft-control", 4.8, 3.5, 5.4, 0, 9.1, -30, palette.structure);
-    if (variant === 2) box("nurnberg-forward-rangefinder", 5.8, 1.1, 2.2, 0, 15.3, 10, palette.accent);
-    if (variant === 3) box("agano-flag-bridge", 7.2, 2.5, 7.4, 0, 13.6, 6, palette.structure);
-    if (variant === 4) box("dido-aa-director", 6.6, 1.3, 3.4, 0, 16, 4, palette.accent);
+    const cruiserProfiles = [
+      { bridgeZ: 7.5, forwardFunnelZ: -5, aftFunnelZ: -15, funnelScale: 1 },
+      { bridgeZ: 8, forwardFunnelZ: -4, aftFunnelZ: -14, funnelScale: .94 },
+      { bridgeZ: 7, forwardFunnelZ: -6, aftFunnelZ: -17, funnelScale: .9 },
+      { bridgeZ: 6.5, forwardFunnelZ: -7, aftFunnelZ: -16, funnelScale: .86 },
+      { bridgeZ: 8, forwardFunnelZ: -3, aftFunnelZ: -12, funnelScale: .82 },
+    ] as const;
+    const profile = cruiserProfiles[variant] ?? cruiserProfiles[0];
+    box("cruiser-forward-shelter", 8.2, 1.6, 10, 0, 6.3, profile.bridgeZ, palette.structure);
+    const bridgeTop = bridgeStack("cruiser-bridge", profile.bridgeZ, 7.1, [
+      [7.4, 2.5, 7.4], [6.1, 2.2, 5.8], [4.8, 1.9, 4.4],
+    ]);
+    box("cruiser-bridge-wings", 10.2, .62, 3.2, 0, 10.2, profile.bridgeZ, palette.accent);
+    box("cruiser-bridge-roof", 5.4, .48, 4.8, 0, bridgeTop + .24, profile.bridgeZ, palette.accent);
+    rangefinder("cruiser-main-rangefinder", variant === 2 ? 6.8 : 5.8, bridgeTop + 1.05, profile.bridgeZ);
+    mast("cruiser-foremast", 0, bridgeTop + .3, profile.bridgeZ - 2, 8.2, 6.4);
+    funnel("cruiser-funnel-forward", 0, 11.5, profile.forwardFunnelZ, 3.8 * profile.funnelScale, 9.4);
+    funnel("cruiser-funnel-aft", 0, 10.8, profile.aftFunnelZ, 3.4 * profile.funnelScale, 8.2);
+    box("cruiser-aft-deckhouse", 7.4, 2.2, 12, 0, 6.7, -26, palette.structure);
+    windowBand("cruiser-aft-windows", 5.2, 0, 7.2, -19.9);
+    mast("cruiser-mainmast", 0, 7.8, -24, 10.5, 5.3);
+    box("cruiser-port-bulge", 1, 1.1, 50, -5.7, 2.1, -6, palette.structure);
+    box("cruiser-starboard-bulge", 1, 1.1, 50, 5.7, 2.1, -6, palette.structure);
+    if (variant === 1) rangefinder("edinburgh-aft-control", 4.8, 10.2, -27);
+    if (variant === 3) box("agano-flag-platform", 6.5, .65, 4.2, 0, bridgeTop + 2.1, profile.bridgeZ - .5, palette.accent);
+    if (variant === 4) rangefinder("dido-aa-director", 6.4, bridgeTop + 2.2, profile.bridgeZ - .6);
     return;
   }
-  box("battleship-forecastle", 8.8, 2.8, 22, 0, 6.8, 18, palette.structure);
-  box("battleship-armored-citadel", 9.2, 4.8, 28, 0, 8.3, -2, palette.structure);
-  box("battleship-command-tower", 6.4, 8.5, 8.5, 0, 13.4, 11, palette.structure);
-  box("battleship-aft-castle", 8.2, 3.4, 22, 0, 7.4, -31, palette.structure);
-  funnel("battleship-funnel-forward", 0, 13.2, -6, 5.2, 12.5);
-  funnel("battleship-funnel-aft", 0, 12.4, -20, 4.8, 11);
-  box("battleship-port-bulge", 1.8, 2.1, 72, -5.9, 1.8, -3, palette.dark);
-  box("battleship-starboard-bulge", 1.8, 2.1, 72, 5.9, 1.8, -3, palette.dark);
-  if (variant === 1) box("kgv-square-tower", 7.2, 5.8, 7.2, 0, 18, 9, palette.structure);
-  if (variant === 2) box("bismarck-rangefinder", 9.4, 1.6, 3.4, 0, 19, 7, palette.accent);
-  if (variant === 3) box("yamato-pagoda", 8.4, 7.5, 7.8, 0, 21, 9, palette.structure);
-  if (variant === 4) box("richelieu-forward-tower", 7.6, 6.2, 8.2, 0, 18.5, 16, palette.structure);
+  const battleshipProfiles = [
+    { bridgeZ: 5, funnelZ: [-7, -19] as const, funnelDiameter: 4.8, layers: 4 },
+    { bridgeZ: 5.5, funnelZ: [-8, -17] as const, funnelDiameter: 4.6, layers: 4 },
+    { bridgeZ: 4.5, funnelZ: [-11] as const, funnelDiameter: 5.6, layers: 4 },
+    { bridgeZ: 5, funnelZ: [-12] as const, funnelDiameter: 6, layers: 5 },
+    { bridgeZ: 4, funnelZ: [-14] as const, funnelDiameter: 5.4, layers: 4 },
+  ] as const;
+  const profile = battleshipProfiles[variant] ?? battleshipProfiles[0];
+  box("battleship-forward-deckhouse", 10.2, 1.8, 10.5, 0, 6.4, profile.bridgeZ, palette.structure);
+  const allBridgeLayers = [
+    [9.2, 3.1, 8.6], [7.8, 2.8, 7.2], [6.5, 2.5, 5.9], [5.2, 2.2, 4.7], [4.1, 2, 3.8],
+  ] as const;
+  const bridgeTop = bridgeStack(
+    "battleship-bridge",
+    profile.bridgeZ,
+    7.2,
+    allBridgeLayers.slice(0, profile.layers),
+  );
+  box("battleship-bridge-wings", 12.2, .72, 4, 0, 10.5, profile.bridgeZ, palette.accent);
+  box("battleship-fire-control-platform", 7.6, .62, 5.4, 0, bridgeTop + .3, profile.bridgeZ, palette.accent);
+  rangefinder(
+    variant === 2 ? "bismarck-main-rangefinder" : variant === 3 ? "yamato-main-rangefinder" : "battleship-main-rangefinder",
+    variant === 2 ? 10.4 : variant === 3 ? 9.4 : 8.4,
+    bridgeTop + 1.25,
+    profile.bridgeZ,
+  );
+  mast("battleship-foremast", 0, bridgeTop + .5, profile.bridgeZ - 2.3, variant === 3 ? 8 : 10, 8.2);
+  profile.funnelZ.forEach((z, index) => {
+    funnel(`battleship-funnel-${index + 1}`, 0, 13.3 - index * .7, z, profile.funnelDiameter - index * .35, 12 - index * .8);
+  });
+  box("battleship-aft-deckhouse", 9.4, 2.3, 13.5, 0, 6.8, -29, palette.structure);
+  bridgeStack("battleship-aft-control", -29, 7.9, [[7.2, 2, 7.8], [5.2, 1.7, 5.2]]);
+  windowBand("battleship-aft-windows", 4.5, 0, 10.8, -26.3);
+  mast("battleship-mainmast", 0, 10, -27, 11.5, 7.2);
+  box("battleship-port-bulge", 1.5, 1.4, 68, -6, 1.7, -4, palette.structure);
+  box("battleship-starboard-bulge", 1.5, 1.4, 68, 6, 1.7, -4, palette.structure);
+  if (variant === 1) rangefinder("kgv-aa-director", 6.6, bridgeTop + 2.8, profile.bridgeZ - 1.2);
+  if (variant === 3) {
+    box("yamato-tower-crown", 4.8, 1.5, 4.2, 0, bridgeTop + 2.3, profile.bridgeZ, palette.structure);
+    box("yamato-command-roof", 6.2, .55, 5.2, 0, bridgeTop + 3.3, profile.bridgeZ, palette.accent);
+  }
+  if (variant === 4) box("richelieu-aft-air-platform", 8.6, .72, 8, 0, 9.2, -20, palette.accent);
 }
 
 /** Shared modular WWII destroyer fittings used by both battle and dock views. */

@@ -56,6 +56,25 @@ function texturedMaterial(
   return material;
 }
 
+function flatFittingMaterial(
+  scene: Scene,
+  name: string,
+  tint: Color3,
+): StandardMaterial {
+  const material = new StandardMaterial(name, scene);
+  material.diffuseColor = tint;
+  // A faint emissive lift keeps unlit bridge faces legible without dynamic
+  // lights, shadows, PBR maps, or another texture fetch.
+  material.emissiveColor = tint.scale(.075);
+  material.specularColor = new Color3(.08, .1, .1);
+  material.specularPower = 18;
+  material.alpha = 1;
+  material.transparencyMode = Material.MATERIAL_OPAQUE;
+  material.useAlphaFromDiffuseTexture = false;
+  material.backFaceCulling = true;
+  return material;
+}
+
 /** One low-resolution atlas and five inexpensive StandardMaterials. */
 export function createPixelShipPalette(
   scene: Scene,
@@ -75,8 +94,8 @@ export function createPixelShipPalette(
   return {
     hull: texturedMaterial(scene, `${name}-hull`, [0, 0], hullTint),
     deck: texturedMaterial(scene, `${name}-deck`, [1, 0], new Color3(0.68, 0.72, 0.66)),
-    structure: texturedMaterial(scene, `${name}-structure`, [0, 0], hullTint.scale(1.08)),
-    dark: texturedMaterial(scene, `${name}-fittings`, [0, 1], new Color3(0.62, 0.67, 0.65)),
-    accent: texturedMaterial(scene, `${name}-accent`, [0, 0], accentTint),
+    structure: flatFittingMaterial(scene, `${name}-structure`, hullTint.scale(.86)),
+    dark: flatFittingMaterial(scene, `${name}-fittings`, new Color3(.2, .25, .25)),
+    accent: flatFittingMaterial(scene, `${name}-accent`, accentTint.scale(.82)),
   };
 }

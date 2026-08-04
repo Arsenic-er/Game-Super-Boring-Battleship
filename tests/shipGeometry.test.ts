@@ -5,7 +5,7 @@ import { StandardMaterial } from "@babylonjs/core/Materials/standardMaterial";
 import { TransformNode } from "@babylonjs/core/Meshes/transformNode";
 import { Scene } from "@babylonjs/core/scene";
 import { describe, expect, it } from "vitest";
-import { createChamferedBox, createDestroyerHull } from "../src/render/shipGeometry";
+import { createChamferedBox, createDestroyerHull, createHullClassSilhouette } from "../src/render/shipGeometry";
 
 describe("naval deckhouse geometry", () => {
   it("uses clipped corners and sloped walls instead of an axis-aligned box", () => {
@@ -21,6 +21,10 @@ describe("naval deckhouse geometry", () => {
     const bounds = mesh.getBoundingInfo().boundingBox;
     expect(bounds.maximum.x - bounds.minimum.x).toBeCloseTo(8);
     expect(bounds.maximum.z - bounds.minimum.z).toBeCloseTo(10);
+    const uvs = mesh.getVerticesData(VertexBuffer.UVKind) ?? [];
+    expect(uvs.length).toBe(mesh.getTotalVertices() * 2);
+    expect(uvs.every(Number.isFinite)).toBe(true);
+    expect(uvs.every((value) => value >= 0 && value <= 1)).toBe(true);
     mesh.dispose();
     scene.dispose();
     engine.dispose();
@@ -77,6 +81,35 @@ describe("naval deckhouse geometry", () => {
     expect(positions[bowTopLeft]).toBeLessThan(0);
     expect(positions[bowTopRight]).toBeGreaterThan(0);
     root.dispose(false, true);
+    scene.dispose();
+    engine.dispose();
+  });
+
+  it("builds layered cruiser and battleship superstructures for every variant", () => {
+    const engine = new NullEngine();
+    const scene = new Scene(engine);
+    const materials = {
+      deck: new StandardMaterial("deck", scene),
+      structure: new StandardMaterial("structure", scene),
+      dark: new StandardMaterial("dark", scene),
+      accent: new StandardMaterial("accent", scene),
+    };
+    for (const hullId of ["lightCruiser", "battleship"] as const) {
+      for (let variant = 0; variant < 5; variant += 1) {
+        const root = new TransformNode(`${hullId}-${variant}`, scene);
+        createHullClassSilhouette(scene, root, `${hullId}-${variant}`, hullId, materials, variant);
+        const meshes = root.getChildMeshes(false);
+        const tiers = meshes.filter((mesh) => mesh.name.includes("bridge-tier"));
+        expect(tiers.length).toBeGreaterThanOrEqual(hullId === "battleship" ? 4 : 3);
+        expect(meshes.length).toBeLessThan(45);
+        for (const mesh of meshes) {
+          const positions = mesh.getVerticesData(VertexBuffer.PositionKind) ?? [];
+          expect(positions.length).toBeGreaterThan(0);
+          expect(positions.every(Number.isFinite)).toBe(true);
+        }
+        root.dispose(false, false);
+      }
+    }
     scene.dispose();
     engine.dispose();
   });

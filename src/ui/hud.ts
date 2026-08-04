@@ -12,8 +12,10 @@ import {
   turretAlignmentError,
 } from "../sim/simulation";
 import { getMainBattery, mainBatteryBarrelCount } from "../ships/mainBatteries";
+import { getShipClass } from "../ships/classes";
 import { getTorpedo } from "../ships/torpedoes";
 import { getSecondaryGun } from "../ships/secondaryGuns";
+import { formatHeading, shipInstrumentSnapshot } from "./shipInstruments";
 import type {
   AmmoType,
   BattleState,
@@ -109,7 +111,7 @@ const damageControlPriorityLabels: Record<DamageControlPriority, string> = {
   module: "模块优先",
 };
 
-const percent = (value: number, max: number): number => Math.round((value / max) * 100);
+const percent = (value: number, max: number): number => Math.round(Math.min(1, Math.max(0, value / Math.max(max, 1))) * 100);
 const clamp = (value: number, min: number, max: number): number =>
   Math.min(max, Math.max(min, value));
 const wrapAngle = (angle: number): number => {
@@ -123,6 +125,11 @@ export class Hud {
   readonly canvas: HTMLCanvasElement;
   private readonly speed: HTMLElement;
   private readonly throttle: HTMLElement;
+  private readonly speedNeedle: HTMLElement;
+  private readonly compassRose: HTMLElement;
+  private readonly shipHeading: HTMLElement;
+  private readonly rudderAngle: HTMLElement;
+  private readonly bridgeControls: HTMLElement;
   private readonly range: HTMLElement;
   private readonly targetRange: HTMLElement;
   private readonly targetMotion: HTMLElement;
@@ -218,16 +225,8 @@ export class Hud {
           </div>
           <small id="objective-state">目标区中立 · 进入区域开始占领</small>
         </section>
-        <section class="panel own-status">
-          <p class="eyebrow">本舰状态</p>
-          <div class="metric-row"><span>航速</span><strong id="speed">0.0 kn</strong></div>
-          <div class="metric-row"><span>车钟</span><strong id="throttle">停车</strong></div>
-          <div class="bar-label"><span>绝对血量</span><span id="hull-text">100%</span></div>
-          <div class="health-track actual-health"><i id="hull-fill"></i></div>
-          <div class="bar-label secondary-health-label"><span>可恢复血量</span><span id="recoverable-hull-text">100%</span></div>
-          <div class="health-track recoverable-health"><i id="recoverable-hull-fill"></i></div>
-          <div id="repair-hint" class="repair-hint"><kbd>H</kbd> 按住持续抢修</div>
-          <div id="damage-state" class="damage-state">损管正常</div>
+        <section class="panel own-status-details hud-tactical">
+          <p class="eyebrow">详细舰况</p>
           <div id="smoke-status" class="damage-state"><kbd>E</kbd> 烟幕就绪 · 2 次</div>
           <div id="hydro-status" class="damage-state"><kbd>F</kbd> 水听就绪 · 2 次</div>
           <div id="depth-charge-status" class="damage-state"><kbd>G</kbd> 深弹状态</div>
@@ -240,8 +239,39 @@ export class Hud {
             </div>
             <div id="damage-control-tasks" class="damage-control-tasks"></div>
           </div>
-          <div class="metric-row weapon-status"><span id="reload-label">主炮装填</span><strong id="reload">火炮就绪 · 100%</strong></div>
+          <div id="weapon-status" class="metric-row weapon-status"><span id="reload-label">主炮装填</span><strong id="reload">火炮就绪 · 100%</strong></div>
           <div id="modules" class="modules"></div>
+        </section>
+        <section class="ship-dashboard panel" aria-label="舰船航行仪表">
+          <div class="bridge-dial speed-dial" aria-label="航速">
+            <span class="dial-ticks" aria-hidden="true"></span>
+            <i id="speed-needle" class="dial-needle"></i>
+            <strong id="speed">0.0</strong><small>kn</small>
+          </div>
+          <div class="bridge-dial compass-dial" aria-label="罗经">
+            <div id="compass-rose" class="compass-rose" aria-hidden="true">
+              <b>N</b><b>E</b><b>S</b><b>W</b>
+            </div>
+            <strong id="ship-heading">000°</strong><small>罗经</small>
+          </div>
+          <div id="bridge-controls" class="bridge-controls">
+            <div class="bridge-control telegraph-control">
+              <span>车钟</span><strong id="throttle">停车</strong>
+              <div class="bridge-scale"><i></i></div>
+            </div>
+            <div class="bridge-control rudder-control">
+              <span>舵角</span><strong id="rudder-angle">正舵</strong>
+              <div class="bridge-scale"><i></i></div>
+            </div>
+            <div class="dashboard-health">
+              <div class="bar-label"><span>舰体</span><span id="hull-text">100%</span></div>
+              <div class="health-track actual-health"><i id="hull-fill"></i></div>
+              <div class="bar-label secondary-health-label"><span>可恢复</span><span id="recoverable-hull-text">100%</span></div>
+              <div class="health-track recoverable-health"><i id="recoverable-hull-fill"></i></div>
+            </div>
+            <div id="repair-hint" class="repair-hint"><kbd>H</kbd> 按住持续抢修</div>
+            <div id="damage-state" class="damage-state">损管正常</div>
+          </div>
         </section>
         <section id="target-status" class="panel target-status hud-tactical">
           <p class="eyebrow">目标 · 敌方驱逐舰</p>
@@ -272,7 +302,7 @@ export class Hud {
         <div class="reticle" aria-hidden="true">
           <i></i><b></b><span></span><div class="reticle-ticks">−10　−5　│　+5　+10</div>
           <output id="aim-readout">方位 000° · 2,200 m</output>
-          <small id="aim-mode">观察模式 · R 进入瞄准</small>
+          <small id="aim-mode" hidden aria-hidden="true"></small>
         </div>
         <div id="torpedo-warning" class="torpedo-warning" hidden>鱼雷接近</div>
         <div id="gun-sight" class="gun-sight" aria-hidden="true">
@@ -335,7 +365,7 @@ export class Hud {
     this.rangeCorrection = find("#range-correction");
     this.reload = find("#reload");
     this.reloadLabel = find("#reload-label");
-    this.weaponStatus = find(".weapon-status");
+    this.weaponStatus = find("#weapon-status");
     this.flightTime = find("#flight-time");
     this.dispersion = find("#dispersion");
     this.hullFill = find("#hull-fill");
@@ -347,6 +377,11 @@ export class Hud {
     this.enemyText = find("#enemy-text");
     this.modules = find("#modules");
     this.battleTime = find("#battle-time");
+    this.speedNeedle = find("#speed-needle");
+    this.compassRose = find("#compass-rose");
+    this.shipHeading = find("#ship-heading");
+    this.rudderAngle = find("#rudder-angle");
+    this.bridgeControls = find("#bridge-controls");
     this.timeLabel = find("#time-label");
     this.modeLabel = find("#mode-label");
     this.objectivePanel = find("#objective-score");
@@ -434,15 +469,6 @@ export class Hud {
   setCursorStyle(style: "neon-arrow" | "neon-hand" | "crosshair"): void {
     this.gameCursor.src = `./assets/cursors/${style === "neon-arrow" ? "neon-arrow.png" : style === "neon-hand" ? "neon-hand.png" : "crosshair.png"}`;
     this.gameCursor.className = `game-cursor ${style}`;
-  }
-
-  private throttleLabel(value: number): string {
-    if (value < 0) return "倒车";
-    if (value < 0.1) return "停车";
-    if (value < 0.4) return "前进 1/4";
-    if (value < 0.65) return "前进 1/2";
-    if (value < 0.9) return "前进 3/4";
-    return "全速前进";
   }
 
   private renderModules(ship: ShipState): void {
@@ -540,7 +566,7 @@ export class Hud {
     set("distance", player.distanceTravelled >= 1_000
       ? `${(player.distanceTravelled / 1_000).toFixed(2)} km`
       : `${Math.round(player.distanceTravelled)} m`);
-    set("heading", `${String(Math.round((player.heading * 180 / Math.PI + 360) % 360)).padStart(3, "0")}°`);
+    set("heading", formatHeading(player.heading));
     set("rudder", `${Math.round(player.rudderCommand * 100)}% / ${Math.round(player.rudder * 100)}%`);
     const target = state.underwaterTargets.find((entry) => entry.hull > 0)
       ?? state.underwaterTargets[0];
@@ -609,8 +635,21 @@ export class Hud {
 
     const hull = percent(player.hull, player.maxHull);
     const recoverableHull = percent(player.recoverableHull, player.maxHull);
-    this.speed.textContent = `${player.speedKnots.toFixed(1)} kn`;
-    this.throttle.textContent = this.throttleLabel(player.throttle);
+    const instruments = shipInstrumentSnapshot({
+      headingRadians: player.heading,
+      rudder: player.rudder,
+      throttle: player.throttle,
+      speedKnots: player.speedKnots,
+      maximumSpeedKnots: getShipClass(player.shipClassId).maxSpeedKnots * player.performance.maxSpeedMultiplier,
+    });
+    this.speed.textContent = instruments.speedText;
+    this.throttle.textContent = instruments.throttleText;
+    this.shipHeading.textContent = instruments.headingText;
+    this.rudderAngle.textContent = instruments.rudderText;
+    this.speedNeedle.style.transform = `translateX(-50%) rotate(${instruments.speedNeedleDegrees}deg)`;
+    this.compassRose.style.transform = `rotate(${instruments.compassRotationDegrees}deg)`;
+    this.bridgeControls.style.setProperty("--throttle-position", `${(instruments.throttlePercent + 100) / 2}%`);
+    this.bridgeControls.style.setProperty("--rudder-position", `${(instruments.rudderPercent + 100) / 2}%`);
     const selectedMaximumRange = selectedWeapon === "torpedo"
       ? torpedoDefinition.maximumRangeMeters
       : selectedWeapon === "mainGun"
@@ -629,6 +668,8 @@ export class Hud {
     this.damageState.textContent = player.fireIntensity < 1 && player.flooding < 1
       ? "损管正常"
       : `火势 ${Math.round(player.fireIntensity)}% · 进水 ${Math.round(player.flooding)}%`;
+    this.repairHint.hidden = player.hull >= player.recoverableHull - 0.01;
+    this.damageState.hidden = player.fireIntensity < 1 && player.flooding < 1;
     this.damageState.className = `damage-state${player.fireIntensity > 35 || player.flooding > 35 ? " critical" : ""}`;
     const smokeCovered = isPointInSmoke(state, player.position);
     const smokeCooldownPercent = Math.round(
@@ -770,7 +811,9 @@ export class Hud {
 
     const aimBearing = Math.atan2(player.aimPoint.x - player.position.x, player.aimPoint.z - player.position.z);
     const relativeBearing = wrapAngle(aimBearing - player.heading) * 180 / Math.PI;
-    this.aimReadout.textContent = `相对方位 ${relativeBearing >= 0 ? "+" : ""}${relativeBearing.toFixed(1)}° · ${Math.round(aimRange).toLocaleString("zh-CN")} / ${Math.round(selectedMaximumRange).toLocaleString("zh-CN")} m`;
+    const compactRange = aimRange >= 1_000
+      ? `${(aimRange / 1_000).toFixed(2)} km` : `${Math.round(aimRange)} m`;
+    this.aimReadout.textContent = `${relativeBearing >= 0 ? "+" : ""}${relativeBearing.toFixed(1)}° · ${compactRange}`;
     this.reloadLabel.textContent = player.pendingAmmoType
       ? `已装 ${ammoLabels[player.ammoType]} · 待装 ${ammoLabels[player.pendingAmmoType]}`
       : `${ammoLabels[player.ammoType]} 已装填 · ${gunDefinition.shortLabel} · ${mainBatteryBarrelCount(gunDefinition)} 管`;
