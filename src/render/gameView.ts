@@ -65,7 +65,11 @@ import {
   aircraftFormationPose,
   airVisualSnapshot,
 } from "./aircraftPresentation";
-import { aimingCameraPlan, cameraTransitionValue } from "./combatCamera";
+import {
+  aimingCameraPlan,
+  cameraPointerMoveAllowed,
+  cameraTransitionValue,
+} from "./combatCamera";
 import { applyBodyVisibility, ownShipBodyVisibility } from "./shipAimPresentation";
 import type { AimProvider } from "../controllers/playerInput";
 import type {
@@ -189,6 +193,7 @@ export class GameView implements AimProvider {
   private aiming = false;
   private enteringAiming = false;
   private mouseLookSensitivity = 1;
+  private cameraInputEnabled = true;
   private lastPointerX?: number;
   private lastPointerY?: number;
   private debugColliders = false;
@@ -302,7 +307,15 @@ export class GameView implements AimProvider {
     this.camera.wheelPrecision = 12;
     this.camera.panningSensibility = 0;
     canvas.addEventListener("pointermove", (event) => {
-      if (event.pointerType && event.pointerType !== "mouse") return;
+      const gameplayActive = canvas.closest(".game-shell")
+        ?.classList.contains("game-active") === true;
+      if (!cameraPointerMoveAllowed(
+        this.cameraInputEnabled && gameplayActive, event.pointerType,
+      )) {
+        this.lastPointerX = undefined;
+        this.lastPointerY = undefined;
+        return;
+      }
       const pointerLocked = document.pointerLockElement === canvas;
       if (!pointerLocked && (this.lastPointerX === undefined || this.lastPointerY === undefined)) {
         this.lastPointerX = event.clientX;
@@ -687,6 +700,12 @@ export class GameView implements AimProvider {
 
   setAimSensitivity(value: number): void {
     this.mouseLookSensitivity = Math.min(2, Math.max(0.5, value));
+  }
+
+  setCameraInputEnabled(enabled: boolean): void {
+    this.cameraInputEnabled = enabled;
+    this.lastPointerX = undefined;
+    this.lastPointerY = undefined;
   }
 
   requestPointerLock(): void {

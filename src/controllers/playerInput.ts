@@ -138,6 +138,10 @@ export class PlayerInput {
   }
 
   private onWheel = (event: WheelEvent): void => {
+    if (this.suppressed) {
+      event.preventDefault();
+      return;
+    }
     event.preventDefault();
     this.range = Math.max(
       GUN.minAimRange,

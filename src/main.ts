@@ -217,9 +217,13 @@ developerPanel = new DeveloperPanel(gameShell, () => state, {
     paused = true;
     accumulator = 0;
     gameShell.classList.remove("game-active");
+    input.setSuppressed(true);
+    view.setCameraInputEnabled(false);
     view.releasePointerLock();
   },
   onClose: () => {
+    input.setSuppressed(false);
+    view.setCameraInputEnabled(true);
     if (!started || state.status !== "running" || menus.isOpen()) return;
     paused = false;
     accumulator = 0;

@@ -17,6 +17,14 @@ export interface AimingCameraPlan {
   clearance: number;
 }
 
+/** Central input gate used while modal developer tools own the pointer. */
+export function cameraPointerMoveAllowed(
+  cameraInputEnabled: boolean,
+  pointerType: string,
+): boolean {
+  return cameraInputEnabled && (!pointerType || pointerType === "mouse");
+}
+
 /** Keeps the scope camera beyond the view-facing edge of every hull size. */
 export function aimingCameraPlan(input: Readonly<AimingCameraInput>): AimingCameraPlan {
   const directionX = -Math.cos(input.cameraAlpha);

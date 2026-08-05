@@ -1,5 +1,9 @@
 import { describe, expect, it } from "vitest";
-import { aimingCameraPlan, cameraTransitionValue } from "../src/render/combatCamera";
+import {
+  aimingCameraPlan,
+  cameraPointerMoveAllowed,
+  cameraTransitionValue,
+} from "../src/render/combatCamera";
 import { SHIP_CLASSES } from "../src/ships/classes";
 
 describe("aiming camera placement", () => {
@@ -39,5 +43,12 @@ describe("aiming camera placement", () => {
   it("snaps the first aiming frame to the safe radius", () => {
     expect(cameraTransitionValue(205, 92, true)).toBe(92);
     expect(cameraTransitionValue(205, 92, false)).toBeCloseTo(189.18);
+  });
+
+  it("blocks background camera motion while developer tools own the pointer", () => {
+    expect(cameraPointerMoveAllowed(false, "mouse")).toBe(false);
+    expect(cameraPointerMoveAllowed(false, "")).toBe(false);
+    expect(cameraPointerMoveAllowed(true, "touch")).toBe(false);
+    expect(cameraPointerMoveAllowed(true, "mouse")).toBe(true);
   });
 });
