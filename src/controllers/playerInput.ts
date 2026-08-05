@@ -18,6 +18,8 @@ const DAMAGE_CONTROL_PRIORITIES: readonly DamageControlPriority[] = [
   "module",
 ];
 
+export const INITIAL_PLAYER_THROTTLE = 0;
+
 export function fireCommandActive(pressedThisFrame: boolean, spaceHeld: boolean): boolean {
   return pressedThisFrame || spaceHeld;
 }
@@ -38,7 +40,7 @@ export interface AimProvider {
 
 export class PlayerInput {
   private readonly pressed = new Set<string>();
-  private throttle = 0.55;
+  private throttle = INITIAL_PLAYER_THROTTLE;
   private range = 2_200;
   private steeringSensitivity = 1;
   private aiming = false;
@@ -232,7 +234,7 @@ export class PlayerInput {
   }
 
   reset(): void {
-    this.throttle = 0.55;
+    this.throttle = INITIAL_PLAYER_THROTTLE;
     this.range = 2_200;
     this.pressed.clear();
     this.firePressed = false;

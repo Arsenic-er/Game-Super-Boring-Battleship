@@ -19,7 +19,7 @@ import { airSquadronTargetAltitude } from "./airFlightModel";
 import type { HullId } from "../ships/hulls";
 import { getShipClass } from "../ships/classes";
 import type { ShipClassId } from "../ships/classes";
-import { GUN, KNOT_TO_MPS } from "./config";
+import { GUN, shipSpeedMetersPerSecond } from "./config";
 
 export const AIR_OPERATION_TIMING = {
   launchSeconds: 8,
@@ -252,7 +252,7 @@ export function predictAirStrikeAimPoint(
   speedKnots: number,
   weapon: AirWeaponKind,
 ): Vec3 {
-  const targetSpeed = Math.max(0, speedKnots) * KNOT_TO_MPS;
+  const targetSpeed = shipSpeedMetersPerSecond(Math.max(0, speedKnots));
   const velocityX = Math.sin(heading) * targetSpeed;
   const velocityZ = Math.cos(heading) * targetSpeed;
   const relativeX = target.x - origin.x;

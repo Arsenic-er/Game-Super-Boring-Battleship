@@ -3,6 +3,7 @@ import {
   ARMOR_THICKNESS_MM,
   BASE_REPAIR_PER_SECOND,
   BATTLE_DURATION_SECONDS,
+  BATTLE_SPAWN,
   COLLISION,
   COLLISION_DAMAGE_MULTIPLIER,
   COMPARTMENT_MAX_HEALTH,
@@ -12,13 +13,14 @@ import {
   GUN,
   HULL_REPAIR,
   HYDRO,
-  KNOT_TO_MPS,
   MODULE_MAX_HEALTH,
+  NAVIGATION_PACE,
   OBJECTIVE,
   SENSOR,
   TURRET,
   TORPEDO,
   SMOKE,
+  shipSpeedMetersPerSecond,
 } from "./config";
 import {
   DEFAULT_MAIN_GUN_ID,
@@ -242,8 +244,8 @@ function createShip(
     previousPosition: { x, y: 0, z },
     heading,
     turretHeading: heading,
-    speedKnots: 12,
-    throttle: 0.55,
+    speedKnots: 0,
+    throttle: 0,
     rudderCommand: 0,
     rudder: 0,
     hull: hullDefinition.maxHull,
@@ -407,7 +409,8 @@ export function createInitialState(
     { length: playerShipClass.starterSlots.sideGun },
     () => "sideGun-common" as const,
   );
-  const player = createShip("player", "player", 0, -900, 0, playerMainGunId, playerTorpedoId, {
+  const playerSpawn = mode === "battle" ? BATTLE_SPAWN.player : { x: 0, z: -900 };
+  const player = createShip("player", "player", playerSpawn.x, playerSpawn.z, 0, playerMainGunId, playerTorpedoId, {
     maxSpeedMultiplier: playerPerformance?.maxSpeedMultiplier ?? 1,
     accelerationMultiplier: playerPerformance?.accelerationMultiplier ?? 1,
     turnMultiplier: playerPerformance?.turnMultiplier ?? 1,
@@ -451,8 +454,8 @@ export function createInitialState(
       ? [player, createShip(
         "enemy",
         "enemy",
-        180,
-        1_250,
+        BATTLE_SPAWN.enemy.x,
+        BATTLE_SPAWN.enemy.z,
         Math.PI,
         DEFAULT_MAIN_GUN_ID,
         DEFAULT_TORPEDO_ID,
@@ -621,7 +624,7 @@ function moveShip(ship: ShipState, command: ControlCommand, dt: number): void {
   const steeringRatio = moduleRatio(ship, "steering");
   const rudderShiftRate = steeringRatio <= 0
     ? 0
-    : hullDefinition.rudderShiftPerSecond * (0.18 + steeringRatio * 0.82);
+    : hullDefinition.rudderShiftPerSecond * (0.18 + steeringRatio * 0.82) * NAVIGATION_PACE.travelTimeScale;
   ship.rudder += clamp(
     ship.rudderCommand - ship.rudder,
     -rudderShiftRate * dt,
@@ -643,7 +646,7 @@ function moveShip(ship: ShipState, command: ControlCommand, dt: number): void {
   const rate = (targetSpeed >= ship.speedKnots
     ? hullDefinition.accelerationKnotsPerSecond * propulsionResponse
     : hullDefinition.brakingKnotsPerSecond * (0.45 + engineRatio * 0.55))
-    * ship.performance.accelerationMultiplier;
+    * ship.performance.accelerationMultiplier * NAVIGATION_PACE.propulsionResponseScale;
   ship.speedKnots += clamp(targetSpeed - ship.speedKnots, -rate * dt, rate * dt);
   if (ship.developer?.enabled && ship.developer.forcedSpeedKnots !== undefined) {
     ship.speedKnots = clamp(ship.developer.forcedSpeedKnots, -40, 200);
@@ -653,10 +656,11 @@ function moveShip(ship: ShipState, command: ControlCommand, dt: number): void {
   const turnAuthority = steeringRatio * (0.2 + 0.8 * speedRatio);
   const previousHeading = ship.heading;
   ship.heading += ship.rudder * hullDefinition.maxTurnRateRadians
-    * ship.performance.turnMultiplier * turnAuthority * dt;
+    * ship.performance.turnMultiplier * turnAuthority
+    * NAVIGATION_PACE.travelTimeScale * dt;
   ship.turnRateRadians = wrapAngle(ship.heading - previousHeading) / Math.max(dt, 0.0001);
 
-  const metersPerSecond = ship.speedKnots * KNOT_TO_MPS;
+  const metersPerSecond = shipSpeedMetersPerSecond(ship.speedKnots);
   const moveX = Math.sin(ship.heading) * metersPerSecond * dt;
   const moveZ = Math.cos(ship.heading) * metersPerSecond * dt;
   ship.position.x += moveX;
@@ -984,7 +988,7 @@ function secondaryAimPoint(
     contact.position.z - origin.z,
   ));
   const leadSeconds = range / muzzleVelocity;
-  const targetSpeed = contact.speedKnots * KNOT_TO_MPS;
+  const targetSpeed = shipSpeedMetersPerSecond(contact.speedKnots);
   const target = {
     x: contact.position.x + Math.sin(contact.heading) * targetSpeed * leadSeconds,
     y: 3,
@@ -1235,7 +1239,7 @@ export function torpedoInterceptPoint(
   const torpedo = getTorpedo(shooter.torpedoId);
   const relativeX = target.position.x - shooter.position.x;
   const relativeZ = target.position.z - shooter.position.z;
-  const targetSpeed = target.speedKnots * KNOT_TO_MPS;
+  const targetSpeed = shipSpeedMetersPerSecond(target.speedKnots);
   const targetVelocityX = Math.sin(target.heading) * targetSpeed;
   const targetVelocityZ = Math.cos(target.heading) * targetSpeed;
   const a = targetVelocityX ** 2 + targetVelocityZ ** 2
@@ -1445,7 +1449,7 @@ function deployDepthChargePattern(state: BattleState, ship: ShipState): void {
   const forwardZ = Math.cos(ship.heading);
   const rightX = Math.cos(ship.heading);
   const rightZ = -Math.sin(ship.heading);
-  const inheritedSpeed = ship.speedKnots * KNOT_TO_MPS * 0.7;
+  const inheritedSpeed = shipSpeedMetersPerSecond(ship.speedKnots) * 0.7;
   const lateral = definition.beam * 0.26;
   const stern = definition.length * 0.46;
   const offsets = [
@@ -2101,8 +2105,8 @@ function resolveShipCollisions(state: BattleState): void {
       right.position.x += manifold.normal.x * separation * rightShare;
       right.position.z += manifold.normal.z * separation * rightShare;
 
-      const leftVelocity = left.speedKnots * KNOT_TO_MPS;
-      const rightVelocity = right.speedKnots * KNOT_TO_MPS;
+      const leftVelocity = shipSpeedMetersPerSecond(left.speedKnots);
+      const rightVelocity = shipSpeedMetersPerSecond(right.speedKnots);
       const relativeX = Math.sin(left.heading) * leftVelocity - Math.sin(right.heading) * rightVelocity;
       const relativeZ = Math.cos(left.heading) * leftVelocity - Math.cos(right.heading) * rightVelocity;
       const relativeSpeed = Math.hypot(relativeX, relativeZ);
@@ -2559,7 +2563,7 @@ export function torpedoThreatsFor(
 ): TorpedoThreat[] {
   const ship = state.ships.find((candidate) => candidate.id === shipId);
   if (!ship) return [];
-  const shipSpeed = ship.speedKnots * KNOT_TO_MPS;
+  const shipSpeed = shipSpeedMetersPerSecond(ship.speedKnots);
   const shipVelocity = {
     x: Math.sin(ship.heading) * shipSpeed,
     z: Math.cos(ship.heading) * shipSpeed,

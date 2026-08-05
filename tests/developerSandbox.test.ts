@@ -51,6 +51,7 @@ describe("developer sandbox", () => {
   it("keeps a forced speed despite engine destruction, flooding and a zero throttle command", () => {
     const state = createInitialState();
     const player = state.ships.find(({ id }) => id === "player")!;
+    const startZ = player.position.z;
     enableDeveloperMode(player, true);
     player.developer!.forcedSpeedKnots = 88;
     player.modules.engine.health = 0;
@@ -60,7 +61,7 @@ describe("developer sandbox", () => {
     stepSimulation(state, new Map([["player", idle()]]), .1);
 
     expect(player.speedKnots).toBe(88);
-    expect(player.position.z).toBeGreaterThan(-900);
+    expect(player.position.z).toBeGreaterThan(startZ);
   });
 
   it("uses a bounded rapid-fire interval instead of creating a projectile storm every tick", () => {

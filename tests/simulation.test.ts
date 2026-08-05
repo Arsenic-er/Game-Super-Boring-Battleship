@@ -6,10 +6,12 @@ import {
 } from "../src/controllers/ruleBasedAi";
 import {
   AI_TORPEDO,
+  BATTLE_SPAWN,
   BATTLE_DURATION_SECONDS,
   DEPTH_CHARGE,
   FIXED_STEP,
   GUN,
+  NAVIGATION_PACE,
   OBJECTIVE,
   SENSOR,
   SHIP,
@@ -51,6 +53,55 @@ const idle = (x: number, z: number): ControlCommand => ({
 const alignTorpedoLauncher = (ship: ShipState, x: number, z: number): void => {
   ship.torpedoLauncherHeading = Math.atan2(x - ship.position.x, z - ship.position.z);
 };
+
+describe("battle deployment and navigation pacing", () => {
+  it("starts every ship stopped in battle and sea trials", () => {
+    for (const mode of ["battle", "sea-trials"] as const) {
+      const state = createInitialState(17, mode);
+      expect(state.ships.every(({ speedKnots }) => speedKnots === 0)).toBe(true);
+      expect(state.ships.every(({ throttle }) => throttle === 0)).toBe(true);
+    }
+  });
+
+  it("deploys battle opponents over five kilometres apart and equidistant from the objective", () => {
+    const state = createInitialState(18, "battle");
+    const player = state.ships.find(({ id }) => id === "player")!;
+    const enemy = state.ships.find(({ id }) => id === "enemy")!;
+    const separation = Math.hypot(
+      enemy.position.x - player.position.x,
+      enemy.position.z - player.position.z,
+    );
+    const playerObjectiveRange = Math.hypot(
+      player.position.x - state.objective.center.x,
+      player.position.z - state.objective.center.z,
+    );
+    const enemyObjectiveRange = Math.hypot(
+      enemy.position.x - state.objective.center.x,
+      enemy.position.z - state.objective.center.z,
+    );
+    expect(player.position).toMatchObject({ x: BATTLE_SPAWN.player.x, z: BATTLE_SPAWN.player.z });
+    expect(enemy.position).toMatchObject({ x: BATTLE_SPAWN.enemy.x, z: BATTLE_SPAWN.enemy.z });
+    expect(separation).toBeGreaterThanOrEqual(BATTLE_SPAWN.minimumSeparationMeters);
+    expect(separation).toBeLessThan(5_400);
+    expect(playerObjectiveRange).toBeCloseTo(enemyObjectiveRange, 5);
+  });
+
+  it("uses compressed travel time while retaining displayed knot values", () => {
+    const state = createInitialState(19, "sea-trials");
+    const player = state.ships[0]!;
+    player.speedKnots = 20;
+    const start = { ...player.position };
+    stepSimulation(state, new Map([[player.id, {
+      ...idle(player.position.x, player.position.z + 1_000),
+      throttle: 1,
+    }]]), 1);
+    expect(player.position.z - start.z).toBeGreaterThan(20 * 0.514444);
+    expect(player.distanceTravelled).toBeCloseTo(
+      player.speedKnots * 0.514444 * NAVIGATION_PACE.travelTimeScale,
+      5,
+    );
+  });
+});
 
 describe("deterministic battle simulation", () => {
   it("repeats the same state for the same seed and actions", () => {
@@ -441,6 +492,14 @@ describe("deterministic battle simulation", () => {
   it("makes the rule AI bracket the target instead of hitting every salvo", () => {
     const state = createInitialState(77);
     const ai = new RuleBasedAi(77);
+    const player = state.ships.find((ship) => ship.id === "player")!;
+    const enemy = state.ships.find((ship) => ship.id === "enemy")!;
+    enemy.position = {
+      x: player.position.x + 180,
+      y: 0,
+      z: player.position.z + 2_150,
+    };
+    enemy.previousPosition = { ...enemy.position };
     let hits = 0;
     let splashes = 0;
     for (let tick = 0; tick < 7_200 && state.status === "running"; tick += 1) {
@@ -736,7 +795,7 @@ describe("deterministic battle simulation", () => {
       "player",
       { ...idle(0, 1_000), throttle: 1, rudder: 0.75 },
     ]]);
-    for (let tick = 0; tick < 180; tick += 1) stepSimulation(state, commands, FIXED_STEP);
+    for (let tick = 0; tick < 600; tick += 1) stepSimulation(state, commands, FIXED_STEP);
     const player = state.ships[0]!;
     expect(player.distanceTravelled).toBeGreaterThan(10);
     expect(Math.abs(player.turnRateRadians)).toBeGreaterThan(0);

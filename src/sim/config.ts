@@ -29,6 +29,22 @@ export const OBJECTIVE = {
   destroyScore: 100,
 } as const;
 
+/** Symmetric battle-only deployment around the central objective. */
+export const BATTLE_SPAWN = {
+  player: { x: 0, z: -2_400 },
+  enemy: { x: 180, z: 2_750 },
+  minimumSeparationMeters: 5_000,
+} as const;
+
+/**
+ * Compresses otherwise lengthy naval transit while keeping the HUD's historical knot values.
+ * Turning shares the travel scale so a ship's gameplay turning radius remains coherent.
+ */
+export const NAVIGATION_PACE = {
+  travelTimeScale: 1.5,
+  propulsionResponseScale: 2,
+} as const;
+
 export const SENSOR = {
   observationIntervalSeconds: 2.5,
   acquisitionSamples: 2,
@@ -60,6 +76,10 @@ export const SHIP = {
   maxTurnRateRadians: 2.9 * Math.PI / 180,
   maxHull: 1_000,
 } as const;
+
+export function shipSpeedMetersPerSecond(speedKnots: number): number {
+  return speedKnots * KNOT_TO_MPS * NAVIGATION_PACE.travelTimeScale;
+}
 
 export const SMOKE = {
   charges: 2,

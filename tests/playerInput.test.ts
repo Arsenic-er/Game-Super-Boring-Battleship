@@ -1,5 +1,13 @@
 import { describe, expect, it } from "vitest";
-import { fireCommandActive, isGameplayKeyCode } from "../src/controllers/playerInput";
+import {
+  INITIAL_PLAYER_THROTTLE,
+  fireCommandActive,
+  isGameplayKeyCode,
+} from "../src/controllers/playerInput";
+
+describe("player throttle input", () => {
+  it("starts from stop", () => expect(INITIAL_PLAYER_THROTTLE).toBe(0));
+});
 
 describe("player fire input", () => {
   it("preserves a quick tap and keeps firing while Space is held", () => {

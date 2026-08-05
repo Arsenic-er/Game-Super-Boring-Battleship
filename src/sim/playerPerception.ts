@@ -1,4 +1,4 @@
-import { KNOT_TO_MPS, SENSOR } from "./config";
+import { SENSOR, shipSpeedMetersPerSecond } from "./config";
 import type {
   GameMode,
   Observation,
@@ -71,7 +71,7 @@ export class PlayerPerceptionTracker {
     time: number,
   ): PlayerTargetView {
     const elapsed = live ? 0 : Math.max(0, time - contact.observedAt);
-    const speed = contact.speedKnots * KNOT_TO_MPS;
+    const speed = shipSpeedMetersPerSecond(contact.speedKnots);
     const position = {
       x: contact.position.x + Math.sin(contact.heading) * speed * elapsed,
       y: contact.position.y,

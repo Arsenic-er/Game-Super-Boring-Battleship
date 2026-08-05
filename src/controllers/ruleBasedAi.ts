@@ -2,10 +2,10 @@ import {
   AI_TORPEDO,
   GUN,
   HYDRO,
-  KNOT_TO_MPS,
   SENSOR,
   SMOKE,
   TORPEDO,
+  shipSpeedMetersPerSecond,
 } from "../sim/config";
 import { getTorpedo } from "../ships/torpedoes";
 import { effectiveMainBattery } from "../ships/mainBatteries";
@@ -198,7 +198,7 @@ export class RuleBasedAi implements Controller {
   private predictedTrack(time: number): TrackEstimate | undefined {
     if (!this.lastContact) return undefined;
     const elapsed = Math.max(0, time - this.lastContact.observedAt);
-    const speed = this.lastContact.speedKnots * KNOT_TO_MPS;
+    const speed = shipSpeedMetersPerSecond(this.lastContact.speedKnots);
     return {
       ...this.lastContact,
       position: {
@@ -322,7 +322,7 @@ export class RuleBasedAi implements Controller {
     const estimatedBearing = bearing + this.bearingError;
     const muzzleVelocity = effectiveMainBattery(observation.self).muzzleVelocity;
     const flightTime = this.estimatedRange / muzzleVelocity;
-    const targetSpeed = target.speedKnots * KNOT_TO_MPS;
+    const targetSpeed = shipSpeedMetersPerSecond(target.speedKnots);
     return {
       x: observation.self.position.x
         + Math.sin(estimatedBearing) * this.estimatedRange
