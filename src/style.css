@@ -415,6 +415,9 @@ button { font: inherit; }
 .bridge-control { display: grid; grid-template-columns: 36px 1fr; gap: 4px 8px; align-items: center; }
 .bridge-control span { color: #83a2a3; font-size: 8px; }
 .bridge-control strong { overflow: hidden; color: #e9e8cf; font-size: 9px; text-align: right; text-overflow: ellipsis; white-space: nowrap; }
+.navigation-water { border-left: 2px solid #5f9294; padding: 3px 6px; color: #92b8b6; font-size: 8px; letter-spacing: .04em; }
+.navigation-water.shallow { border-color: #dec174; color: #ead99f; }
+.navigation-water.grounded { border-color: #e57861; color: #ffad91; animation: alert-pulse 1s steps(2, end) infinite; }
 .bridge-scale { position: relative; grid-column: 1 / -1; height: 7px; border: 1px solid #355c60; background: linear-gradient(90deg, #243f46, #0b242b 49%, #456a5d 51%, #284b41); }
 .bridge-scale::after { content: ""; position: absolute; left: 50%; top: -2px; width: 1px; height: 11px; background: #bdc9be; opacity: .58; }
 .bridge-scale i { position: absolute; top: -3px; width: 5px; height: 13px; transform: translateX(-50%); background: #e1bb6e; box-shadow: 1px 1px 0 #02090c; }

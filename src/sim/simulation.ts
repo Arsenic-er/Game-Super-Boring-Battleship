@@ -36,6 +36,13 @@ import type { TorpedoId } from "../ships/torpedoes";
 import { getSecondaryGun } from "../ships/secondaryGuns";
 import type { SecondaryGunId } from "../ships/secondaryGuns";
 import {
+  firstNavigationHazard,
+  firstTerrainIntersection,
+  shipDraftMeters,
+  terrainBlocksLineOfSight,
+  terrainNavigationAt,
+} from "../maps/atollMap";
+import {
   getMainBattery,
   effectiveMainBattery,
   mainBatteryMountLocalPosition,
@@ -246,6 +253,8 @@ function createShip(
     turretHeading: heading,
     speedKnots: 0,
     throttle: 0,
+    navigationZone: "deep",
+    waterDepthMeters: 80,
     rudderCommand: 0,
     rudder: 0,
     hull: hullDefinition.maxHull,
@@ -440,6 +449,7 @@ export function createInitialState(
   testTarget.isTestTarget = true;
   return {
     mode,
+    mapId: mode === "battle" ? "atoll-prototype" : "open-sea-range",
     time: 0,
     status: "running",
     objective: {
@@ -594,9 +604,14 @@ export function torpedoLauncherAlignmentError(ship: ShipState): number {
   return wrapAngle(desiredTorpedoLauncherHeading(ship) - ship.torpedoLauncherHeading);
 }
 
-function moveShip(ship: ShipState, command: ControlCommand, dt: number): void {
+function moveShip(state: BattleState, ship: ShipState, command: ControlCommand, dt: number): void {
   const hullDefinition = getShipClass(ship.shipClassId);
   ship.previousPosition = copyVec(ship.position);
+  const navigation = terrainNavigationAt(
+    state.mapId, ship.position.x, ship.position.z, shipDraftMeters(ship.shipClassId),
+  );
+  ship.navigationZone = navigation.kind;
+  ship.waterDepthMeters = navigation.depthMeters;
   ship.throttle = clamp(command.throttle, -0.25, 1);
   ship.rudderCommand = clamp(command.rudder, -1, 1);
   ship.aimPoint = copyVec(command.aimPoint);
@@ -636,7 +651,8 @@ function moveShip(ship: ShipState, command: ControlCommand, dt: number): void {
     : 1;
   const equippedMaxSpeed = hullDefinition.maxSpeedKnots
     * ship.performance.maxSpeedMultiplier * developerSpeedMultiplier;
-  const effectiveMaxSpeed = equippedMaxSpeed * engineRatio * floodingSpeedFactor * Math.max(0, ship.throttle);
+  const effectiveMaxSpeed = equippedMaxSpeed * engineRatio * floodingSpeedFactor
+    * navigation.speedMultiplier * Math.max(0, ship.throttle);
   const reverseTarget = ship.throttle < 0 ? equippedMaxSpeed * ship.throttle * 0.28 : effectiveMaxSpeed;
   const orderedSpeed = ship.throttle < 0 ? reverseTarget : effectiveMaxSpeed;
   const turningSpeedFactor = 1
@@ -2136,6 +2152,60 @@ function resolveShipCollisions(state: BattleState): void {
   }
 }
 
+function resolveShipTerrainContact(state: BattleState, ship: ShipState): void {
+  const draft = shipDraftMeters(ship.shipClassId);
+  const hull = getShipClass(ship.shipClassId);
+  const hazard = firstNavigationHazard(
+    state.mapId,
+    ship.previousPosition,
+    ship.position,
+    draft,
+    hull.beam * 0.42,
+  );
+  const navigation = terrainNavigationAt(
+    state.mapId, ship.position.x, ship.position.z, draft,
+  );
+  if (!hazard && navigation.kind !== "grounded") {
+    ship.navigationZone = navigation.kind;
+    ship.waterDepthMeters = navigation.depthMeters;
+    return;
+  }
+  const contactFraction = hazard?.distanceFraction ?? 0;
+  const stopFraction = Math.max(0, contactFraction - 0.025);
+  ship.position.x = ship.previousPosition.x
+    + (ship.position.x - ship.previousPosition.x) * stopFraction;
+  ship.position.z = ship.previousPosition.z
+    + (ship.position.z - ship.previousPosition.z) * stopFraction;
+  const impactSpeed = Math.abs(ship.speedKnots);
+  ship.speedKnots *= 0.08;
+  ship.navigationZone = "grounded";
+  ship.waterDepthMeters = navigation.depthMeters;
+  const terrainId = hazard?.zone.id ?? "map-boundary";
+  const cooldownKey = `terrain:${ship.id}:${terrainId}`;
+  if ((state.collisionCooldowns[cooldownKey] ?? 0) > state.time) return;
+  const damage = clamp((impactSpeed - 3.5) * 1.5, 0, 72);
+  const compartment: CompartmentId = ship.throttle >= 0 ? "bow" : "stern";
+  if (damage > 0.5) {
+    ship.compartments[compartment] = Math.max(
+      0, ship.compartments[compartment] - damage * 0.48,
+    );
+    applyHullDamage(ship, damage, 0.62);
+  }
+  state.impacts.push({
+    id: state.nextEntityId++,
+    kind: "terrain-hit",
+    position: hazard
+      ? { ...hazard.point, y: Math.max(0, hazard.heightMeters) }
+      : copyVec(ship.position),
+    sourceId: terrainId,
+    targetId: ship.id,
+    terrainId,
+    damage,
+    compartment,
+  });
+  state.collisionCooldowns[cooldownKey] = state.time + COLLISION.cooldownSeconds;
+}
+
 function advanceProjectiles(state: BattleState, dt: number): void {
   const active: ProjectileState[] = [];
   for (const projectile of state.projectiles) {
@@ -2153,16 +2223,43 @@ function advanceProjectiles(state: BattleState, dt: number): void {
     let consumed = false;
     const armed = projectile.kind !== "torpedo"
       || (projectile.distanceTravelled ?? 0) >= (projectile.armingDistance ?? 0);
+    let closestShip: ShipState | undefined;
+    let closestShipContact: ProjectileHitContact | undefined;
     if (armed) {
       for (const ship of state.ships) {
         if (ship.team === projectile.team || ship.hull <= 0) continue;
         const contact = projectileHitContact(projectile, ship);
-        if (contact) {
-          applyHit(state, projectile, ship, contact);
-          consumed = true;
-          break;
+        if (contact && (!closestShipContact
+          || contact.distanceFraction < closestShipContact.distanceFraction)) {
+          closestShip = ship;
+          closestShipContact = contact;
         }
       }
+    }
+    const terrainContact = firstTerrainIntersection(
+      state.mapId, projectile.previousPosition, projectile.position,
+    );
+    if (terrainContact && (!closestShipContact
+      || terrainContact.distanceFraction <= closestShipContact.distanceFraction)) {
+      state.impacts.push({
+        id: state.nextEntityId++,
+        kind: "terrain-hit",
+        position: {
+          ...terrainContact.point,
+          y: Math.max(terrainContact.point.y, terrainContact.heightMeters),
+        },
+        sourceId: projectile.ownerId,
+        sourceTeam: projectile.team,
+        salvoId: projectile.salvoId,
+        terrainId: terrainContact.zone.id,
+        projectileKind: projectile.kind,
+        weaponSource: projectile.weaponSource,
+        airWeapon: projectile.airWeapon,
+      });
+      consumed = true;
+    } else if (closestShip && closestShipContact) {
+      applyHit(state, projectile, closestShip, closestShipContact);
+      consumed = true;
     }
 
     if (!consumed && projectile.kind === "shell" && projectile.position.y <= 0 && projectile.age > 0.1) {
@@ -2637,6 +2734,7 @@ export function observe(state: BattleState, shipId: string) {
   ) {
     return {
       self,
+      mapId: state.mapId,
       contacts: cached.contacts,
       objective,
       incomingTorpedoes,
@@ -2651,6 +2749,14 @@ export function observe(state: BattleState, shipId: string) {
     const dz = target.position.z - self.position.z;
     const actualRange = Math.hypot(dx, dz);
     const hydroDetected = hydroActive && actualRange <= HYDRO.shipDetectionMeters;
+    const terrainBlocked = terrainBlocksLineOfSight(
+      state.mapId,
+      self.position,
+      target.position,
+      getShipClass(self.shipClassId).deckHeight + 12,
+      getShipClass(target.shipClassId).deckHeight + 12,
+    );
+    if (terrainBlocked && !hydroDetected) continue;
     const smokeBlocked = isLineObscuredBySmoke(state, self.position, target.position);
     const targetInSmoke = isPointInSmoke(state, target.position);
     const recentlyFiredMainGun = mainGunBloomRemaining(state.time, target) > 0;
@@ -2763,6 +2869,7 @@ export function observe(state: BattleState, shipId: string) {
   };
   return {
     self,
+    mapId: state.mapId,
     contacts,
     objective,
     incomingTorpedoes,
@@ -2935,6 +3042,10 @@ function observeSurfaceFromAir(
   const range = Math.hypot(dx, dz);
   const maximumRange = AIR_NAVIGATION.surfaceDetectionRangeMeters[squadron.role];
   if (range > maximumRange) return undefined;
+  if (terrainBlocksLineOfSight(
+    state.mapId, squadron.position, target.position,
+    0, getShipClass(target.shipClassId).deckHeight + 10,
+  )) return undefined;
   if (isLineObscuredBySmoke(state, squadron.position, target.position)
     && range > SMOKE.guaranteedDetectionMeters) return undefined;
   const sampleIndex = Math.floor(
@@ -3658,7 +3769,8 @@ export function stepSimulation(
     );
     ship.damageControlAllocation = damageControlAllocation;
     ship.hullRepairActive = damageControlAllocation.hull > 0;
-    moveShip(ship, command, dt);
+    moveShip(state, ship, command, dt);
+    resolveShipTerrainContact(state, ship);
     updateSmokeGenerator(state, ship, Boolean(command.activateSmoke), dt);
     updateHydroacousticSearch(state, ship, Boolean(command.activateHydro), dt);
     repairModule(ship, damageControlAllocation.module, dt);

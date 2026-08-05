@@ -3,6 +3,7 @@ import type { HullId } from "../ships/hulls";
 import type { ShipClassId } from "../ships/classes";
 import type { TorpedoId } from "../ships/torpedoes";
 import type { SecondaryGunId } from "../ships/secondaryGuns";
+import type { BattleMapId } from "../maps/atollMap";
 
 export interface Vec3 {
   x: number;
@@ -259,6 +260,8 @@ export interface ShipState {
   turretHeading: number;
   speedKnots: number;
   throttle: number;
+  navigationZone: "deep" | "shallow" | "grounded";
+  waterDepthMeters: number;
   rudderCommand: number;
   rudder: number;
   hull: number;
@@ -393,7 +396,7 @@ export interface ShotEvent {
 
 export interface ImpactEvent {
   id: number;
-  kind: "hit" | "splash" | "collision" | "underwater-explosion";
+  kind: "hit" | "splash" | "collision" | "terrain-hit" | "underwater-explosion";
   position: Vec3;
   sourceId?: string;
   sourceTeam?: Team;
@@ -406,6 +409,7 @@ export interface ImpactEvent {
   startedFire?: boolean;
   startedFlooding?: boolean;
   otherShipId?: string;
+  terrainId?: string;
   ammoType?: AmmoType;
   penetrationResult?: PenetrationResult;
   armorThicknessMm?: number;
@@ -440,6 +444,7 @@ export interface TorpedoLaunchSolution {
 
 export interface BattleState {
   mode: GameMode;
+  mapId: BattleMapId;
   time: number;
   status: BattleStatus;
   endReason?: BattleEndReason;
@@ -479,6 +484,7 @@ export interface ControlCommand {
 
 export interface Observation {
   self: Readonly<ShipState>;
+  mapId: BattleMapId;
   contacts: readonly Readonly<SensorContact>[];
   objective: Readonly<ObjectiveObservation>;
   incomingTorpedoes: readonly Readonly<TorpedoThreat>[];

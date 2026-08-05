@@ -7,6 +7,7 @@ import {
   TORPEDO,
   shipSpeedMetersPerSecond,
 } from "../sim/config";
+import { terrainSafeHeading } from "../maps/atollMap";
 import { getTorpedo } from "../ships/torpedoes";
 import { effectiveMainBattery } from "../ships/mainBatteries";
 import {
@@ -153,6 +154,8 @@ export class RuleBasedAi implements Controller {
   private nextManoeuvreAt = 0;
   private manoeuvreOffset = 0;
   private lastTime = 0;
+  private plannedTerrainHeading?: number;
+  private nextTerrainPlanAt = 0;
   private randomSeed: number;
   private selectedAmmo: AmmoType = "he";
   private nextAmmoDecisionAt = 0;
@@ -469,6 +472,16 @@ export class RuleBasedAi implements Controller {
         ? pathBearing
         : reverseBearing;
     }
+    if (observation.time >= this.nextTerrainPlanAt || this.plannedTerrainHeading === undefined) {
+      this.plannedTerrainHeading = terrainSafeHeading(
+        observation.mapId,
+        observation.self.position,
+        desiredHeading,
+        observation.self.shipClassId,
+      );
+      this.nextTerrainPlanAt = observation.time + 0.4;
+    }
+    desiredHeading = this.plannedTerrainHeading;
     const headingError = wrapAngle(desiredHeading - observation.self.heading);
     const damaged = observation.self.hull / observation.self.maxHull < 0.38;
     const tacticalThrottle = evadingTorpedo

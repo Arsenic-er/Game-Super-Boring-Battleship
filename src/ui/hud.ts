@@ -130,6 +130,7 @@ export class Hud {
   private readonly shipHeading: HTMLElement;
   private readonly rudderAngle: HTMLElement;
   private readonly bridgeControls: HTMLElement;
+  private readonly navigationWater: HTMLElement;
   private readonly range: HTMLElement;
   private readonly targetRange: HTMLElement;
   private readonly targetMotion: HTMLElement;
@@ -263,6 +264,7 @@ export class Hud {
               <span>舵角</span><strong id="rudder-angle">正舵</strong>
               <div class="bridge-scale"><i></i></div>
             </div>
+            <div id="navigation-water" class="navigation-water">深水航道 · 80 m+</div>
             <div class="dashboard-health">
               <div class="bar-label"><span>舰体</span><span id="hull-text">100%</span></div>
               <div class="health-track actual-health"><i id="hull-fill"></i></div>
@@ -382,6 +384,7 @@ export class Hud {
     this.shipHeading = find("#ship-heading");
     this.rudderAngle = find("#rudder-angle");
     this.bridgeControls = find("#bridge-controls");
+    this.navigationWater = find("#navigation-water");
     this.timeLabel = find("#time-label");
     this.modeLabel = find("#mode-label");
     this.objectivePanel = find("#objective-score");
@@ -650,6 +653,12 @@ export class Hud {
     this.compassRose.style.transform = `rotate(${instruments.compassRotationDegrees}deg)`;
     this.bridgeControls.style.setProperty("--throttle-position", `${(instruments.throttlePercent + 100) / 2}%`);
     this.bridgeControls.style.setProperty("--rudder-position", `${(instruments.rudderPercent + 100) / 2}%`);
+    this.navigationWater.textContent = player.navigationZone === "grounded"
+      ? "⚠ 触礁 / 搁浅"
+      : player.navigationZone === "shallow"
+        ? `浅海 ${player.waterDepthMeters.toFixed(1)} m · 航速受限`
+        : "深水航道 · 80 m+";
+    this.navigationWater.className = `navigation-water ${player.navigationZone}`;
     const selectedMaximumRange = selectedWeapon === "torpedo"
       ? torpedoDefinition.maximumRangeMeters
       : selectedWeapon === "mainGun"

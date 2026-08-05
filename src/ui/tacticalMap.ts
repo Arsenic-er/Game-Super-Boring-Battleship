@@ -1,5 +1,6 @@
 import type { AirMissionCommand, AircraftRole, AirSquadronState, BattleState, PlayerTargetView, ShipState } from "../sim/types";
 import { HYDRO } from "../sim/config";
+import { battleMapDefinition, terrainContour, type BattleMapId } from "../maps/atollMap";
 import type { GameLocale } from "../i18n/gameLocale";
 import { DEFAULT_GAME_LOCALE } from "../i18n/gameLocale";
 import { tacticalAirText, type TacticalAirText } from "../i18n/tacticalAirLocale";
@@ -110,6 +111,60 @@ function resizeCanvas(
   context?.setTransform(pixelRatio, 0, 0, pixelRatio, 0, 0);
   return context;
 }
+function drawBattleTerrain(
+  context: CanvasRenderingContext2D,
+  mapId: BattleMapId,
+  project: (x: number, z: number) => MapPoint,
+): void {
+  const terrain = battleMapDefinition(mapId).terrain;
+  if (terrain.length === 0) return;
+  const order = { shallow: 0, sandbar: 1, mountain: 2 } as const;
+  const zones = [...terrain].sort((left, right) => order[left.kind] - order[right.kind]);
+  context.save();
+  for (const zone of zones) {
+    const points = terrainContour(zone, zone.kind === "mountain" ? 36 : 28);
+    if (points.length === 0) continue;
+    context.beginPath();
+    const first = project(points[0]!.x, points[0]!.z);
+    context.moveTo(first.x, first.y);
+    for (const point of points.slice(1)) {
+      const projected = project(point.x, point.z);
+      context.lineTo(projected.x, projected.y);
+    }
+    context.closePath();
+    context.fillStyle = zone.kind === "shallow"
+      ? "rgba(39, 139, 151, .3)"
+      : zone.kind === "sandbar"
+        ? "rgba(209, 191, 124, .84)"
+        : "rgba(47, 76, 59, .96)";
+    context.strokeStyle = zone.kind === "shallow"
+      ? "rgba(96, 210, 210, .4)"
+      : zone.kind === "sandbar"
+        ? "rgba(241, 222, 153, .82)"
+        : "rgba(130, 165, 119, .78)";
+    context.lineWidth = zone.kind === "mountain" ? 1.4 : 1;
+    context.fill();
+    context.stroke();
+    if (zone.kind === "mountain") {
+      for (const scale of [.7, .42]) {
+        const contour = terrainContour(zone, 32, scale);
+        context.beginPath();
+        const contourFirst = project(contour[0]!.x, contour[0]!.z);
+        context.moveTo(contourFirst.x, contourFirst.y);
+        for (const point of contour.slice(1)) {
+          const projected = project(point.x, point.z);
+          context.lineTo(projected.x, projected.y);
+        }
+        context.closePath();
+        context.strokeStyle = "rgba(171, 194, 137, .42)";
+        context.lineWidth = 1;
+        context.stroke();
+      }
+    }
+  }
+  context.restore();
+}
+
 
 function drawShip(
   context: CanvasRenderingContext2D,
@@ -649,6 +704,18 @@ export class TacticalMap {
     context.clearRect(0, 0, width, height);
     context.fillStyle = "rgba(5, 25, 34, .94)";
     context.fillRect(0, 0, width, height);
+    drawBattleTerrain(
+      context,
+      state.mapId,
+      (x, z) => worldToHeadingUpMap(
+        x - player.position.x,
+        z - player.position.z,
+        player.heading,
+        scale,
+        center.x,
+        center.y,
+      ),
+    );
     context.strokeStyle = "rgba(139, 187, 190, .18)";
     context.lineWidth = 1;
     for (const meters of [1_000, 2_000, 3_000]) {
@@ -740,6 +807,7 @@ export class TacticalMap {
     context.clearRect(0, 0, width, height);
     context.fillStyle = "#071f2a";
     context.fillRect(0, 0, width, height);
+    drawBattleTerrain(context, state.mapId, project);
     context.strokeStyle = "rgba(133, 185, 190, .18)";
     context.fillStyle = "rgba(174, 211, 212, .5)";
     context.font = "10px monospace";

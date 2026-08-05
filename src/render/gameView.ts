@@ -54,6 +54,7 @@ import {
   createPixelSkyMaterial,
   WATER_RENDER,
 } from "./environmentMaterials";
+import { createAtollTerrain, type AtollTerrainVisual } from "./atollTerrain";
 import { createPixelVfxMaterial } from "./vfxMaterials";
 import type { PixelVfxKind } from "./vfxMaterials";
 import {
@@ -169,6 +170,7 @@ export class GameView implements AimProvider {
   private readonly oceanTexture: Texture;
   private readonly oceanBumpTexture: Texture;
   private readonly waveLayers: Mesh[];
+  private readonly terrain: AtollTerrainVisual;
   private readonly objectiveRing: Mesh;
   private readonly objectiveMaterial: StandardMaterial;
   private aimArc?: LinesMesh;
@@ -224,6 +226,7 @@ export class GameView implements AimProvider {
     deepWater.material = createDeepWaterMaterial(this.scene);
     deepWater.isPickable = false;
     deepWater.freezeWorldMatrix();
+    this.terrain = createAtollTerrain(this.scene);
 
     this.objectiveRing = CreateTorus("objective-zone-a", {
       diameter: OBJECTIVE.radiusMeters * 2,
@@ -1503,6 +1506,39 @@ export class GameView implements AimProvider {
         });
         continue;
       }
+      if (impact.kind === "terrain-hit") {
+        const material = this.effectMaterial(
+          "terrain-impact",
+          new Color3(0.44, 0.34, 0.2),
+          new Color3(0.11, 0.07, 0.025),
+          0.9,
+        );
+        for (let debrisIndex = 0; debrisIndex < 5; debrisIndex += 1) {
+          const debris = CreateSphere(`terrain-debris-${impact.id}-${debrisIndex}`, {
+            diameter: debrisIndex === 0 ? 3.2 : 1.8,
+            segments: 4,
+          }, this.scene);
+          debris.position.copyFrom(point);
+          debris.position.y += 1.5 + debrisIndex * 0.45;
+          debris.material = material;
+          const angle = impact.id * 0.73 + debrisIndex * Math.PI * 0.4;
+          this.effects.push({
+            mesh: debris,
+            remaining: 0.65 + debrisIndex * 0.06,
+            duration: 0.65 + debrisIndex * 0.06,
+            velocity: new Vector3(
+              Math.sin(angle) * (4 + debrisIndex),
+              7 + debrisIndex * 1.3,
+              Math.cos(angle) * (4 + debrisIndex),
+            ),
+            gravity: 17,
+            spin: new Vector3(0.8, 0.55, 0.7),
+            scaleFrom: 1,
+            scaleTo: 0.18,
+          });
+        }
+        continue;
+      }
       if (impact.kind === "splash") {
         const plume = this.pooledBillboard(
           "shell-splash",
@@ -1701,6 +1737,7 @@ export class GameView implements AimProvider {
     this.oceanTexture.vOffset = steppedTime * -0.00115;
     this.oceanBumpTexture.uOffset = steppedTime * 0.0021;
     this.oceanBumpTexture.vOffset = steppedTime * -0.00135;
+    this.terrain.setEnabled(state.mapId === "atoll-prototype");
     this.syncShips(state, perceivedTarget);
     this.syncAirSquadrons(state, dt);
     this.syncProjectiles(state, perceivedTarget);
