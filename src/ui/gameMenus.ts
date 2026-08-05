@@ -39,6 +39,7 @@ import { getTorpedo } from "../ships/torpedoes";
 import type { GameSettings } from "../settings/gameSettings";
 import type { GameMode } from "../sim/types";
 import { DockPreview } from "../render/dockPreview";
+import { equipmentArtworkMarkup } from "./equipmentArtwork";
 
 export interface GameMenuCallbacks {
   onStart: (mode: GameMode) => void;
@@ -212,6 +213,12 @@ export class GameMenus {
       <div class="game-menu-overlay settings-menu" hidden><section class="game-menu-card" role="dialog" aria-modal="true" aria-label="游戏设置"><p class="eyebrow">游戏设置</p><h2>操控与画面</h2><div class="settings-group language-settings"><label>界面语言</label><select class="menu-language" aria-label="界面语言">${languageOptionsMarkup()}</select><small>语言切换会立即生效并保存在本机</small></div><div class="settings-group"><label>操控灵敏度</label><div class="sensitivity-row"><span>转向</span><input class="menu-steering" type="range" min="35" max="100" step="5" /><output class="menu-steering-value">100%</output></div><div class="sensitivity-row"><span>瞄准</span><input class="menu-aim" type="range" min="50" max="200" step="10" /><output class="menu-aim-value">100%</output></div></div><div class="settings-group"><label>画面质量</label><div class="quality-options"><button class="quality-option" type="button" data-quality="low">低（推荐）</button><button class="quality-option" type="button" data-quality="medium">中等</button></div></div><div class="menu-buttons"><button class="menu-button settings-back" type="button">返回暂停菜单</button></div></section></div>`;
     while (container.firstElementChild) parent.append(container.firstElementChild);
 
+    const dockStatus = document.createElement("div");
+    dockStatus.className = "dock-preview-status";
+    dockStatus.setAttribute("aria-live", "polite");
+    dockStatus.textContent = "\u9009\u62e9\u7ec4\u4ef6\u5373\u53ef\u4e34\u65f6\u9884\u89c8";
+    parent.querySelector(".dock-blueprint > small")?.before(dockStatus);
+
     const audioSettings = document.createElement("div");
     audioSettings.className = "settings-group audio-settings";
     audioSettings.innerHTML = `<label>声音</label><div class="sensitivity-row"><span>主音量</span><input class="menu-master-volume" type="range" min="0" max="100" step="5" aria-label="主音量" /><output class="menu-master-volume-value">70%</output></div><div class="quality-options"><button class="quality-option menu-mute-audio" type="button" aria-pressed="false">静音：关</button></div>`;
@@ -333,11 +340,13 @@ export class GameMenus {
     }
     this.renderHullSlots();
     this.renderCodex();
-    this.renderStore(); this.renderWarehouse(); this.renderDock();
+    this.renderStore();
+    this.renderWarehouse();
     const equipment = battleLoadout(this.profile);
     this.dockPreview.setShipClass(equipment.shipClassId);
     this.dockPreview.setMainGun(equipment.mainGunId);
     this.dockPreview.setTorpedo(equipment.torpedoId);
+    this.renderDock();
     this.applyLocale();
   }
 
@@ -350,6 +359,7 @@ export class GameMenus {
       const cost = item.purchaseCost;
       return `<button class="armory-item rarity-${item.rarity}${unlocked ? " researched" : " locked"}" data-armory-item="${item.id}" type="button"><i class="${CATEGORY_META[item.category].icon}"></i><span>${item.name}</span><small>${item.origin}</small><b>${unlocked ? `${formatGameNumber(cost.credits, this.settings.locale)} 银币` : `${item.researchCost} 研发解锁`}</b><em>持有 ×${owned}</em></button>`;
     }).join("");
+    this.decorateEquipmentCards(this.armoryGrid, "[data-armory-item]", "armoryItem");
     for (const button of this.armoryGrid.querySelectorAll<HTMLButtonElement>("[data-armory-item]")) {
       button.addEventListener("click", () => { this.selectedArmoryItemId = button.dataset.armoryItem; this.renderStore(); });
     }
@@ -379,6 +389,7 @@ export class GameMenus {
       ? `当前${SHIP_CLASSES[this.profile.shipClassId].name}可装`
       : "当前舰型无可用槽位";
     this.armoryDetail.innerHTML = `<div class="detail-heading rarity-${item.rarity}"><i class="${CATEGORY_META[item.category].icon}"></i><div><b>${item.name}</b><small>${CATEGORY_META[item.category].label} · ${item.origin}</small></div></div><p>${item.description}</p><dl>${equipmentDetailRows(item)}<div><dt>当前装备</dt><dd>${current?.name ?? "无"}</dd></div><div><dt>相对核心增益</dt><dd class="${difference >= 0 ? "stat-positive" : "stat-negative"}">${difference >= 0 ? "+" : ""}${Math.round(difference * 100)}%</dd></div><div><dt>适配</dt><dd>${compatibility}</dd></div><div><dt>当前持有</dt><dd>×${this.profile.inventory[item.id] ?? 0}</dd></div></dl><div class="armory-price">${unlocked ? this.priceMarkup(item) : `<span><i class="fa-solid fa-flask"></i>${item.researchCost} 研发资料</span>`}</div><button class="armory-action" type="button" ${unlocked && !affordable ? "disabled" : ""}>${unlocked ? affordable ? "采购组件" : "资源不足" : this.profile.researchPoints >= item.researchCost ? "研发解锁" : "研发资料不足"}</button>`;
+    this.decorateEquipmentDetail(this.armoryDetail, item);
     const action = this.armoryDetail.querySelector<HTMLButtonElement>(".armory-action");
     if (!action) return;
     action.disabled = action.disabled || (!unlocked && this.profile.researchPoints < item.researchCost);
@@ -396,7 +407,7 @@ export class GameMenus {
   private resultMarkup(result: SupplyDrawResult): string {
     if (result.kind === "material") return `<span class="draw-result rarity-common"><i class="fa-solid fa-cubes"></i><b>${result.material === "steel" ? "钢材" : "零件"}</b><small>+${result.amount}</small></span>`;
     const item = result.itemId ? EQUIPMENT_BY_ID[result.itemId] : undefined;
-    return item ? `<span class="draw-result rarity-${item.rarity}"><i class="${CATEGORY_META[item.category].icon}"></i><b>${item.name}</b><small>${item.origin}</small></span>` : "";
+    return item ? `<span class="draw-result rarity-${item.rarity}">${equipmentArtworkMarkup(item, "result")}<b>${item.name}</b><small>${item.origin}</small></span>` : "";
   }
 
   private draw(count: 1 | 10): void {
@@ -417,6 +428,7 @@ export class GameMenus {
       const quantity = this.profile.inventory[item.id] ?? 0;
       return `<button class="warehouse-item rarity-${item.rarity}${installed ? " installed" : ""}" data-warehouse-item="${item.id}" type="button"><i class="${CATEGORY_META[item.category].icon}"></i><span>${item.name}</span><small>${item.origin}</small><b>×${quantity}</b><em>${installed ? `已安装 ×${installed}` : quantity > 1 ? "有重复件" : "在库"}</em></button>`;
     }).join("") || '<p class="empty-inventory">该分类暂无组件</p>';
+    this.decorateEquipmentCards(this.warehouseGrid, "[data-warehouse-item]", "warehouseItem");
     for (const button of this.warehouseGrid.querySelectorAll<HTMLButtonElement>("[data-warehouse-item]")) {
       button.addEventListener("click", () => { this.selectedWarehouseItemId = button.dataset.warehouseItem; this.renderWarehouse(); });
     }
@@ -431,6 +443,7 @@ export class GameMenus {
     const current = currentId ? EQUIPMENT_BY_ID[currentId] : undefined;
     const difference = item.bonus - (current?.bonus ?? 0);
     this.warehouseDetail.innerHTML = `<div class="detail-heading rarity-${item.rarity}"><i class="${CATEGORY_META[item.category].icon}"></i><div><b>${item.name}</b><small>${CATEGORY_META[item.category].label} · ${item.origin}</small></div></div><p>${item.description}</p><dl>${equipmentDetailRows(item)}<div><dt>当前装备</dt><dd>${current?.name ?? "无"}</dd></div><div><dt>相对核心增益</dt><dd class="${difference >= 0 ? "stat-positive" : "stat-negative"}">${difference >= 0 ? "+" : ""}${Math.round(difference * 100)}%</dd></div><div><dt>持有 / 已安装</dt><dd>${quantity} / ${installed}</dd></div><div><dt>可处理</dt><dd>${canRecycle ? disposable : 0}</dd></div></dl><div class="warehouse-actions"><button class="warehouse-sell" type="button" ${canRecycle ? "" : "disabled"}>出售 1 件 · +${item.sellCredits} 银币</button><button class="warehouse-salvage" type="button" ${canRecycle ? "" : "disabled"}>拆解 1 件 · +${item.salvageParts} 零件</button></div><small class="warehouse-protection">${canRecycle ? "只处理未安装的副本。" : installed ? "舰队预设中的副本已安装，无法处理。" : "最后一套基础组件受到保护。"}</small>`;
+    this.decorateEquipmentDetail(this.warehouseDetail, item);
     const transact = (mode: "sell" | "salvage"): void => {
       const result = mode === "sell"
         ? sellComponent(this.profile, item.id)
@@ -448,14 +461,55 @@ export class GameMenus {
     const owned = EQUIPMENT_CATALOG.filter((item) => (this.profile.inventory[item.id] ?? 0) > 0 && (this.activeCategory === "all" || item.category === this.activeCategory));
     if (!this.selectedItemId || !owned.some((item) => item.id === this.selectedItemId)) this.selectedItemId = owned[0]?.id;
     this.inventoryGrid.innerHTML = owned.map((item) => { const installed = this.profile.loadout[item.category] === item.id; return `<button class="inventory-item rarity-${item.rarity}${installed ? " installed" : ""}" data-item="${item.id}" type="button"><i class="${CATEGORY_META[item.category].icon}"></i><span>${item.name}</span><small>${CATEGORY_META[item.category].label} · ${item.origin} · ×${this.profile.inventory[item.id]}</small></button>`; }).join("") || '<p class="empty-inventory">该分类暂无组件</p>';
+    this.decorateEquipmentCards(this.inventoryGrid, "[data-item]", "item");
     for (const button of this.inventoryGrid.querySelectorAll<HTMLButtonElement>("[data-item]")) button.addEventListener("click", () => { this.selectedItemId = button.dataset.item; this.renderDock(); });
     const item = this.selectedItemId ? EQUIPMENT_BY_ID[this.selectedItemId] : undefined;
+    this.dockPreview.previewEquipment(item);
+    const previewStatus = this.startOverlay.querySelector<HTMLElement>(".dock-preview-status");
+    if (!item && previewStatus) previewStatus.textContent = "\u9009\u62e9\u7ec4\u4ef6\u5373\u53ef\u4e34\u65f6\u9884\u89c8";
+
     if (!item) { this.componentDetail.innerHTML = "<p>选择组件查看详情</p>"; return; }
     const compatible = isEquipmentCompatible(item, this.profile.shipClassId);
     const slots = this.profile.slotLoadoutsByShipClass[this.profile.shipClassId][item.category];
     const filled = slots.filter(Boolean).length;
+    const installed = slots.includes(item.id);
+    if (previewStatus) {
+      const state = installed ? "\u5f53\u524d\u5df2\u5b89\u88c5" : compatible ? "\u5019\u9009\u88c5\u914d\u9884\u89c8" : "\u4e0d\u517c\u5bb9\u68c0\u89c6\u9884\u89c8";
+      previewStatus.textContent = `${state} \u00b7 ${item.name}`;
+      previewStatus.dataset.state = compatible ? installed ? "installed" : "candidate" : "incompatible";
+    }
     this.componentDetail.innerHTML = `<div class="detail-heading rarity-${item.rarity}"><i class="${CATEGORY_META[item.category].icon}"></i><div><b>${item.name}</b><small>${CATEGORY_META[item.category].label} · ${item.origin}</small></div></div><p>${item.description}</p><dl>${equipmentDetailRows(item)}<div><dt>适配</dt><dd>${compatible ? SHIP_CLASSES[this.profile.shipClassId].name : "当前舰级不可用"}</dd></div><div><dt>槽位占用</dt><dd>${filled}/${slots.length}</dd></div></dl><button class="equip-selected" type="button" ${!compatible ? "disabled" : ""}>${compatible ? filled < slots.length ? "安装到空槽" : "替换首个槽位" : "该舰级不可安装"}</button>`;
+    this.decorateEquipmentDetail(this.componentDetail, item);
     this.componentDetail.querySelector<HTMLButtonElement>(".equip-selected")?.addEventListener("click", () => { this.profile = equipComponent(this.profile, item.id); this.emitProfile(); });
+  }
+
+  private decorateEquipmentCards(
+    root: HTMLElement,
+    selector: string,
+    dataKey: "armoryItem" | "warehouseItem" | "item",
+  ): void {
+    for (const card of root.querySelectorAll<HTMLElement>(selector)) {
+      const id = card.dataset[dataKey];
+      const item = id ? EQUIPMENT_BY_ID[id] : undefined;
+      if (item && dataKey === "item") {
+        const slots = this.profile.slotLoadoutsByShipClass[this.profile.shipClassId][item.category];
+        card.classList.toggle("installed", slots.includes(item.id));
+      }
+      const icon = card.querySelector(":scope > i");
+      if (!item || !icon) continue;
+      icon.insertAdjacentHTML("afterend", equipmentArtworkMarkup(item));
+      icon.remove();
+    }
+  }
+
+  private decorateEquipmentDetail(
+    root: HTMLElement,
+    item: EquipmentDefinition,
+  ): void {
+    const icon = root.querySelector(".detail-heading > i");
+    if (!icon) return;
+    icon.insertAdjacentHTML("afterend", equipmentArtworkMarkup(item, "detail"));
+    icon.remove();
   }
 
   private applyLocale(): void {

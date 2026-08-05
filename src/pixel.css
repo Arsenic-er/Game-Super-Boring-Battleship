@@ -261,3 +261,56 @@ button:active { transform: translate(1px,1px); box-shadow: none; }
   .armory-grid, .warehouse-grid { grid-template-columns: repeat(4, minmax(0, 1fr)); }
   .armory-item, .warehouse-item { min-height: 98px; }
 }
+/* 0.7.5 ? individual historical component art and live dock preview */
+.equipment-art {
+  display: block;
+  box-sizing: border-box;
+  width: 100%;
+  object-fit: contain;
+  image-rendering: pixelated;
+  border: 1px solid rgba(112, 169, 173, .36);
+  background: #071b22;
+  box-shadow: inset 0 0 0 1px rgba(213, 231, 221, .04);
+}
+.equipment-art-card { height: 54px; margin-bottom: 6px; }
+.equipment-art-detail { width: 96px; height: 64px; flex: 0 0 96px; }
+.equipment-art-result { width: 58px; height: 38px; }
+.armory-item, .warehouse-item {
+  grid-template-rows: 54px minmax(30px, auto) auto auto;
+  min-height: 174px;
+}
+.inventory-item {
+  grid-template-rows: 48px minmax(24px, auto) auto;
+  min-height: 132px;
+}
+.inventory-item .equipment-art-card { height: 48px; margin-bottom: 4px; }
+.detail-heading > .equipment-art { align-self: stretch; }
+.dock-preview-status {
+  position: absolute;
+  z-index: 3;
+  top: 12px;
+  left: 50%;
+  max-width: calc(100% - 36px);
+  padding: 8px 12px;
+  overflow: hidden;
+  color: #b7d8d2;
+  border: 1px solid #4a858b;
+  background: rgba(5, 27, 34, .9);
+  box-shadow: 3px 3px 0 rgba(0, 0, 0, .45);
+  font-size: 9px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  pointer-events: none;
+  transform: translateX(-50%);
+}
+.dock-preview-status[data-state="installed"] { color: #d9c47f; border-color: #8f7d48; }
+.dock-preview-status[data-state="candidate"] { color: #9ce1d1; border-color: #5bb2ac; }
+.dock-preview-status[data-state="incompatible"] { color: #e79a83; border-color: #925145; }
+
+@media (max-height: 800px) {
+  .armory-item, .warehouse-item { min-height: 126px; }
+  .armory-item .equipment-art-card, .warehouse-item .equipment-art-card { height: 36px; margin-bottom: 3px; }
+  .inventory-item { min-height: 78px; grid-template-rows: 32px auto auto; }
+  .inventory-item .equipment-art-card { height: 32px; }
+  .equipment-art-detail { width: 70px; height: 46px; flex-basis: 70px; }
+}

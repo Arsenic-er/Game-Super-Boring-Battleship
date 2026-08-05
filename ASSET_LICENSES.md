@@ -38,3 +38,12 @@ Future imported art must record its author, original URL, license and modificati
 - Purpose: low-cost transparent surface wake layered above detected underwater torpedoes.
 - Prompt summary: a top-down WWII naval pixel-art torpedo wake with a narrow foamy head and tapered turbulent trail, isolated on a flat chroma-key background; no torpedo body, text, logos or third-party artwork.
 - Third-party source files: none.
+
+## `public/assets/equipment/*.svg`
+
+- Origin: original vector pixel art generated procedurally for Grey Sea Action by `scripts/generate-equipment-art.mjs`.
+- Added: 2026-08-06.
+- Purpose: 32 independent offline thumbnails for every historical armament, machinery, magazine and steering component in the Armory, Warehouse and Dockyard.
+- Visual basis: simplified silhouettes of each named historical component family; geometry, tube or barrel count, layout and model code vary per item.
+- Third-party source files: none.
+- License: distributed with the game under the repository license.

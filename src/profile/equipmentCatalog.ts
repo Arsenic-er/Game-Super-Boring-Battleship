@@ -21,6 +21,7 @@ export interface EquipmentDefinition {
   origin: string;
   description: string;
   compatibleHulls: HullId[];
+  artwork: string;
   mainGunId?: MainGunId;
   torpedoId?: TorpedoId;
   secondaryGunId?: SecondaryGunId;
@@ -283,6 +284,7 @@ export const EQUIPMENT_CATALOG: EquipmentDefinition[] = categories.flatMap((cate
       name: historicalModels[category][rarity].name,
       origin: historicalModels[category][rarity].origin,
       description: historicalModels[category][rarity].description,
+      artwork: `assets/equipment/${category}-${rarity}.svg`,
       compatibleHulls: category === "sideGun"
         ? ["lightCruiser", "battleship"]
         : category === "depthCharge"

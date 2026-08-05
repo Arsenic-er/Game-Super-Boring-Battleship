@@ -648,23 +648,30 @@ export function createTorpedoLauncherVisual(
   );
   root.parent = parent;
   const heavy = definition.caliberMm >= 600;
+  const tubeCount: Record<TorpedoDefinition["id"], number> = {
+    "mk-ix": 2,
+    "g7a-t1": 3,
+    "mk-15-mod-3": 5,
+    "type-93-mod-3": 4,
+  };
+  const tubes = tubeCount[definition.id];
   const base = CreateCylinder(`${name}-torpedo-base`, {
     height: 1.05,
-    diameter: heavy ? 4.9 : 4.5,
+    diameter: 3.7 + tubes * (heavy ? 0.62 : 0.52),
     tessellation: 10,
   }, scene);
   base.material = palette.dark;
   base.parent = root;
   const diameter = heavy ? 0.92 : 0.82;
   const spacing = heavy ? 1.22 : 1.08;
-  for (const side of [-1, 1]) {
-    const tube = CreateCylinder(`${name}-torpedo-tube-${side}`, {
+  for (let index = 0; index < tubes; index += 1) {
+    const tube = CreateCylinder(`${name}-torpedo-tube-${index}`, {
       height: 7.2,
       diameter,
       tessellation: 8,
     }, scene);
     tube.rotation.x = Math.PI / 2;
-    tube.position.set(side * spacing / 2, 1.05, 0.25);
+    tube.position.set((index - (tubes - 1) / 2) * spacing, 1.05, 0.25);
     tube.material = palette.accent;
     tube.parent = root;
   }
