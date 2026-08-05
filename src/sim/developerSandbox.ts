@@ -27,6 +27,7 @@ import type {
   AirSquadronState,
   BattleState,
   DeveloperShipOverrides,
+  InstalledEquipmentIds,
   ShipPerformanceModifiers,
   ShipState,
   Team,
@@ -56,6 +57,7 @@ export interface DeveloperLoadout {
   antiAirEfficiencyMultiplier?: number;
   performance?: ShipPerformanceModifiers;
   equipmentSlots?: SlotLoadout | null;
+  installedEquipment?: InstalledEquipmentIds;
 }
 
 const equipmentCategories = Object.keys(CATEGORY_META) as EquipmentCategory[];
@@ -112,6 +114,26 @@ export function reconfigureDeveloperShip(
         ? structuredClone(loadout.equipmentSlots)
         : current.developer?.equipmentSlots,
   };
+  const mainGunMounts = Math.max(1, Math.min(8, Math.floor(loadout.mainGunMounts)));
+  const torpedoLauncherMounts = Math.max(0, Math.min(8, Math.floor(loadout.torpedoLauncherMounts)));
+  const secondaryGunIds = loadout.secondaryGunIds ?? Array.from(
+    { length: Math.max(0, Math.min(12, Math.floor(loadout.secondaryGunMounts))) },
+    () => loadout.secondaryGunId,
+  );
+  const mainGunEquipmentId = EQUIPMENT_CATALOG.find((item) =>
+    item.category === "mainGun" && item.mainGunId === loadout.mainGunId)?.id ?? "mainGun-common";
+  const torpedoEquipmentId = EQUIPMENT_CATALOG.find((item) =>
+    item.category === "torpedo" && item.torpedoId === loadout.torpedoId)?.id ?? "torpedo-common";
+  const installedEquipment = loadout.installedEquipment ?? {
+    mainGun: Array.from({ length: mainGunMounts }, () => mainGunEquipmentId),
+    torpedo: Array.from({ length: torpedoLauncherMounts }, () => torpedoEquipmentId),
+    sideGun: secondaryGunIds.map((id) => id),
+    antiAir: current.installedEquipment.antiAir.slice(),
+    depthCharge: current.installedEquipment.depthCharge.slice(),
+    magazine: current.installedEquipment.magazine.slice(),
+    engine: current.installedEquipment.engine.slice(),
+    steering: current.installedEquipment.steering.slice(),
+  };
   const replacement = createDeveloperShipState({
     id: current.id,
     team: current.team,
@@ -120,15 +142,13 @@ export function reconfigureDeveloperShip(
     heading: current.heading,
     mainGunId: loadout.mainGunId,
     torpedoId: loadout.torpedoId,
-    mainGunMounts: Math.max(1, Math.min(8, Math.floor(loadout.mainGunMounts))),
-    torpedoLauncherMounts: Math.max(0, Math.min(8, Math.floor(loadout.torpedoLauncherMounts))),
+    mainGunMounts,
+    torpedoLauncherMounts,
     depthChargeMounts: Math.max(0, Math.min(8, Math.floor(loadout.depthChargeMounts))),
     antiAirMounts: Math.max(0, Math.min(16, Math.floor(loadout.antiAirMounts))),
     antiAirEfficiencyMultiplier: loadout.antiAirEfficiencyMultiplier ?? current.antiAirEfficiencyMultiplier,
-    secondaryGunIds: loadout.secondaryGunIds ?? Array.from(
-      { length: Math.max(0, Math.min(12, Math.floor(loadout.secondaryGunMounts))) },
-      () => loadout.secondaryGunId,
-    ),
+    secondaryGunIds,
+    installedEquipment,
     performance: { ...(loadout.performance ?? current.performance) },
     developer: overrides,
     developerSpawned: current.developerSpawned,
@@ -255,6 +275,7 @@ export function applyDeveloperEquipmentLoadout(
       magazineRiskMultiplier: runtime.magazineRiskMultiplier,
     },
     equipmentSlots: slots,
+    installedEquipment: runtime.installedEquipment,
   });
 }
 

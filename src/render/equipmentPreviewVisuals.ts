@@ -35,96 +35,121 @@ function createBarrel(
   barrel.parent = parent;
 }
 
+export function createSideGunMountVisual(
+  scene: Scene,
+  parent: TransformNode,
+  name: string,
+  rarity: EquipmentRarity,
+  palette: PixelShipPalette,
+): TransformNode {
+  const variant = rarityIndex[rarity];
+  const barrelCount = [2, 2, 2, 3][variant];
+  const caliberScale = [0.82, 1, 1.12, 1.16][variant];
+  const mount = new TransformNode(name, scene);
+  mount.parent = parent;
+  const base = CreateCylinder(`${name}-base`, {
+    height: 0.8 * caliberScale,
+    diameter: 2.4 * caliberScale,
+    tessellation: 8,
+  }, scene);
+  base.material = palette.dark;
+  base.parent = mount;
+  const house = CreateBox(`${name}-house`, {
+    width: 2.3 * caliberScale,
+    height: 1.15 * caliberScale,
+    depth: 2.1 * caliberScale,
+  }, scene);
+  house.position.y = 0.72 * caliberScale;
+  house.material = palette.structure;
+  house.parent = mount;
+  for (let index = 0; index < barrelCount; index += 1) {
+    const offset = (index - (barrelCount - 1) / 2) * 0.48 * caliberScale;
+    createBarrel(scene, mount, `${name}-barrel-${index}`, offset, 0.95 * caliberScale, 0.65, 3.8 + variant * 0.45, 0.2 + variant * 0.025, palette.dark);
+  }
+  return mount;
+}
+
 function createSideGun(
   scene: Scene,
   root: TransformNode,
-  variant: number,
+  rarity: EquipmentRarity,
   palette: PixelShipPalette,
 ): void {
-  const barrelCount = [2, 2, 2, 3][variant];
-  const caliberScale = [0.82, 1, 1.12, 1.16][variant];
   for (const side of [-1, 1]) {
-    const mount = new TransformNode(`dock-side-gun-${side}`, scene);
+    const mount = createSideGunMountVisual(scene, root, `dock-side-gun-${side}`, rarity, palette);
     mount.position.set(side * 5.1, 6.8, 1.5);
     mount.rotation.y = side * Math.PI / 2;
-    mount.parent = root;
-    const base = CreateCylinder(`dock-side-base-${side}`, {
-      height: 0.8 * caliberScale,
-      diameter: 2.4 * caliberScale,
-      tessellation: 8,
-    }, scene);
-    base.material = palette.dark;
-    base.parent = mount;
-    const house = CreateBox(`dock-side-house-${side}`, {
-      width: 2.3 * caliberScale,
-      height: 1.15 * caliberScale,
-      depth: 2.1 * caliberScale,
-    }, scene);
-    house.position.y = 0.72 * caliberScale;
-    house.material = palette.structure;
-    house.parent = mount;
-    for (let index = 0; index < barrelCount; index += 1) {
-      const offset = (index - (barrelCount - 1) / 2) * 0.48 * caliberScale;
-      createBarrel(scene, mount, `dock-side-barrel-${side}-${index}`, offset, 0.95 * caliberScale, 0.65, 3.8 + variant * 0.45, 0.2 + variant * 0.025, palette.dark);
-    }
   }
+}
+
+export function createAntiAirMountVisual(
+  scene: Scene,
+  parent: TransformNode,
+  name: string,
+  rarity: EquipmentRarity,
+  palette: PixelShipPalette,
+): TransformNode {
+  const variant = rarityIndex[rarity];
+  const barrelCount = [1, 8, 2, 4][variant];
+  const mount = new TransformNode(name, scene);
+  mount.parent = parent;
+  const base = CreateCylinder(`${name}-base`, {
+    height: 0.55,
+    diameter: 1.4 + variant * 0.18,
+    tessellation: 8,
+  }, scene);
+  base.material = palette.dark;
+  base.parent = mount;
+  for (let index = 0; index < barrelCount; index += 1) {
+    const columns = variant === 1 ? 4 : Math.min(2, barrelCount);
+    const row = Math.floor(index / columns);
+    const column = index % columns;
+    createBarrel(scene, mount, `${name}-barrel-${index}`, (column - (columns - 1) / 2) * 0.24, 0.65 + row * 0.22, 0.2, 2.3 + variant * 0.22, 0.09, palette.accent);
+  }
+  if (variant === 3) {
+    const director = CreateCylinder(`${name}-director`, { height: 0.75, diameter: 0.9, tessellation: 8 }, scene);
+    director.position.set(1.1, 0.8, -0.5);
+    director.material = palette.structure;
+    director.parent = mount;
+  }
+  return mount;
 }
 
 function createAntiAir(
   scene: Scene,
   root: TransformNode,
-  variant: number,
+  rarity: EquipmentRarity,
   palette: PixelShipPalette,
 ): void {
-  const barrelCount = [1, 8, 2, 4][variant];
   for (const [mountIndex, z] of [-7, 8].entries()) {
-    const mount = new TransformNode(`dock-aa-${mountIndex}`, scene);
+    const mount = createAntiAirMountVisual(scene, root, `dock-aa-${mountIndex}`, rarity, palette);
     mount.position.set(mountIndex ? 4.1 : -4.1, 8.2, z);
     mount.rotation.y = mountIndex ? -0.45 : 0.45;
-    mount.parent = root;
-    const base = CreateCylinder(`dock-aa-base-${mountIndex}`, {
-      height: 0.55,
-      diameter: 1.4 + variant * 0.18,
-      tessellation: 8,
-    }, scene);
-    base.material = palette.dark;
-    base.parent = mount;
-    for (let index = 0; index < barrelCount; index += 1) {
-      const columns = variant === 1 ? 4 : Math.min(2, barrelCount);
-      const row = Math.floor(index / columns);
-      const column = index % columns;
-      createBarrel(scene, mount, `dock-aa-barrel-${mountIndex}-${index}`, (column - (columns - 1) / 2) * 0.24, 0.65 + row * 0.22, 0.2, 2.3 + variant * 0.22, 0.09, palette.accent);
-    }
-    if (variant === 3) {
-      const director = CreateCylinder(`dock-aa-director-${mountIndex}`, { height: 0.75, diameter: 0.9, tessellation: 8 }, scene);
-      director.position.set(1.1, 0.8, -0.5);
-      director.material = palette.structure;
-      director.parent = mount;
-    }
   }
 }
 
-function createDepthCharge(
+export function createDepthChargeMountVisual(
   scene: Scene,
-  root: TransformNode,
-  variant: number,
+  parent: TransformNode,
+  name: string,
+  rarity: EquipmentRarity,
   palette: PixelShipPalette,
-): void {
+): TransformNode {
+  const variant = rarityIndex[rarity];
   const forwardThrower = variant === 3;
-  const mount = new TransformNode("dock-depth-charge-mount", scene);
-  mount.position.set(0, 5.4, forwardThrower ? 27 : -43);
-  mount.parent = root;
+  const mount = new TransformNode(name, scene);
+  mount.parent = parent;
   if (forwardThrower) {
     for (let index = 0; index < 12; index += 1) {
       const row = Math.floor(index / 4);
       const column = index % 4;
-      createBarrel(scene, mount, `dock-hedgehog-${index}`, (column - 1.5) * 0.58, row * 0.35, 0, 2.2, 0.16, palette.accent);
+      createBarrel(scene, mount, `${name}-hedgehog-${index}`, (column - 1.5) * 0.58, row * 0.35, 0, 2.2, 0.16, palette.accent);
     }
-    return;
+    return mount;
   }
   const chargeCount = 3 + variant * 2;
   for (let index = 0; index < chargeCount; index += 1) {
-    const charge = CreateCylinder(`dock-depth-charge-${index}`, {
+    const charge = CreateCylinder(`${name}-charge-${index}`, {
       height: 1.15,
       diameter: 0.72 + variant * 0.06,
       tessellation: 8,
@@ -135,8 +160,19 @@ function createDepthCharge(
     charge.parent = mount;
   }
   if (variant > 0) {
-    for (const side of [-1, 1]) createBarrel(scene, mount, `dock-depth-projector-${side}`, side * 2.1, 0.7, 0, 2.5 + variant * 0.4, 0.22, palette.dark);
+    for (const side of [-1, 1]) createBarrel(scene, mount, `${name}-projector-${side}`, side * 2.1, 0.7, 0, 2.5 + variant * 0.4, 0.22, palette.dark);
   }
+  return mount;
+}
+
+function createDepthCharge(
+  scene: Scene,
+  root: TransformNode,
+  rarity: EquipmentRarity,
+  palette: PixelShipPalette,
+): void {
+  const mount = createDepthChargeMountVisual(scene, root, "dock-depth-charge-mount", rarity, palette);
+  mount.position.set(0, 5.4, rarity === "redGold" ? 27 : -43);
 }
 
 function createInternalModule(
@@ -185,9 +221,9 @@ export function createDockEquipmentPreviewVisual(
   const root = new TransformNode(`dock-equipment-preview-${item.id}`, scene);
   root.parent = parent;
   const variant = rarityIndex[item.rarity];
-  if (item.category === "sideGun") createSideGun(scene, root, variant, palette);
-  else if (item.category === "antiAir") createAntiAir(scene, root, variant, palette);
-  else if (item.category === "depthCharge") createDepthCharge(scene, root, variant, palette);
+  if (item.category === "sideGun") createSideGun(scene, root, item.rarity, palette);
+  else if (item.category === "antiAir") createAntiAir(scene, root, item.rarity, palette);
+  else if (item.category === "depthCharge") createDepthCharge(scene, root, item.rarity, palette);
   else if (item.category === "magazine" || item.category === "engine" || item.category === "steering") {
     createInternalModule(scene, root, item, variant, moduleMaterial, palette);
   }

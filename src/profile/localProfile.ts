@@ -7,7 +7,7 @@ import type { ShipClassId } from "../ships/classes";
 import { DEFAULT_TORPEDO_ID } from "../ships/torpedoes";
 import type { TorpedoId } from "../ships/torpedoes";
 import type { SecondaryGunId } from "../ships/secondaryGuns";
-import type { BattleStatus } from "../sim/types";
+import type { BattleStatus, InstalledEquipmentIds } from "../sim/types";
 import {
   CATEGORY_META,
   EQUIPMENT_BY_ID,
@@ -77,6 +77,7 @@ export interface BattleLoadout {
   antiAirMounts: number;
   antiAirEfficiencyMultiplier: number;
   secondaryGunIds: SecondaryGunId[];
+  installedEquipment: InstalledEquipmentIds;
 }
 
 const STORAGE_KEY = "grey-sea-local-profile-v5";
@@ -465,6 +466,16 @@ export function battleLoadoutFromSlots(
       const definition = id ? EQUIPMENT_BY_ID[id] : undefined;
       return definition?.secondaryGunId ? [definition.secondaryGunId] : [];
     }),
+    installedEquipment: {
+      mainGun: slots.mainGun.slice(),
+      torpedo: slots.torpedo.slice(),
+      antiAir: slots.antiAir.slice(),
+      sideGun: slots.sideGun.slice(),
+      depthCharge: slots.depthCharge.slice(),
+      magazine: slots.magazine.slice(),
+      engine: slots.engine.slice(),
+      steering: slots.steering.slice(),
+    },
   };
 }
 

@@ -276,6 +276,18 @@ export interface DeveloperShipOverrides {
   equipmentSlots?: Partial<Record<string, (string | null)[]>>;
 }
 
+/** Stable installed model identities; gameplay fields below remain the hot-path derivatives. */
+export interface InstalledEquipmentIds {
+  mainGun: (string | null)[];
+  torpedo: (string | null)[];
+  antiAir: (string | null)[];
+  sideGun: (string | null)[];
+  depthCharge: (string | null)[];
+  magazine: (string | null)[];
+  engine: (string | null)[];
+  steering: (string | null)[];
+}
+
 export interface ShipState {
   id: string;
   team: Team;
@@ -304,6 +316,7 @@ export interface ShipState {
   depthChargeMounts: number;
   antiAirMounts: number;
   antiAirEfficiencyMultiplier: number;
+  installedEquipment: InstalledEquipmentIds;
   secondaryMounts: SecondaryMountState[];
   secondaryBatteryStatus: SecondaryBatteryStatus;
   secondaryTargetId?: string;

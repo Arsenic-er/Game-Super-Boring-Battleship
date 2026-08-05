@@ -48,6 +48,10 @@ import {
 } from "./shipGeometry";
 import { createPixelShipPalette } from "./shipMaterials";
 import {
+  combatEquipmentVisualPlan,
+  createCombatEquipmentVisual,
+} from "./combatEquipmentVisuals";
+import {
   applyWaterAtmosphere,
   createDeepWaterMaterial,
   createPixelOceanSurface,
@@ -100,7 +104,7 @@ interface ShipVisual {
   gunCradles: TransformNode[];
   gunBarrels: Mesh[];
   gunBarrelRestZ: number[];
-  torpedoLauncher: TransformNode;
+  torpedoLaunchers: TransformNode[];
   secondaryTurrets: TransformNode[];
   rudder: TransformNode;
   propellers: TransformNode[];
@@ -108,6 +112,7 @@ interface ShipVisual {
   smokePuffs: Mesh[];
   fireFlames: Mesh[];
   collider: Mesh;
+  ownedMaterials: StandardMaterial[];
 }
 
 interface ProjectileVisual {
@@ -151,7 +156,10 @@ const shipArmamentSignature = (ship: ShipState): string => [
   ship.mainGunMounts,
   ship.torpedoId,
   ship.torpedoLauncherMounts,
-  ...ship.secondaryMounts.map((mount) => mount.definitionId),
+  ship.installedEquipment?.torpedo.join(",") ?? "",
+  ship.installedEquipment?.sideGun.join(",") ?? "",
+  ship.installedEquipment?.antiAir.join(",") ?? "",
+  ship.installedEquipment?.depthCharge.join(",") ?? "",
 ].join(":");
 
 const wrapAngle = (angle: number): number => {
@@ -541,8 +549,6 @@ export class GameView implements AimProvider {
       ? createDestroyerV3Superstructure(this.scene, root, ship.id, palette)
       : createNavalMotionParts(this.scene, root, ship.id, palette);
     createHullClassSilhouette(this.scene, root, ship.id, ship.hullId, palette, hullDefinition.visualVariant);
-    const bodyMeshes = root.getChildMeshes(false)
-      .filter((mesh): mesh is Mesh => mesh instanceof Mesh);
     const gunDefinition = effectiveMainBattery(ship);
     const guns = gunDefinition.mounts.map((mount, index) => {
       const gun = createMainGunVisual(this.scene, root, `${ship.id}-mount-${index}`, {
@@ -553,43 +559,28 @@ export class GameView implements AimProvider {
       gun.root.position.set(hardpoint.x, hardpoint.y, hardpoint.z);
       return gun;
     });
-    const torpedoDefinition = getTorpedo(ship.torpedoId);
-    const torpedo = createTorpedoLauncherVisual(
+    const equipmentPlan = combatEquipmentVisualPlan(ship);
+    const torpedoLaunchers = equipmentPlan.torpedoDefinitionIds.map((definitionId, index, definitions) => {
+      const torpedo = createTorpedoLauncherVisual(
+        this.scene,
+        root,
+        `${ship.id}-launcher-${index}`,
+        getTorpedo(definitionId),
+        palette,
+      );
+      torpedo.root.position.z += (index - (definitions.length - 1) / 2) * 7;
+      return torpedo.root;
+    });
+    const equipment = createCombatEquipmentVisual(
       this.scene,
       root,
-      ship.id,
-      torpedoDefinition,
+      ship,
       palette,
+      hullDefinition.renderScale.z,
     );
-    torpedo.root.setEnabled(ship.torpedoLauncherMounts > 0);
-
-    const secondaryTurrets = ship.secondaryMounts.map((mount, index) => {
-      const turret = new TransformNode(`${ship.id}-secondary-${index}`, this.scene);
-      turret.position.set(
-        mount.side * 4.35,
-        8.2,
-        mount.longitudinalOffset / hullDefinition.renderScale.z,
-      );
-      turret.parent = root;
-      const base = CreateCylinder(`${ship.id}-secondary-base-${index}`, {
-        height: 0.65,
-        diameter: 1.8,
-        tessellation: 8,
-      }, this.scene);
-      base.material = palette.dark;
-      base.parent = turret;
-      for (const barrelSide of [-1, 1]) {
-        const barrel = CreateBox(`${ship.id}-secondary-barrel-${index}-${barrelSide}`, {
-          width: 0.22,
-          height: 0.22,
-          depth: 3.4,
-        }, this.scene);
-        barrel.position.set(barrelSide * 0.24, 0.55, 1.65);
-        barrel.material = palette.accent;
-        barrel.parent = turret;
-      }
-      return turret;
-    });
+    const secondaryTurrets = equipment.secondaryTurrets;
+    const bodyMeshes = root.getChildMeshes(false)
+      .filter((mesh): mesh is Mesh => mesh instanceof Mesh);
 
     const wakeMaterial = this.material(`${ship.id}-wake-material`, new Color3(0.72, 0.86, 0.88));
     wakeMaterial.alpha = 0.3;
@@ -667,7 +658,7 @@ export class GameView implements AimProvider {
       gunCradles: guns.map((gun) => gun.cradle),
       gunBarrels: guns.flatMap((gun) => gun.barrels),
       gunBarrelRestZ: guns.flatMap((gun) => gun.barrelRestZ),
-      torpedoLauncher: torpedo.root,
+      torpedoLaunchers,
       secondaryTurrets,
       rudder: motion.rudder,
       propellers: motion.propellers,
@@ -675,7 +666,13 @@ export class GameView implements AimProvider {
       smokePuffs,
       fireFlames,
       collider,
+      ownedMaterials: [...Object.values(palette), wakeMaterial, colliderMaterial],
     };
+  }
+
+  private disposeShipVisual(visual: ShipVisual): void {
+    visual.root.dispose(false, false);
+    for (const material of new Set(visual.ownedMaterials)) material.dispose(false, true);
   }
 
   aimPoint(ship: ShipState, range: number): Vec3 {
@@ -735,7 +732,7 @@ export class GameView implements AimProvider {
     const activeIds = new Set(state.ships.map(({ id }) => id));
     for (const [id, visual] of this.ships) {
       if (activeIds.has(id)) continue;
-      visual.root.dispose(false, true);
+      this.disposeShipVisual(visual);
       this.ships.delete(id);
     }
     const developerMode = omniscient || Boolean(
@@ -747,7 +744,7 @@ export class GameView implements AimProvider {
         visual.shipClassId !== ship.shipClassId
         || visual.armamentSignature !== shipArmamentSignature(ship)
       )) {
-        visual.root.dispose(false, true);
+        this.disposeShipVisual(visual);
         this.ships.delete(ship.id);
         visual = undefined;
       }
@@ -839,10 +836,12 @@ export class GameView implements AimProvider {
         barrel.position.z = (visual.gunBarrelRestZ[index] ?? barrel.position.z)
           - Math.max(0, recoil) * 0.82;
       }
-      visual.torpedoLauncher.rotation.y = wrapAngle(
-        ship.torpedoLauncherHeading - ship.heading,
-      );
-      visual.torpedoLauncher.rotation.z = ship.modules.torpedoTubes.health <= 0 ? -0.16 : 0;
+      for (const launcher of visual.torpedoLaunchers) {
+        launcher.rotation.y = wrapAngle(
+          ship.torpedoLauncherHeading - ship.heading,
+        );
+        launcher.rotation.z = ship.modules.torpedoTubes.health <= 0 ? -0.16 : 0;
+      }
       for (const [index, turret] of visual.secondaryTurrets.entries()) {
         const mount = ship.secondaryMounts[index];
         if (mount) turret.rotation.y = wrapAngle(mount.heading - ship.heading);

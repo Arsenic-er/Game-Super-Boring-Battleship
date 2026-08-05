@@ -71,6 +71,7 @@ import type {
   ShipState,
   Team,
   Vec3,
+  InstalledEquipmentIds,
   ShipPerformanceModifiers,
   SensorContact,
   ShellPenetrationProfile,
@@ -233,6 +234,7 @@ function createShip(
   antiAirMounts = 0,
   antiAirEfficiencyMultiplier = 1,
   secondaryGunIds: readonly SecondaryGunId[] = [],
+  installedEquipment?: Readonly<InstalledEquipmentIds>,
 ): ShipState {
   const hullDefinition = getShipClass(shipClassId);
   const hullId = hullDefinition.hullId;
@@ -275,6 +277,25 @@ function createShip(
     depthChargeMounts: Math.max(0, depthChargeMounts),
     antiAirMounts: Math.max(0, antiAirMounts),
     antiAirEfficiencyMultiplier: Math.max(0, antiAirEfficiencyMultiplier),
+    installedEquipment: installedEquipment ? {
+      mainGun: installedEquipment.mainGun.slice(),
+      torpedo: installedEquipment.torpedo.slice(),
+      antiAir: installedEquipment.antiAir.slice(),
+      sideGun: installedEquipment.sideGun.slice(),
+      depthCharge: installedEquipment.depthCharge.slice(),
+      magazine: installedEquipment.magazine.slice(),
+      engine: installedEquipment.engine.slice(),
+      steering: installedEquipment.steering.slice(),
+    } : {
+      mainGun: Array.from({ length: Math.max(1, mainGunMounts) }, () => "mainGun-common"),
+      torpedo: Array.from({ length: Math.max(0, torpedoLauncherMounts) }, () => "torpedo-common"),
+      antiAir: Array.from({ length: Math.max(0, antiAirMounts) }, () => "antiAir-common"),
+      sideGun: secondaryGunIds.map((id) => id),
+      depthCharge: Array.from({ length: Math.max(0, depthChargeMounts) }, () => "depthCharge-common"),
+      magazine: ["magazine-common"],
+      engine: ["engine-common"],
+      steering: ["steering-common"],
+    },
     secondaryMounts: createSecondaryMounts(secondaryGunIds, heading, shipClassId),
     secondaryBatteryStatus: secondaryGunIds.length > 0 ? "searching" : "unavailable",
     secondaryAcquisitionSamples: 0,
@@ -326,6 +347,7 @@ export interface DeveloperShipStateOptions {
   antiAirMounts?: number;
   antiAirEfficiencyMultiplier?: number;
   secondaryGunIds?: SecondaryGunId[];
+  installedEquipment?: InstalledEquipmentIds;
   performance?: ShipPerformanceModifiers;
   developer?: ShipState["developer"];
   developerSpawned?: boolean;
@@ -358,6 +380,7 @@ export function createDeveloperShipState(options: DeveloperShipStateOptions): Sh
     Math.max(0, options.antiAirMounts ?? definition.starterSlots.antiAir),
     options.antiAirEfficiencyMultiplier ?? 1,
     secondaryGunIds,
+    options.installedEquipment,
   );
   ship.position.y = options.position.y;
   ship.previousPosition = { ...ship.position };
@@ -401,6 +424,7 @@ export function createInitialState(
     antiAirMounts?: number;
     antiAirEfficiencyMultiplier?: number;
     secondaryGunIds?: SecondaryGunId[];
+    installedEquipment?: InstalledEquipmentIds;
   }) | undefined;
   const mainGunMounts = armament?.mainGunMounts ?? 1;
   const torpedoLauncherMounts = armament?.torpedoLauncherMounts
@@ -427,7 +451,7 @@ export function createInitialState(
     reloadMultiplier: playerPerformance?.reloadMultiplier ?? 1,
     magazineRiskMultiplier: playerPerformance?.magazineRiskMultiplier ?? 1,
   }, playerShipClassId, mainGunMounts, torpedoLauncherMounts, depthChargeMounts,
-  antiAirMounts, antiAirEfficiencyMultiplier, secondaryGunIds);
+  antiAirMounts, antiAirEfficiencyMultiplier, secondaryGunIds, armament?.installedEquipment);
   const testTarget = createShip(
     "test-target",
     "enemy",
