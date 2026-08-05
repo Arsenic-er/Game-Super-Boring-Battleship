@@ -15,6 +15,7 @@ export interface AtollTerrainZone {
   rotation: number;
   heightMeters?: number;
   depthMeters?: number;
+  radialProfile?: readonly number[];
 }
 
 export interface BattleMapDefinition {
@@ -39,6 +40,51 @@ export interface TerrainContact {
 }
 
 const degrees = (value: number): number => value * Math.PI / 180;
+const COAST_NW = [1.12, 1.2, 1.08, .82, .55, .62, .9, 1.16, 1.24, 1.02, .78, .7, .88, 1.14, 1.08, .84, .68, .76, 1.04, 1.18, .96, .72, .86, 1.06] as const;
+const COAST_NE = [.92, 1.16, 1.25, 1.04, .74, .62, .7, .98, 1.2, 1.1, .86, .58, .66, .94, 1.18, 1.08, .8, .7, .9, 1.22, 1.14, .88, .72, .8] as const;
+const COAST_SW = [1.18, 1.02, .76, .58, .64, .92, 1.24, 1.12, .82, .6, .7, 1.04, 1.2, .98, .72, .54, .62, .94, 1.16, 1.08, .86, .68, .9, 1.22] as const;
+const COAST_SE = [.78, 1.04, 1.22, 1.1, .84, .6, .68, .96, 1.18, .98, .7, .56, .74, 1.08, 1.24, 1.02, .76, .66, .88, 1.14, 1.06, .82, .62, .7] as const;
+
+
+interface TerrainDerived {
+  cosine: number;
+  sine: number;
+  seed: number;
+  seedCosine: number;
+  seedSine: number;
+  maximumRadial: number;
+  baseBoundX: number;
+  baseBoundZ: number;
+}
+
+const TERRAIN_DERIVED = new WeakMap<object, TerrainDerived>();
+
+function terrainDerived(zone: Readonly<AtollTerrainZone>): TerrainDerived {
+  const cached = TERRAIN_DERIVED.get(zone);
+  if (cached) return cached;
+  let seedInteger = 0;
+  for (const character of zone.id) {
+    seedInteger = (seedInteger * 31 + character.charCodeAt(0)) >>> 0;
+  }
+  const seed = seedInteger / 4_294_967_296 * Math.PI * 2;
+  const cosine = Math.cos(zone.rotation);
+  const sine = Math.sin(zone.rotation);
+  const maximumRadial = zone.radialProfile
+    ? Math.max(...zone.radialProfile)
+    : zone.kind === "sandbar" ? 1.38 : zone.kind === "mountain" ? 1.31 : 1.26;
+  const derived = {
+    cosine,
+    sine,
+    seed,
+    seedCosine: Math.cos(seed),
+    seedSine: Math.sin(seed),
+    maximumRadial,
+    baseBoundX: Math.abs(cosine) * zone.radiusX + Math.abs(sine) * zone.radiusZ,
+    baseBoundZ: Math.abs(sine) * zone.radiusX + Math.abs(cosine) * zone.radiusZ,
+  };
+  TERRAIN_DERIVED.set(zone, derived);
+  return derived;
+}
 
 /**
  * One deterministic source for the 3D terrain, ship physics and both tactical maps.
@@ -46,14 +92,14 @@ const degrees = (value: number): number => value * Math.PI / 180;
  * remain deep-water deployment and manoeuvre lanes.
  */
 export const ATOLL_TERRAIN_ZONES: readonly AtollTerrainZone[] = [
-  { id: "lagoon-nw", kind: "shallow", x: -1_650, z: 1_700, radiusX: 1_180, radiusZ: 930, rotation: degrees(24), depthMeters: 9 },
-  { id: "mountain-nw", kind: "mountain", x: -1_680, z: 1_720, radiusX: 760, radiusZ: 570, rotation: degrees(24), heightMeters: 305 },
-  { id: "lagoon-ne", kind: "shallow", x: 1_650, z: 1_760, radiusX: 1_120, radiusZ: 900, rotation: degrees(-22), depthMeters: 9 },
-  { id: "mountain-ne", kind: "mountain", x: 1_680, z: 1_790, radiusX: 720, radiusZ: 560, rotation: degrees(-22), heightMeters: 340 },
-  { id: "lagoon-sw", kind: "shallow", x: -1_720, z: -1_670, radiusX: 1_150, radiusZ: 920, rotation: degrees(-22), depthMeters: 9 },
-  { id: "mountain-sw", kind: "mountain", x: -1_750, z: -1_690, radiusX: 740, radiusZ: 560, rotation: degrees(-22), heightMeters: 285 },
-  { id: "lagoon-se", kind: "shallow", x: 1_700, z: -1_730, radiusX: 1_130, radiusZ: 900, rotation: degrees(25), depthMeters: 9 },
-  { id: "mountain-se", kind: "mountain", x: 1_730, z: -1_760, radiusX: 730, radiusZ: 550, rotation: degrees(25), heightMeters: 325 },
+  { id: "lagoon-nw", kind: "shallow", x: -1_650, z: 1_700, radiusX: 1_180, radiusZ: 930, rotation: degrees(24), depthMeters: 9, radialProfile: COAST_NW },
+  { id: "mountain-nw", kind: "mountain", x: -1_680, z: 1_720, radiusX: 760, radiusZ: 570, rotation: degrees(24), heightMeters: 305, radialProfile: COAST_NW },
+  { id: "lagoon-ne", kind: "shallow", x: 1_650, z: 1_760, radiusX: 1_120, radiusZ: 900, rotation: degrees(-22), depthMeters: 9, radialProfile: COAST_NE },
+  { id: "mountain-ne", kind: "mountain", x: 1_680, z: 1_790, radiusX: 720, radiusZ: 560, rotation: degrees(-22), heightMeters: 340, radialProfile: COAST_NE },
+  { id: "lagoon-sw", kind: "shallow", x: -1_720, z: -1_670, radiusX: 1_150, radiusZ: 920, rotation: degrees(-22), depthMeters: 9, radialProfile: COAST_SW },
+  { id: "mountain-sw", kind: "mountain", x: -1_750, z: -1_690, radiusX: 740, radiusZ: 560, rotation: degrees(-22), heightMeters: 285, radialProfile: COAST_SW },
+  { id: "lagoon-se", kind: "shallow", x: 1_700, z: -1_730, radiusX: 1_130, radiusZ: 900, rotation: degrees(25), depthMeters: 9, radialProfile: COAST_SE },
+  { id: "mountain-se", kind: "mountain", x: 1_730, z: -1_760, radiusX: 730, radiusZ: 550, rotation: degrees(25), heightMeters: 325, radialProfile: COAST_SE },
 
   { id: "reef-nw", kind: "shallow", x: -3_750, z: 3_630, radiusX: 1_650, radiusZ: 470, rotation: degrees(18), depthMeters: 6.5 },
   { id: "sand-nw", kind: "sandbar", x: -3_820, z: 3_690, radiusX: 1_120, radiusZ: 175, rotation: degrees(18), heightMeters: 8 },
@@ -93,15 +139,49 @@ export function battleMapDefinition(mapId: BattleMapId): BattleMapDefinition {
   return mapId === "atoll-prototype" ? ATOLL_MAP : OPEN_SEA_RANGE_MAP;
 }
 
+function terrainSeed(zone: Readonly<AtollTerrainZone>): number {
+  return terrainDerived(zone).seed;
+}
+
 function localEllipsePoint(zone: Readonly<AtollTerrainZone>, x: number, z: number): { x: number; z: number } {
   const dx = x - zone.x;
   const dz = z - zone.z;
-  const cosine = Math.cos(zone.rotation);
-  const sine = Math.sin(zone.rotation);
+  const { cosine, sine } = terrainDerived(zone);
   return {
     x: dx * cosine - dz * sine,
     z: dx * sine + dz * cosine,
   };
+}
+
+export function terrainZoneRadialFactor(
+  zone: Readonly<AtollTerrainZone>,
+  angle: number,
+): number {
+  const profile = zone.radialProfile;
+  if (profile && profile.length >= 3) {
+    const wrapped = ((angle / (Math.PI * 2)) % 1 + 1) % 1 * profile.length;
+    const index = Math.floor(wrapped);
+    const next = (index + 1) % profile.length;
+    const blend = wrapped - index;
+    return profile[index]! * (1 - blend) + profile[next]! * blend;
+  }
+  const seed = terrainSeed(zone);
+  const amplitude = zone.kind === "mountain" ? .16 : zone.kind === "sandbar" ? .2 : .13;
+  return Math.max(.58, 1
+    + Math.sin(angle * 3 + seed) * amplitude
+    + Math.sin(angle * 5 - seed * .7) * amplitude * .48
+    + Math.cos(angle * 2 + seed * 1.3) * amplitude * .32);
+}
+
+function normalizedTerrainRadius(
+  zone: Readonly<AtollTerrainZone>,
+  localX: number,
+  localZ: number,
+): number {
+  const normalizedX = localX / Math.max(1, zone.radiusX);
+  const normalizedZ = localZ / Math.max(1, zone.radiusZ);
+  const angle = Math.atan2(normalizedZ, normalizedX);
+  return Math.hypot(normalizedX, normalizedZ) / terrainZoneRadialFactor(zone, angle);
 }
 
 export function terrainZoneContains(
@@ -110,23 +190,31 @@ export function terrainZoneContains(
   z: number,
   paddingMeters = 0,
 ): boolean {
+  const derived = terrainDerived(zone);
+  const paddingRatio = paddingMeters / Math.max(1, Math.min(zone.radiusX, zone.radiusZ));
+  const boundX = derived.baseBoundX * (derived.maximumRadial + paddingRatio);
+  const boundZ = derived.baseBoundZ * (derived.maximumRadial + paddingRatio);
+  if (
+    Math.abs(x - zone.x) > boundX
+    || Math.abs(z - zone.z) > boundZ
+  ) return false;
   const local = localEllipsePoint(zone, x, z);
-  const radiusX = Math.max(1, zone.radiusX + paddingMeters);
-  const radiusZ = Math.max(1, zone.radiusZ + paddingMeters);
-  return (local.x / radiusX) ** 2 + (local.z / radiusZ) ** 2 <= 1;
+  const normalizedRadius = normalizedTerrainRadius(zone, local.x, local.z);
+  return normalizedRadius <= 1 + paddingRatio;
 }
 
 export function terrainContour(
   zone: Readonly<AtollTerrainZone>,
-  segments = 28,
+  segments = 32,
   scale = 1,
 ): Array<{ x: number; z: number }> {
-  const cosine = Math.cos(zone.rotation);
-  const sine = Math.sin(zone.rotation);
-  return Array.from({ length: Math.max(8, segments) }, (_, index) => {
-    const angle = index / Math.max(8, segments) * Math.PI * 2;
-    const localX = Math.cos(angle) * zone.radiusX * scale;
-    const localZ = Math.sin(angle) * zone.radiusZ * scale;
+  const count = Math.max(12, segments);
+  const { cosine, sine } = terrainDerived(zone);
+  return Array.from({ length: count }, (_, index) => {
+    const angle = index / count * Math.PI * 2;
+    const radial = terrainZoneRadialFactor(zone, angle) * scale;
+    const localX = Math.cos(angle) * zone.radiusX * radial;
+    const localZ = Math.sin(angle) * zone.radiusZ * radial;
     return {
       x: zone.x + localX * cosine + localZ * sine,
       z: zone.z - localX * sine + localZ * cosine,
@@ -137,11 +225,25 @@ export function terrainContour(
 function zoneHeightAt(zone: Readonly<AtollTerrainZone>, x: number, z: number): number {
   if (zone.kind === "shallow") return 0;
   const local = localEllipsePoint(zone, x, z);
-  const radialSquared = (local.x / zone.radiusX) ** 2 + (local.z / zone.radiusZ) ** 2;
-  if (radialSquared > 1) return 0;
-  const profile = Math.max(0, 1 - radialSquared);
-  const edgeFloor = zone.kind === "sandbar" ? 0.28 : 0.04;
-  return (zone.heightMeters ?? 0) * (edgeFloor + (1 - edgeFloor) * profile ** 0.72);
+  const radial = normalizedTerrainRadius(zone, local.x, local.z);
+  if (radial > 1) return 0;
+  const inland = Math.max(0, 1 - radial);
+  const height = zone.heightMeters ?? 0;
+  if (zone.kind === "sandbar") return height * (.16 + .84 * inland ** .58);
+  const nx = local.x / Math.max(1, zone.radiusX);
+  const nz = local.z / Math.max(1, zone.radiusZ);
+  const { seedCosine: cosine, seedSine: sine } = terrainDerived(zone);
+  const ridgeX = nx * cosine - nz * sine;
+  const ridgeZ = nx * sine + nz * cosine;
+  const ridge = Math.exp(-((ridgeZ - ridgeX * .2) ** 2) / .035)
+    * Math.exp(-(ridgeX ** 2) / 1.1);
+  const peakA = Math.exp(-(((ridgeX + .28) / .24) ** 2 + ((ridgeZ + .05) / .3) ** 2));
+  const peakB = Math.exp(-(((ridgeX - .18) / .3) ** 2 + ((ridgeZ - .18) / .22) ** 2));
+  const peakC = Math.exp(-(((ridgeX - .42) / .22) ** 2 + ((ridgeZ + .16) / .25) ** 2));
+  const relief = Math.min(
+    1, .16 + ridge * .52 + Math.max(peakA, peakB * .86, peakC * .72) * .58,
+  );
+  return height * relief * inland ** .34;
 }
 
 export function terrainHeightAt(mapId: BattleMapId, x: number, z: number): number {
@@ -166,16 +268,19 @@ export function terrainNavigationAt(
   if (Math.abs(x) > map.halfExtentMeters || Math.abs(z) > map.halfExtentMeters) {
     return { kind: "grounded", speedMultiplier: 0, depthMeters: 0 };
   }
-  const solid = map.terrain.find((zone) =>
-    zone.kind !== "shallow" && terrainZoneContains(zone, x, z));
-  if (solid) return { kind: "grounded", speedMultiplier: 0, depthMeters: 0, zone: solid };
-  const shallows = map.terrain.filter((zone) =>
-    zone.kind === "shallow" && terrainZoneContains(zone, x, z));
-  if (shallows.length === 0) {
+  let shallow: AtollTerrainZone | undefined;
+  for (const zone of map.terrain) {
+    if (!terrainZoneContains(zone, x, z)) continue;
+    if (zone.kind !== "shallow") {
+      return { kind: "grounded", speedMultiplier: 0, depthMeters: 0, zone };
+    }
+    if (!shallow || (zone.depthMeters ?? 80) < (shallow.depthMeters ?? 80)) {
+      shallow = zone;
+    }
+  }
+  if (!shallow) {
     return { kind: "deep", speedMultiplier: 1, depthMeters: 80 };
   }
-  const shallow = shallows.reduce((least, zone) =>
-    (zone.depthMeters ?? 80) < (least.depthMeters ?? 80) ? zone : least);
   const depthMeters = shallow.depthMeters ?? 80;
   const clearance = depthMeters - draftMeters;
   if (clearance <= 0.5) {
@@ -185,32 +290,57 @@ export function terrainNavigationAt(
   return { kind: "shallow", speedMultiplier, depthMeters, zone: shallow };
 }
 
-function segmentEllipseInterval(
+function segmentTerrainInterval(
   zone: Readonly<AtollTerrainZone>,
   from: Readonly<Vec3>,
   to: Readonly<Vec3>,
   paddingMeters = 0,
 ): { enter: number; exit: number } | undefined {
-  const start = localEllipsePoint(zone, from.x, from.z);
-  const end = localEllipsePoint(zone, to.x, to.z);
-  const radiusX = Math.max(1, zone.radiusX + paddingMeters);
-  const radiusZ = Math.max(1, zone.radiusZ + paddingMeters);
-  const sx = start.x / radiusX;
-  const sz = start.z / radiusZ;
-  const dx = (end.x - start.x) / radiusX;
-  const dz = (end.z - start.z) / radiusZ;
-  const a = dx * dx + dz * dz;
-  const b = 2 * (sx * dx + sz * dz);
-  const c = sx * sx + sz * sz - 1;
-  if (a <= 1e-12) return c <= 0 ? { enter: 0, exit: 1 } : undefined;
-  const discriminant = b * b - 4 * a * c;
-  if (discriminant < 0) return c <= 0 ? { enter: 0, exit: 1 } : undefined;
-  const root = Math.sqrt(discriminant);
-  const first = (-b - root) / (2 * a);
-  const second = (-b + root) / (2 * a);
-  const enter = Math.max(0, Math.min(first, second));
-  const exit = Math.min(1, Math.max(first, second));
-  return enter <= exit ? { enter, exit } : undefined;
+  const dx = to.x - from.x;
+  const dz = to.z - from.z;
+  const lengthSquared = dx * dx + dz * dz;
+  const closestFraction = lengthSquared <= 1e-9 ? 0 : Math.max(0, Math.min(1,
+    ((zone.x - from.x) * dx + (zone.z - from.z) * dz) / lengthSquared,
+  ));
+  const closestX = from.x + dx * closestFraction;
+  const closestZ = from.z + dz * closestFraction;
+  const radialPadding = paddingMeters / Math.max(1, Math.min(zone.radiusX, zone.radiusZ));
+  const reach = Math.max(zone.radiusX, zone.radiusZ)
+    * (terrainDerived(zone).maximumRadial + radialPadding);
+  if ((closestX - zone.x) ** 2 + (closestZ - zone.z) ** 2 > reach ** 2) return undefined;
+  const length = Math.sqrt(lengthSquared);
+  const sampleSpacing = Math.max(12, Math.min(zone.radiusX, zone.radiusZ) * .12);
+  const steps = Math.max(8, Math.min(128, Math.ceil(length / sampleSpacing)));
+  const containsAt = (fraction: number): boolean => terrainZoneContains(
+    zone, from.x + dx * fraction, from.z + dz * fraction, paddingMeters,
+  );
+  let previousFraction = 0;
+  let previousInside = containsAt(0);
+  let enter: number | undefined = previousInside ? 0 : undefined;
+  for (let index = 1; index <= steps; index += 1) {
+    const fraction = index / steps;
+    const inside = containsAt(fraction);
+    if (!previousInside && inside && enter === undefined) {
+      let low = previousFraction;
+      let high = fraction;
+      for (let iteration = 0; iteration < 8; iteration += 1) {
+        const middle = (low + high) / 2;
+        if (containsAt(middle)) high = middle; else low = middle;
+      }
+      enter = high;
+    } else if (previousInside && !inside && enter !== undefined) {
+      let low = previousFraction;
+      let high = fraction;
+      for (let iteration = 0; iteration < 8; iteration += 1) {
+        const middle = (low + high) / 2;
+        if (containsAt(middle)) low = middle; else high = middle;
+      }
+      return { enter, exit: low };
+    }
+    previousFraction = fraction;
+    previousInside = inside;
+  }
+  return enter === undefined ? undefined : { enter, exit: 1 };
 }
 
 export function firstTerrainIntersection(
@@ -222,7 +352,7 @@ export function firstTerrainIntersection(
   let first: TerrainContact | undefined;
   for (const zone of battleMapDefinition(mapId).terrain) {
     if (!kinds.includes(zone.kind)) continue;
-    const interval = segmentEllipseInterval(zone, from, to);
+    const interval = segmentTerrainInterval(zone, from, to);
     if (!interval) continue;
     const steps = 14;
     for (let index = 0; index <= steps; index += 1) {
@@ -254,7 +384,7 @@ export function firstNavigationHazard(
   for (const zone of battleMapDefinition(mapId).terrain) {
     const blocks = zone.kind !== "shallow" || (zone.depthMeters ?? 80) - draftMeters <= 0.5;
     if (!blocks) continue;
-    const interval = segmentEllipseInterval(zone, from, to, paddingMeters);
+    const interval = segmentTerrainInterval(zone, from, to, paddingMeters);
     if (!interval || (first && interval.enter >= first.distanceFraction)) continue;
     const point = {
       x: from.x + (to.x - from.x) * interval.enter,

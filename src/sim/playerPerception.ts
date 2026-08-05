@@ -15,14 +15,25 @@ const clamp = (value: number, min: number, max: number): number =>
 
 const copyPosition = (position: Readonly<Vec3>): Vec3 => ({ ...position });
 
+export type ShipPresentationMode = "hidden" | "contact" | "full" | "ghost";
+
+export function shipPresentationMode(
+  ship: Readonly<ShipState>,
+  mode: GameMode,
+  target?: Readonly<PlayerTargetView>,
+): ShipPresentationMode {
+  if (ship.team === "player" || mode === "sea-trials") return "full";
+  if (!target || target.id !== ship.id || target.confidence <= .02) return "hidden";
+  if (target.mode === "acquiring") return "contact";
+  return target.live ? "full" : "ghost";
+}
+
 export function isShipVisibleToPlayer(
   ship: Readonly<ShipState>,
   mode: GameMode,
   target?: Readonly<PlayerTargetView>,
 ): boolean {
-  return ship.team === "player"
-    || mode === "sea-trials"
-    || (target?.id === ship.id && (target.live || ship.hull <= 0));
+  return shipPresentationMode(ship, mode, target) === "full";
 }
 
 export function isProjectileVisibleToPlayer(
@@ -52,12 +63,14 @@ export class PlayerPerceptionTracker {
   private lastSample = Number.NEGATIVE_INFINITY;
   private acquisitionSamples = 0;
   private hadTrack = false;
+  private lastEvaluatedSample = Number.NEGATIVE_INFINITY;
 
   reset(): void {
     this.lastContact = undefined;
     this.lastSample = Number.NEGATIVE_INFINITY;
     this.acquisitionSamples = 0;
     this.hadTrack = false;
+    this.lastEvaluatedSample = Number.NEGATIVE_INFINITY;
   }
 
   private copyContact(contact: Readonly<SensorContact>): SensorContact {
@@ -96,20 +109,24 @@ export class PlayerPerceptionTracker {
 
   update(observation: Observation): PlayerTargetView | undefined {
     const contact = observation.contacts[0];
-    if (contact && contact.observedAt !== this.lastSample) {
-      const remembered = this.lastContact
-        && observation.time - this.lastContact.observedAt <= SENSOR.memorySeconds;
-      this.acquisitionSamples = this.hadTrack && remembered
-        ? SENSOR.acquisitionSamples
-        : this.acquisitionSamples + 1;
-      this.lastContact = this.copyContact(contact);
-      this.lastSample = contact.observedAt;
+    const sampleIndex = Math.floor(observation.time / SENSOR.observationIntervalSeconds);
+    if (sampleIndex !== this.lastEvaluatedSample) {
+      if (contact && contact.observedAt !== this.lastSample) {
+        this.acquisitionSamples += 1;
+        this.lastContact = this.copyContact(contact);
+        this.lastSample = contact.observedAt;
+      } else if (!contact) {
+        this.acquisitionSamples = this.hadTrack
+          ? 0 : Math.max(0, this.acquisitionSamples - 1);
+      }
+      this.lastEvaluatedSample = sampleIndex;
     }
 
     if (contact) {
-      const mode = this.acquisitionSamples >= SENSOR.acquisitionSamples
-        ? "tracking"
-        : "acquiring";
+      const requiredSamples = this.hadTrack
+        ? SENSOR.reacquisitionSamples : SENSOR.acquisitionSamples;
+      const mode = this.acquisitionSamples >= requiredSamples
+        ? "tracking" : "acquiring";
       if (mode === "tracking") this.hadTrack = true;
       return this.viewFromContact(contact, mode, true, observation.time);
     }

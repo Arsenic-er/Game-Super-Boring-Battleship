@@ -561,8 +561,14 @@ describe("deterministic battle simulation", () => {
     expect(first.perception?.mode).toBe("acquiring");
     expect(first.fire).toBe(false);
 
-    state.time = SENSOR.observationIntervalSeconds + 0.1;
-    const tracked = ai.command(observe(state, "enemy"));
+    let tracked = first;
+    for (let sample = 1; sample < SENSOR.aiAcquisitionSamples; sample += 1) {
+      state.time = SENSOR.observationIntervalSeconds * sample + 0.1;
+      tracked = ai.command(observe(state, "enemy"));
+      if (sample < SENSOR.aiAcquisitionSamples - 1) {
+        expect(tracked.perception?.mode).toBe("acquiring");
+      }
+    }
     expect(tracked.perception?.mode).toBe("tracking");
 
     target.position = {
@@ -1172,7 +1178,7 @@ describe("deterministic battle simulation", () => {
     expect(secondaryMountCanBear(cruiser, -1, cruiser.heading + Math.PI / 2)).toBe(false);
   });
 
-  it("uses two sampled contacts before secondaries fire from the bearing side", () => {
+  it("uses three sampled contacts before secondaries fire from the bearing side", () => {
     const state = createInitialState(
       305, "sea-trials", undefined, undefined, undefined, "cleveland",
     );
@@ -1189,7 +1195,10 @@ describe("deterministic battle simulation", () => {
     expect(state.projectiles.filter((projectile) => projectile.weaponSource === "secondary"))
       .toHaveLength(0);
     let secondaryShots = 0;
-    for (let tick = 0; tick < Math.ceil(SENSOR.observationIntervalSeconds / FIXED_STEP) + 8; tick += 1) {
+    const acquisitionTicks = Math.ceil(
+      SENSOR.observationIntervalSeconds * (SENSOR.acquisitionSamples - 1) / FIXED_STEP,
+    ) + 8;
+    for (let tick = 0; tick < acquisitionTicks; tick += 1) {
       stepSimulation(state, command, FIXED_STEP);
       secondaryShots += state.shots.filter((shot) => shot.weaponSource === "secondary").length;
     }

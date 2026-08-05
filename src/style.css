@@ -219,18 +219,25 @@ button { font: inherit; }
 .objective-score {
   position: fixed;
   left: 50%;
-  top: 76px;
-  z-index: 4;
-  width: 360px;
-  padding: 7px 11px 8px;
+  top: max(0px, env(safe-area-inset-top));
+  z-index: 12;
+  width: clamp(300px, 38vw, 460px);
+  padding: 6px 10px 7px;
   transform: translateX(-50%);
   border: 1px solid rgba(132, 188, 192, .28);
-  background: rgba(4, 24, 31, .78);
+  border-top: 0;
+  background: rgba(4, 24, 31, .84);
   box-shadow: 3px 3px 0 rgba(0, 0, 0, .32);
   text-align: center;
   pointer-events: none;
 }
 .objective-score[hidden] { display: none; }
+.game-shell.game-active.hud-details-held .battle-clock { visibility: hidden; }
+@media (max-width: 760px) {
+  .objective-score { width: min(360px, calc(100vw - 16px)); padding: 5px 8px 6px; }
+  .objective-score-row { grid-template-columns: 44px 1fr 44px; gap: 5px; }
+  .objective-score small { font-size: 7px; }
+}
 .objective-score-row {
   display: grid;
   grid-template-columns: 56px 1fr 56px;

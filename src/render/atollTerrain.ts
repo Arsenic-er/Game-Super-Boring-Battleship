@@ -1,7 +1,6 @@
 import { Material } from "@babylonjs/core/Materials/material";
 import { StandardMaterial } from "@babylonjs/core/Materials/standardMaterial";
 import { Color3 } from "@babylonjs/core/Maths/math.color";
-import { CreateCylinder } from "@babylonjs/core/Meshes/Builders/cylinderBuilder.pure";
 import { Mesh } from "@babylonjs/core/Meshes/mesh";
 import { TransformNode } from "@babylonjs/core/Meshes/transformNode";
 import { VertexData } from "@babylonjs/core/Meshes/mesh.vertexData";
@@ -9,6 +8,7 @@ import type { Scene } from "@babylonjs/core/scene";
 import {
   ATOLL_MAP,
   terrainHeightAt,
+  terrainContour,
   type AtollTerrainZone,
 } from "../maps/atollMap";
 
@@ -41,38 +41,40 @@ function material(
   return result;
 }
 
-function zoneSeed(zone: Readonly<AtollTerrainZone>): number {
-  let seed = 0;
-  for (const character of zone.id) seed = (seed * 31 + character.charCodeAt(0)) >>> 0;
-  return seed / 4_294_967_296 * Math.PI * 2;
+function terrainVertexColor(
+  zone: Readonly<AtollTerrainZone>,
+  height: number,
+): [number, number, number, number] {
+  if (zone.kind === "shallow") return [.18, .72, .73, 1];
+  if (zone.kind === "sandbar") {
+    const ratio = Math.min(1, height / Math.max(1, zone.heightMeters ?? 1));
+    return [.68 + ratio * .18, .58 + ratio * .18, .34 + ratio * .12, 1];
+  }
+  const ratio = Math.min(1, height / Math.max(1, zone.heightMeters ?? 1));
+  if (ratio < .3) return [.12 + ratio * .22, .25 + ratio * .2, .15 + ratio * .12, 1];
+  if (ratio < .62) return [.24 + ratio * .12, .31 + ratio * .08, .22 + ratio * .05, 1];
+  return [.34 + ratio * .12, .35 + ratio * .1, .31 + ratio * .1, 1];
 }
 
-function createLandMesh(
+function createTerrainMesh(
   scene: Scene,
   zone: Readonly<AtollTerrainZone>,
   surface: StandardMaterial,
 ): Mesh {
   const mesh = new Mesh(`atoll-${zone.id}`, scene);
-  const segments = zone.kind === "mountain" ? 20 : 16;
-  const rings = zone.kind === "mountain" ? 5 : 3;
-  const positions: number[] = [zone.x, terrainHeightAt(ATOLL_MAP.id, zone.x, zone.z), zone.z];
+  const segments = zone.kind === "mountain" ? 32 : 28;
+  const rings = zone.kind === "mountain" ? 7 : zone.kind === "sandbar" ? 3 : 1;
+  const centerHeight = zone.kind === "shallow"
+    ? -0.68 : terrainHeightAt(ATOLL_MAP.id, zone.x, zone.z);
+  const positions: number[] = [zone.x, centerHeight, zone.z];
   const indices: number[] = [];
-  const seed = zoneSeed(zone);
-  const cosine = Math.cos(zone.rotation);
-  const sine = Math.sin(zone.rotation);
   for (let ring = 1; ring <= rings; ring += 1) {
-    const baseRadius = ring / rings;
-    for (let segment = 0; segment < segments; segment += 1) {
-      const angle = segment / segments * Math.PI * 2;
-      const irregularity = 1
-        + Math.sin(angle * 3 + seed) * 0.055
-        + Math.sin(angle * 7 - seed * 0.7) * 0.025;
-      const radial = Math.min(0.995, baseRadius * irregularity);
-      const localX = Math.cos(angle) * zone.radiusX * radial;
-      const localZ = Math.sin(angle) * zone.radiusZ * radial;
-      const x = zone.x + localX * cosine + localZ * sine;
-      const z = zone.z - localX * sine + localZ * cosine;
-      positions.push(x, Math.max(0.15, terrainHeightAt(ATOLL_MAP.id, x, z)), z);
+    const radial = ring / rings;
+    const contour = terrainContour(zone, segments, radial);
+    for (const point of contour) {
+      const height = zone.kind === "shallow"
+        ? -0.68 : Math.max(0.15, terrainHeightAt(ATOLL_MAP.id, point.x, point.z));
+      positions.push(point.x, height, point.z);
     }
   }
   for (let segment = 0; segment < segments; segment += 1) {
@@ -92,14 +94,18 @@ function createLandMesh(
   }
   const normals: number[] = [];
   VertexData.ComputeNormals(positions, indices, normals);
+  const colors: number[] = [];
+  for (let offset = 1; offset < positions.length; offset += 3) {
+    colors.push(...terrainVertexColor(zone, positions[offset]!));
+  }
   const vertexData = new VertexData();
   vertexData.positions = positions;
   vertexData.indices = indices;
   vertexData.normals = normals;
+  vertexData.colors = colors;
   vertexData.applyToMesh(mesh);
   mesh.material = surface;
   mesh.isPickable = false;
-  mesh.freezeWorldMatrix();
   return mesh;
 }
 
@@ -115,37 +121,24 @@ export function createAtollTerrain(scene: Scene): AtollTerrainVisual {
   const sand = material(
     scene,
     "atoll-sand",
-    new Color3(0.78, 0.68, 0.43),
+    Color3.White(),
     new Color3(0.08, 0.065, 0.025),
   );
   const mountain = material(
     scene,
     "atoll-mountain",
-    new Color3(0.18, 0.29, 0.2),
+    Color3.White(),
     new Color3(0.015, 0.025, 0.018),
   );
   const meshes: Mesh[] = [];
   for (const zone of ATOLL_MAP.terrain) {
-    if (zone.kind === "shallow") {
-      const shelf = CreateCylinder(`atoll-${zone.id}`, {
-        diameter: 2,
-        height: 0.18,
-        tessellation: 24,
-      }, scene);
-      shelf.position.set(zone.x, -0.68, zone.z);
-      shelf.rotation.y = zone.rotation;
-      shelf.scaling.set(zone.radiusX, 1, zone.radiusZ);
-      shelf.material = shallow;
-      shelf.isPickable = false;
-      shelf.alphaIndex = 1;
-      shelf.parent = root;
-      shelf.freezeWorldMatrix();
-      meshes.push(shelf);
-      continue;
-    }
-    const land = createLandMesh(scene, zone, zone.kind === "mountain" ? mountain : sand);
-    land.parent = root;
-    meshes.push(land);
+    const terrain = createTerrainMesh(
+      scene, zone, zone.kind === "mountain" ? mountain : zone.kind === "sandbar" ? sand : shallow,
+    );
+    terrain.alphaIndex = zone.kind === "shallow" ? 1 : 0;
+    terrain.parent = root;
+    terrain.freezeWorldMatrix();
+    meshes.push(terrain);
   }
   return {
     root,

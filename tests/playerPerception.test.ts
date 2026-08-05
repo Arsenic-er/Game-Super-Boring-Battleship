@@ -3,6 +3,7 @@ import { SENSOR } from "../src/sim/config";
 import {
   isProjectileVisibleToPlayer,
   isShipVisibleToPlayer,
+  shipPresentationMode,
   PlayerPerceptionTracker,
 } from "../src/sim/playerPerception";
 import { createInitialState, observe } from "../src/sim/simulation";
@@ -29,6 +30,10 @@ describe("player optical perception", () => {
     expect(acquiring?.live).toBe(true);
 
     state.time = SENSOR.observationIntervalSeconds + 0.1;
+    const confirming = tracker.update(observe(state, "player"));
+    expect(confirming?.mode).toBe("acquiring");
+
+    state.time = SENSOR.observationIntervalSeconds * 2 + 0.1;
     const tracking = tracker.update(observe(state, "player"));
     expect(tracking?.mode).toBe("tracking");
 
@@ -52,8 +57,13 @@ describe("player optical perception", () => {
     };
     state.time += SENSOR.observationIntervalSeconds;
     const reacquired = tracker.update(observe(state, "player"));
-    expect(reacquired?.mode).toBe("tracking");
+    expect(reacquired?.mode).toBe("acquiring");
     expect(reacquired?.live).toBe(true);
+
+    state.time += SENSOR.observationIntervalSeconds;
+    const retracked = tracker.update(observe(state, "player"));
+    expect(retracked?.mode).toBe("tracking");
+    expect(retracked?.live).toBe(true);
 
     enemy.position.x = player.position.x + SENSOR.maximumDetectionMeters + 2_000;
     state.time += SENSOR.observationIntervalSeconds;
@@ -94,10 +104,16 @@ describe("player optical perception", () => {
       rangeMeters: 0,
       estimatedHullRatio: 1,
     };
+    expect(shipPresentationMode(enemy, "battle", target)).toBe("ghost");
     expect(isShipVisibleToPlayer(enemy, "battle")).toBe(false);
     expect(isShipVisibleToPlayer(enemy, "battle", target)).toBe(false);
     expect(isShipVisibleToPlayer(enemy, "sea-trials")).toBe(true);
+    target.mode = "acquiring";
     target.live = true;
+    expect(shipPresentationMode(enemy, "battle", target)).toBe("contact");
+    expect(isShipVisibleToPlayer(enemy, "battle", target)).toBe(false);
+    target.mode = "tracking";
+    expect(shipPresentationMode(enemy, "battle", target)).toBe("full");
     expect(isShipVisibleToPlayer(enemy, "battle", target)).toBe(true);
 
     const shell: ProjectileState = {

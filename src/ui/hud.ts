@@ -213,7 +213,7 @@ export class Hud {
           <div class="battle-clock"><span id="time-label">剩余时间</span><strong id="battle-time">10:00</strong></div>
           <button id="quality" class="ghost-button" type="button">画质：低</button>
         </header>
-        <section id="objective-score" class="objective-score hud-tactical" aria-label="中央目标区积分">
+        <section id="objective-score" class="objective-score" aria-label="中央目标区积分">
           <div class="objective-score-row">
             <strong id="player-score">0</strong>
             <span>中央目标区 A</span>

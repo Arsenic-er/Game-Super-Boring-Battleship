@@ -4,8 +4,11 @@ import {
   firstTerrainIntersection,
   shipDraftMeters,
   terrainBlocksLineOfSight,
+  terrainContour,
   terrainNavigationAt,
   terrainSafeHeading,
+  terrainZoneContains,
+  terrainZoneRadialFactor,
 } from "../src/maps/atollMap";
 import { BATTLE_SPAWN, FIXED_STEP, OBJECTIVE } from "../src/sim/config";
 import {
@@ -21,6 +24,22 @@ const idle = (ship: Readonly<ShipState>): ControlCommand => ({
   aimPoint: { ...ship.aimPoint },
   fire: false,
 });
+
+const pointOnZone = (
+  zone: (typeof ATOLL_MAP.terrain)[number],
+  profileIndex: number,
+  radial: number,
+): { x: number; z: number } => {
+  const angle = profileIndex / 24 * Math.PI * 2;
+  const localX = Math.cos(angle) * zone.radiusX * radial;
+  const localZ = Math.sin(angle) * zone.radiusZ * radial;
+  const cosine = Math.cos(zone.rotation);
+  const sine = Math.sin(zone.rotation);
+  return {
+    x: zone.x + localX * cosine + localZ * sine,
+    z: zone.z - localX * sine + localZ * cosine,
+  };
+};
 
 describe("Dawn Atoll map definition", () => {
   it("keeps both deployments and the central objective in deep navigable water", () => {
@@ -72,6 +91,25 @@ describe("Dawn Atoll map definition", () => {
       "fletcher",
     );
     expect(Math.abs(safe)).toBeGreaterThan(0.2);
+  });
+
+  it("uses concave coves and projecting capes instead of circular islands", () => {
+    const mountain = ATOLL_MAP.terrain.find(({ id }) => id === "mountain-nw")!;
+    const radialFactors = Array.from({ length: 96 }, (_, index) =>
+      terrainZoneRadialFactor(mountain, index / 96 * Math.PI * 2));
+    expect(Math.max(...radialFactors) - Math.min(...radialFactors)).toBeGreaterThan(.55);
+    expect(terrainContour(mountain, 32)).toHaveLength(32);
+
+    const cove = pointOnZone(mountain, 4, .72);
+    const cape = pointOnZone(mountain, 2, .9);
+    expect(terrainZoneContains(mountain, cove.x, cove.z)).toBe(false);
+    expect(terrainZoneContains(mountain, cape.x, cape.z)).toBe(true);
+    expect(terrainNavigationAt(
+      ATOLL_MAP.id, cove.x, cove.z, shipDraftMeters("fletcher"),
+    ).kind).toBe("shallow");
+    expect(terrainNavigationAt(
+      ATOLL_MAP.id, cape.x, cape.z, shipDraftMeters("fletcher"),
+    ).kind).toBe("grounded");
   });
 });
 

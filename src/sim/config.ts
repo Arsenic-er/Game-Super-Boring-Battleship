@@ -47,7 +47,9 @@ export const NAVIGATION_PACE = {
 
 export const SENSOR = {
   observationIntervalSeconds: 2.5,
-  acquisitionSamples: 2,
+  acquisitionSamples: 3,
+  reacquisitionSamples: 2,
+  aiAcquisitionSamples: 4,
   guaranteedDetectionMeters: 1_700,
   maximumDetectionMeters: 3_400,
   gunBloomDetectionMeters: 5_000,

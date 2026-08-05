@@ -167,6 +167,7 @@ export class RuleBasedAi implements Controller {
   private previousContact?: TrackEstimate;
   private lastContactSample = Number.NEGATIVE_INFINITY;
   private acquisitionSamples = 0;
+  private lastEvaluatedSensorSample = Number.NEGATIVE_INFINITY;
   private hadTrack = false;
 
   constructor(seed = 0xa11ce) {
@@ -219,21 +220,26 @@ export class RuleBasedAi implements Controller {
 
   private updatePerception(observation: Observation): PerceptionResult {
     const contact = observation.contacts[0];
-    if (contact && contact.observedAt !== this.lastContactSample) {
-      const recentMemory = this.lastContact
-        && observation.time - this.lastContact.observedAt <= SENSOR.memorySeconds;
-      this.acquisitionSamples = this.hadTrack && recentMemory
-        ? SENSOR.acquisitionSamples
-        : this.acquisitionSamples + 1;
-      this.previousContact = this.lastContact?.id === contact.id
-        ? this.lastContact
-        : undefined;
-      this.lastContact = this.copyContact(contact);
-      this.lastContactSample = contact.observedAt;
+    const sampleIndex = Math.floor(observation.time / SENSOR.observationIntervalSeconds);
+    if (sampleIndex !== this.lastEvaluatedSensorSample) {
+      if (contact && contact.observedAt !== this.lastContactSample) {
+        this.acquisitionSamples += 1;
+        this.previousContact = this.lastContact?.id === contact.id
+          ? this.lastContact
+          : undefined;
+        this.lastContact = this.copyContact(contact);
+        this.lastContactSample = contact.observedAt;
+      } else if (!contact) {
+        this.acquisitionSamples = this.hadTrack
+          ? 0 : Math.max(0, this.acquisitionSamples - 1);
+      }
+      this.lastEvaluatedSensorSample = sampleIndex;
     }
 
     if (contact) {
-      const acquired = this.acquisitionSamples >= SENSOR.acquisitionSamples;
+      const requiredSamples = this.hadTrack
+        ? SENSOR.reacquisitionSamples : SENSOR.aiAcquisitionSamples;
+      const acquired = this.acquisitionSamples >= requiredSamples;
       if (acquired) this.hadTrack = true;
       const mode: PerceptionMode = acquired ? "tracking" : "acquiring";
       return {
@@ -241,7 +247,7 @@ export class RuleBasedAi implements Controller {
         track: this.copyContact(contact),
         telemetry: {
           mode,
-          confidence: acquired ? contact.confidence : contact.confidence * 0.5,
+          confidence: acquired ? contact.confidence : contact.confidence * 0.42,
           lastObservedAt: contact.observedAt,
           estimatedPosition: { ...contact.position },
         },

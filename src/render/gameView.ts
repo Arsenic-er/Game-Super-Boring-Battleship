@@ -21,7 +21,7 @@ import { Scene } from "@babylonjs/core/scene";
 import { OBJECTIVE, TORPEDO } from "../sim/config";
 import {
   isProjectileVisibleToPlayer,
-  isShipVisibleToPlayer,
+  shipPresentationMode,
 } from "../sim/playerPerception";
 import {
   gunMuzzleOrigin,
@@ -131,6 +131,8 @@ interface SmokeCloudVisual {
   lobes: Mesh[];
 }
 
+const CONTACT_OUTLINE = new Color3(.2, .92, 1);
+const LOST_CONTACT_OUTLINE = new Color3(1, .72, .24);
 const toVector = (value: Vec3): Vector3 => new Vector3(value.x, value.y, value.z);
 const shipArmamentSignature = (ship: ShipState): string => [
   ship.shipClassId,
@@ -723,11 +725,36 @@ export class GameView implements AimProvider {
         visual = this.createShip(ship);
         this.ships.set(ship.id, visual);
       }
-      const visible = developerMode
-        ? ship.hull > 0
-        : isShipVisibleToPlayer(ship, state.mode, perceivedTarget);
+      const presentation = developerMode
+        ? ship.hull > 0 ? "full" : "hidden"
+        : shipPresentationMode(ship, state.mode, perceivedTarget);
+      const visible = presentation !== "hidden";
       visual.root.setEnabled(visible);
       if (!visible) continue;
+      const targetPose = ship.team === "enemy" && perceivedTarget?.id === ship.id
+        ? perceivedTarget : undefined;
+      const renderPosition = targetPose?.position ?? ship.position;
+      const renderHeading = targetPose?.heading ?? ship.heading;
+      const silhouette = presentation === "contact" || presentation === "ghost";
+      if (silhouette && targetPose) {
+        const outline = presentation === "contact" ? CONTACT_OUTLINE : LOST_CONTACT_OUTLINE;
+        const fillVisibility = .025 + targetPose.confidence * .055;
+        applyBodyVisibility(visual.bodyMeshes, fillVisibility);
+        visual.bodyVisibility = -1;
+        for (const mesh of visual.bodyMeshes) {
+          mesh.renderOutline = true;
+          mesh.outlineColor.copyFrom(outline);
+          mesh.outlineWidth = presentation === "contact" ? .065 : .085;
+        }
+        visual.root.position.set(renderPosition.x, 0, renderPosition.z);
+        visual.root.rotation.set(0, renderHeading, 0);
+        for (const wake of visual.wakes) wake.visibility = 0;
+        for (const smoke of visual.smokePuffs) smoke.visibility = 0;
+        for (const flame of visual.fireFlames) flame.visibility = 0;
+        visual.collider.visibility = 0;
+        continue;
+      }
+      for (const mesh of visual.bodyMeshes) mesh.renderOutline = false;
       const bodyVisibility = ownShipBodyVisibility(ship.id, this.aiming);
       if (visual.bodyVisibility !== bodyVisibility) {
         applyBodyVisibility(visual.bodyMeshes, bodyVisibility);
@@ -738,8 +765,10 @@ export class GameView implements AimProvider {
       const shortWave = Math.sin(state.time * 0.91 + phase * 1.7);
       const seaMotion = ship.hull > 0 ? longWave * 0.7 + shortWave * 0.3 : 0;
       const settling = ship.flooding * 0.022 + (1 - ship.hull / ship.maxHull) * 1.2;
-      visual.root.position.set(ship.position.x, ship.hull > 0 ? seaMotion * 0.2 - settling : -4, ship.position.z);
-      visual.root.rotation.y = ship.heading;
+      visual.root.position.set(
+        renderPosition.x, ship.hull > 0 ? seaMotion * .2 - settling : -4, renderPosition.z,
+      );
+      visual.root.rotation.y = renderHeading;
       visual.root.rotation.x = ship.hull > 0
         ? Math.sin(state.time * 0.41 + phase + 0.7) * 0.006
         : -0.045;
