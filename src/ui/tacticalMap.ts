@@ -550,7 +550,7 @@ export class TacticalMap {
 
   close(): void {
     if (!this.expanded) return;
-    this.airCommands.resetInteraction();
+    this.airCommands.suspendInteraction();
     this.expanded = false;
     this.overlay.hidden = true;
     this.options.onClose?.();

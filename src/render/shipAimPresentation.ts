@@ -4,8 +4,12 @@ export interface BodyMeshVisibility {
   visibility: number;
 }
 
-export function ownShipBodyVisibility(shipId: string, aiming: boolean): number {
-  return shipId === "player" && aiming ? OWN_SHIP_AIM_VISIBILITY : 1;
+export function ownShipBodyVisibility(
+  shipId: string,
+  aiming: boolean,
+  controlledShipId = "player",
+): number {
+  return shipId === controlledShipId && aiming ? OWN_SHIP_AIM_VISIBILITY : 1;
 }
 
 export function applyBodyVisibility(

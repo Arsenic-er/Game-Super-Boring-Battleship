@@ -177,6 +177,31 @@ export interface SensorContact {
   estimatedHullRatio: number;
 }
 
+/** Exact friendly navigation data; enemy data must still come from SensorContact. */
+export interface FriendlyShipObservation {
+  id: string;
+  shipClassId: ShipClassId;
+  position: Vec3;
+  heading: number;
+  speedKnots: number;
+  hullRatio: number;
+}
+
+export type FleetAiRole = "screen" | "escort" | "line";
+export type FleetAiPhase =
+  | "forming" | "securing" | "engaging" | "evading" | "withdrawing" | "searching";
+
+/** Compact, display-only explanation of the last fleet AI decision. */
+export interface AiDecisionTelemetry {
+  role: FleetAiRole;
+  phase: FleetAiPhase;
+  targetId?: string;
+  desiredHeading: number;
+  throttle: number;
+  fireIntent: boolean;
+  avoidanceReason?: string;
+}
+
 export interface SensorSnapshot {
   sampleIndex: number;
   hydroActive: boolean;
@@ -318,6 +343,7 @@ export interface ShipState {
   damageControlModule?: ModuleId;
   hullRepairActive: boolean;
   perception?: PerceptionTelemetry;
+  aiDecision?: AiDecisionTelemetry;
   distanceTravelled: number;
   turnRateRadians: number;
   isTestTarget?: boolean;
@@ -480,12 +506,14 @@ export interface ControlCommand {
   airMission?: AirMissionCommand;
   airMissions?: AirMissionCommand[];
   perception?: PerceptionTelemetry;
+  aiDecision?: AiDecisionTelemetry;
 }
 
 export interface Observation {
   self: Readonly<ShipState>;
   mapId: BattleMapId;
   contacts: readonly Readonly<SensorContact>[];
+  friendlies: readonly Readonly<FriendlyShipObservation>[];
   objective: Readonly<ObjectiveObservation>;
   incomingTorpedoes: readonly Readonly<TorpedoThreat>[];
   time: number;

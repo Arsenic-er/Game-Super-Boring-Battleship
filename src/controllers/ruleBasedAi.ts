@@ -8,6 +8,7 @@ import {
   shipSpeedMetersPerSecond,
 } from "../sim/config";
 import { terrainSafeHeading } from "../maps/atollMap";
+import { getShipClass } from "../ships/classes";
 import { getTorpedo } from "../ships/torpedoes";
 import { effectiveMainBattery } from "../ships/mainBatteries";
 import {
@@ -21,11 +22,15 @@ import type {
   ControlCommand,
   Controller,
   DamageControlPriority,
+  FleetAiPhase,
+  FleetAiRole,
+  FriendlyShipObservation,
   ModuleId,
   Observation,
   PerceptionMode,
   PerceptionTelemetry,
   SensorContact,
+  ShipState,
   Vec3,
 } from "../sim/types";
 
@@ -38,6 +43,76 @@ const wrapAngle = (angle: number): number => {
 
 const clamp = (value: number, min: number, max: number): number =>
   Math.min(max, Math.max(min, value));
+
+export function fleetRoleForShip(
+  ship: Pick<ShipState, "hullId">,
+): FleetAiRole {
+  if (ship.hullId === "destroyer") return "screen";
+  if (ship.hullId === "lightCruiser") return "escort";
+  return "line";
+}
+
+export interface FriendlyCollisionRisk {
+  friendlyId: string;
+  closestApproachMeters: number;
+  timeToClosestApproach: number;
+  avoidanceHeading: number;
+}
+
+/** Predicts close approaches without using enemy or hidden-state information. */
+export function friendlyCollisionRisk(
+  self: Readonly<ShipState>,
+  friendlies: readonly Readonly<FriendlyShipObservation>[],
+): FriendlyCollisionRisk | undefined {
+  const selfSpeed = shipSpeedMetersPerSecond(self.speedKnots);
+  const selfVx = Math.sin(self.heading) * selfSpeed;
+  const selfVz = Math.cos(self.heading) * selfSpeed;
+  const selfHull = getShipClass(self.shipClassId);
+  let best: FriendlyCollisionRisk | undefined;
+  for (const friendly of friendlies) {
+    const dx = friendly.position.x - self.position.x;
+    const dz = friendly.position.z - self.position.z;
+    const distance = Math.hypot(dx, dz);
+    if (distance > 1_200 || distance < 0.01) continue;
+    const friendlySpeed = shipSpeedMetersPerSecond(friendly.speedKnots);
+    const relativeVx = Math.sin(friendly.heading) * friendlySpeed - selfVx;
+    const relativeVz = Math.cos(friendly.heading) * friendlySpeed - selfVz;
+    const relativeSpeedSquared = relativeVx ** 2 + relativeVz ** 2;
+    const timeToClosestApproach = relativeSpeedSquared < 0.01
+      ? 0
+      : clamp(-(dx * relativeVx + dz * relativeVz) / relativeSpeedSquared, 0, 30);
+    const closestX = dx + relativeVx * timeToClosestApproach;
+    const closestZ = dz + relativeVz * timeToClosestApproach;
+    const closestApproachMeters = Math.hypot(closestX, closestZ);
+    const friendlyHull = getShipClass(friendly.shipClassId);
+    const safeDistance = 85 + (selfHull.beam + friendlyHull.beam) * 0.75;
+    if (closestApproachMeters >= safeDistance || (timeToClosestApproach === 0 && distance > safeDistance)) {
+      continue;
+    }
+    const awayX = timeToClosestApproach > 0 ? -closestX : -dx;
+    const awayZ = timeToClosestApproach > 0 ? -closestZ : -dz;
+    const risk = {
+      friendlyId: friendly.id,
+      closestApproachMeters,
+      timeToClosestApproach,
+      avoidanceHeading: Math.atan2(awayX, awayZ),
+    };
+    if (!best || risk.closestApproachMeters < best.closestApproachMeters) best = risk;
+  }
+  return best;
+}
+
+function selectSensorContact(
+  contacts: readonly Readonly<SensorContact>[],
+  currentTargetId: string | undefined,
+): Readonly<SensorContact> | undefined {
+  const current = contacts.find(({ id }) => id === currentTargetId);
+  if (current) return current;
+  return [...contacts].sort((left, right) =>
+    left.rangeMeters - right.rangeMeters
+    || right.confidence - left.confidence
+    || left.id.localeCompare(right.id))[0];
+}
 
 /**
  * Uses AP against a close, exposed broadside and HE against angled or distant
@@ -219,10 +294,16 @@ export class RuleBasedAi implements Controller {
   }
 
   private updatePerception(observation: Observation): PerceptionResult {
-    const contact = observation.contacts[0];
+    const contact = selectSensorContact(observation.contacts, this.lastContact?.id);
     const sampleIndex = Math.floor(observation.time / SENSOR.observationIntervalSeconds);
     if (sampleIndex !== this.lastEvaluatedSensorSample) {
       if (contact && contact.observedAt !== this.lastContactSample) {
+        if (this.lastContact && this.lastContact.id !== contact.id) {
+          this.acquisitionSamples = 0;
+          this.previousContact = undefined;
+          this.lastContactSample = Number.NEGATIVE_INFINITY;
+          this.hadTrack = false;
+        }
         this.acquisitionSamples += 1;
         this.previousContact = this.lastContact?.id === contact.id
           ? this.lastContact
@@ -488,9 +569,22 @@ export class RuleBasedAi implements Controller {
       this.nextTerrainPlanAt = observation.time + 0.4;
     }
     desiredHeading = this.plannedTerrainHeading;
+    const role = fleetRoleForShip(observation.self);
+    const friendlies = observation.friendlies ?? [];
+    const capitalAnchor = friendlies.find((friendly) =>
+      getShipClass(friendly.shipClassId).hullId === "battleship");
+    if (role === "escort" && capitalAnchor && !target) {
+      const anchorDx = capitalAnchor.position.x - observation.self.position.x;
+      const anchorDz = capitalAnchor.position.z - observation.self.position.z;
+      if (Math.hypot(anchorDx, anchorDz) > 720) {
+        desiredHeading = Math.atan2(anchorDx, anchorDz);
+      }
+    }
+    const collisionRisk = friendlyCollisionRisk(observation.self, friendlies);
+    if (collisionRisk) desiredHeading = collisionRisk.avoidanceHeading;
     const headingError = wrapAngle(desiredHeading - observation.self.heading);
     const damaged = observation.self.hull / observation.self.maxHull < 0.38;
-    const tacticalThrottle = evadingTorpedo
+    let tacticalThrottle = evadingTorpedo
       ? 1
       : target && range < 850
         ? 0.35
@@ -499,6 +593,7 @@ export class RuleBasedAi implements Controller {
       : shouldSecureObjective || !target
       ? 0.9
       : range < 1_200 ? 0.88 : range > 2_300 ? 0.76 : 0.62;
+    if (collisionRisk) tacticalThrottle = Math.min(tacticalThrottle, 0.35);
     const priority = damageControlPriority(observation);
     const recoverableDamage = observation.self.recoverableHull - observation.self.hull;
     const repairHull = priority === "balanced"
@@ -551,6 +646,20 @@ export class RuleBasedAi implements Controller {
     const mainGunBearingAllowed = observation.self.mainBatteryMounts.some((mount) =>
       mainBatteryMountCanBear(observation.self, mount.mountIndex, mainGunAim)
     );
+    const fireIntent = launchTorpedoes || (
+      !suppressMainGun
+        && perception.mode === "tracking"
+        && observation.time <= this.fireWindowUntil
+        && range >= GUN.minAimRange
+        && range <= mainBatteryRange
+        && mainGunBearingAllowed
+    );
+    const phase: FleetAiPhase = evadingTorpedo || collisionRisk
+      ? "evading"
+      : damaged ? "withdrawing"
+        : target ? "engaging"
+          : shouldSecureObjective ? "securing"
+            : perception.mode === "lost" || perception.mode === "searching" ? "searching" : "forming";
 
     return {
       throttle: damaged ? Math.min(tacticalThrottle, 0.52) : tacticalThrottle,
@@ -566,15 +675,18 @@ export class RuleBasedAi implements Controller {
       perception: perception.telemetry,
       activateSmoke,
       activateHydro,
-      fire: launchTorpedoes || (
-        !suppressMainGun
-          &&
-        perception.mode === "tracking"
-          && observation.time <= this.fireWindowUntil
-          && range >= GUN.minAimRange
-          && range <= mainBatteryRange
-          && mainGunBearingAllowed
-      ),
+      fire: fireIntent,
+      aiDecision: {
+        role,
+        phase,
+        targetId: target?.id,
+        desiredHeading,
+        throttle: damaged ? Math.min(tacticalThrottle, 0.52) : tacticalThrottle,
+        fireIntent,
+        avoidanceReason: collisionRisk
+          ? `规避友舰 ${collisionRisk.friendlyId}`
+          : undefined,
+      },
     };
   }
 }

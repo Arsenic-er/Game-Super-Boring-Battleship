@@ -43,3 +43,32 @@
 .dev-entity-actions { display: grid; grid-template-columns: 1fr 1fr; gap: 7px; margin-top: 8px; }
 .dev-entity-actions button.danger { color: #f2b4a6; border-color: rgba(226, 105, 81, .4); background: rgba(101, 35, 28, .45); }
 .dev-entity-actions button.danger:hover { border-color: #e26951; background: rgba(122, 41, 31, .68); }
+
+.dev-view-status,
+.dev-strategy-status {
+  margin-top: 8px;
+  padding: 8px 10px;
+  border: 1px solid rgba(102, 217, 226, .28);
+  background: rgba(4, 24, 31, .76);
+  color: #bcebee;
+  font-size: 11px;
+  line-height: 1.55;
+}
+
+.dev-strategy-status { color: #f0d88a; }
+.dev-view-actions button:disabled { opacity: .36; cursor: not-allowed; }
+
+.developer-observer-hud {
+  position: absolute;
+  top: 74px;
+  left: 50%;
+  z-index: 45;
+  transform: translateX(-50%);
+  max-width: min(680px, 70vw);
+  padding: 8px 14px;
+  border: 1px solid rgba(102, 217, 226, .62);
+  background: rgba(3, 22, 29, .88);
+  color: #d8f5ed;
+  font: 700 12px/1.45 monospace;
+  pointer-events: none;
+}

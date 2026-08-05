@@ -585,8 +585,10 @@ export class Hud {
     aimRange: number,
     selectedWeapon: WeaponSlot,
     target?: PlayerTargetView,
+    viewerShipId = "player",
   ): void {
-    const player = state.ships.find((ship) => ship.team === "player");
+    const player = state.ships.find((ship) => ship.id === viewerShipId)
+      ?? state.ships.find((ship) => ship.team === "player");
     if (!player) return;
     const shellSelection = player.pendingAmmoType
       ? `${ammoLabels[player.ammoType]} → ${ammoLabels[player.pendingAmmoType]}`

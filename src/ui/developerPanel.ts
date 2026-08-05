@@ -15,11 +15,21 @@ import {
 
 export type CursorStyle = "neon-arrow" | "neon-hand" | "crosshair";
 
+export interface DeveloperViewStatus {
+  active: boolean;
+  focusEntityId?: string;
+  controlledShipId?: string;
+}
+
 export interface DeveloperPanelCallbacks {
   onOpen: () => void;
   onClose: () => void;
   onDebugColliders: (visible: boolean) => void;
   onCursorStyle: (style: CursorStyle) => void;
+  onObserveEntity: (id: string) => void;
+  onControlShip: (id: string) => void;
+  onReleaseControl: () => void;
+  getViewStatus: () => DeveloperViewStatus;
 }
 
 const moduleLabels: Record<ModuleId, string> = {
@@ -51,6 +61,8 @@ export class DeveloperPanel {
   private readonly torpedoStatus: HTMLElement;
   private readonly secondaryStatus: HTMLElement;
   private readonly armorStatus: HTMLElement;
+  private readonly viewStatus: HTMLElement;
+  private readonly strategyStatus: HTMLElement;
   private open = false;
 
   constructor(
@@ -112,6 +124,13 @@ export class DeveloperPanel {
           <button class="danger" data-action="remove-entity" type="button">－ 移除所选</button>
           <button class="danger" data-action="clear-dev-entities" type="button">清除新增实体</button>
         </div>
+        <div class="dev-view-status" data-role="view-status">开发者视角未启用</div>
+        <div class="dev-entity-actions dev-view-actions">
+          <button data-action="observe-entity" type="button">观察所选</button>
+          <button data-action="control-ship" type="button">接管所选舰船</button>
+          <button data-action="release-control" type="button">交还 AI / 返回本舰</button>
+        </div>
+        <div class="dev-strategy-status" data-role="strategy-status">策略：选择一个舰船或机群</div>
       </section>
       <div class="dev-live" data-role="live">等待状态</div>
       <div class="dev-perception" data-role="perception">感知：无遥测</div>
@@ -177,7 +196,9 @@ export class DeveloperPanel {
     const torpedoStatus = this.element.querySelector<HTMLElement>('[data-role="torpedo"]');
     const secondaryStatus = this.element.querySelector<HTMLElement>('[data-role="secondary"]');
     const armorStatus = this.element.querySelector<HTMLElement>('[data-role="armor"]');
-    if (!shipSelect || !entitySelect || !sandboxStatus || !live || !perception || !torpedoStatus || !secondaryStatus || !armorStatus) throw new Error("Missing developer panel controls");
+    const viewStatus = this.element.querySelector<HTMLElement>('[data-role="view-status"]');
+    const strategyStatus = this.element.querySelector<HTMLElement>('[data-role="strategy-status"]');
+    if (!shipSelect || !entitySelect || !sandboxStatus || !live || !perception || !torpedoStatus || !secondaryStatus || !armorStatus || !viewStatus || !strategyStatus) throw new Error("Missing developer panel controls");
     this.shipSelect = shipSelect;
     this.entitySelect = entitySelect;
     this.live = live;
@@ -185,6 +206,8 @@ export class DeveloperPanel {
     this.torpedoStatus = torpedoStatus;
     this.secondaryStatus = secondaryStatus;
     this.armorStatus = armorStatus;
+    this.viewStatus = viewStatus;
+    this.strategyStatus = strategyStatus;
     this.bindControls();
   }
 
@@ -233,6 +256,11 @@ export class DeveloperPanel {
   private bindControls(): void {
     this.element.querySelector('[data-action="close"]')?.addEventListener("click", () => this.close());
     this.shipSelect.addEventListener("change", () => this.refresh());
+    this.entitySelect.addEventListener("change", () => {
+      const selectedShip = this.getState().ships.find(({ id }) => id === this.entitySelect.value);
+      if (selectedShip) this.shipSelect.value = selectedShip.id;
+      this.refresh();
+    });
     for (const input of this.element.querySelectorAll<HTMLInputElement>("input[data-field]")) {
       input.addEventListener("input", () => {
         const ship = this.selectedShip();
@@ -308,6 +336,23 @@ export class DeveloperPanel {
   private runAction(action: string): void {
     if (action === "close") return;
     const state = this.getState();
+    if (action === "observe-entity") {
+      if (this.entitySelect.value) this.callbacks.onObserveEntity(this.entitySelect.value);
+      this.close();
+      return;
+    }
+    if (action === "control-ship") {
+      if (state.ships.some(({ id, hull }) => id === this.entitySelect.value && hull > 0)) {
+        this.callbacks.onControlShip(this.entitySelect.value);
+        this.close();
+      }
+      return;
+    }
+    if (action === "release-control") {
+      this.callbacks.onReleaseControl();
+      this.close();
+      return;
+    }
     if (action === "smoke-clear") {
       state.smokeClouds = [];
     } else if (action === "smoke-deploy") {
@@ -445,6 +490,17 @@ export class DeveloperPanel {
     this.syncShipOptions();
     const ship = this.selectedShip();
     if (!ship) return;
+    const status = this.callbacks.getViewStatus();
+    this.viewStatus.textContent = status.active
+      ? `开发者视角 · 观察 ${status.focusEntityId ?? "—"} · ${status.controlledShipId ? `人工接管 ${status.controlledShipId}` : "仅观察 / 舰船全由 AI 驾驶"}`
+      : "开发者视角未启用 · 正常控制本舰";
+    const selectedEntityIsShip = this.getState().ships.some(({ id, hull }) =>
+      id === this.entitySelect.value && hull > 0);
+    const controlButton = this.element.querySelector<HTMLButtonElement>('[data-action="control-ship"]');
+    if (controlButton) {
+      controlButton.disabled = !selectedEntityIsShip;
+      controlButton.title = selectedEntityIsShip ? "接管该舰的车钟、舵与武器" : "飞机只允许观察，仍由 AI 驾驶";
+    }
     refreshDeveloperSandboxControls(this.element, this.getState(), ship);
     const values: Record<string, number> = {
       hull: ship.hull,
@@ -510,6 +566,19 @@ export class DeveloperPanel {
     if (!this.open) return;
     const ship = this.selectedShip();
     if (!ship) return;
+    const entityId = this.entitySelect.value;
+    const entityShip = this.getState().ships.find(({ id }) => id === entityId);
+    const entityAir = this.getState().airSquadrons.find(({ id }) => id === entityId);
+    if (entityShip) {
+      const decision = entityShip.aiDecision;
+      this.strategyStatus.textContent = decision
+        ? `舰队 AI · ${decision.role} / ${decision.phase} · 目标 ${decision.targetId ?? "无"} · 航向 ${((decision.desiredHeading * 180 / Math.PI + 360) % 360).toFixed(0)}° · 车钟 ${Math.round(decision.throttle * 100)}% · ${decision.fireIntent ? "准备开火" : "保持火力"}${decision.avoidanceReason ? ` · ${decision.avoidanceReason}` : ""}`
+        : `舰船 ${entityShip.id} · ${this.callbacks.getViewStatus().controlledShipId === entityShip.id ? "人工接管中" : "等待 AI 决策"}`;
+    } else if (entityAir) {
+      this.strategyStatus.textContent = `航空 AI · ${entityAir.role} / ${entityAir.phase} · 指令 ${entityAir.order?.kind ?? "自主巡逻"} · 目标 ${entityAir.order?.activeTargetId ?? entityAir.order?.targetId ?? "无"} · 武器 ${entityAir.order?.selectedWeapon ?? "待选择"} · 编队 ${entityAir.aircraftOperational}/${entityAir.aircraftCapacity} · 凝聚 ${(entityAir.cohesion * 100).toFixed(0)}% · 油量 ${Math.max(0, entityAir.fuelRemainingSeconds).toFixed(0)}s`;
+    } else {
+      this.strategyStatus.textContent = "策略：所选实体已不存在";
+    }
     const speedOverride = ship.developer?.enabled && ship.developer.forcedSpeedKnots !== undefined
       ? ` · 开发锁速 ${ship.developer.forcedSpeedKnots.toFixed(0)} kn` : "";
     this.live.textContent = `速度 ${ship.speedKnots.toFixed(1)} kn${speedOverride} · 转向率 ${(ship.turnRateRadians * 180 / Math.PI).toFixed(2)}°/s · 坐标 ${ship.position.x.toFixed(0)}, ${ship.position.z.toFixed(0)} · 水听 ${ship.hydroActiveRemaining > 0 ? `启用 ${ship.hydroActiveRemaining.toFixed(1)}s` : ship.hydroCooldownRemaining > 0 ? `冷却 ${ship.hydroCooldownRemaining.toFixed(0)}s` : `就绪 ${ship.hydroCharges}`}`;

@@ -293,6 +293,18 @@ export class TacticalAirCommandController {
     this.requestDraw();
   }
 
+  /**
+   * Hides transient map UI while retaining the command currently being
+   * configured. Closing the large map is a view operation, not a cancel.
+   */
+  suspendInteraction(): void {
+    this.cancelGesture();
+    this.palette.hidden = true;
+    this.contextMenu.hidden = true;
+    this.setStatus(this.selectedSummary(this.mode ? "指令草稿已保留" : "地图已关闭"));
+    this.requestDraw();
+  }
+
   resetForBattle(): void {
     this.lastAirEventId = 0;
     this.queuedCommands.splice(0);

@@ -141,7 +141,7 @@ export function spawnDeveloperShip(
     depthChargeMounts: definition.starterSlots.depthCharge,
     antiAirMounts: definition.starterSlots.antiAir,
     developerSpawned: true,
-    aiControlled: team === "enemy",
+    aiControlled: true,
     countsForVictory: false,
   });
   state.ships.push(ship);

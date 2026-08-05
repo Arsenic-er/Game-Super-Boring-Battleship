@@ -2714,6 +2714,16 @@ export function observe(state: BattleState, shipId: string) {
   const self = state.ships.find((ship) => ship.id === shipId);
   if (!self) throw new Error(`Unknown ship: ${shipId}`);
   const incomingTorpedoes = torpedoThreatsFor(state, shipId);
+  const friendlies = state.ships
+    .filter((ship) => ship.id !== self.id && ship.team === self.team && ship.hull > 0)
+    .map((ship) => ({
+      id: ship.id,
+      shipClassId: ship.shipClassId,
+      position: { ...ship.position },
+      heading: ship.heading,
+      speedKnots: ship.speedKnots,
+      hullRatio: ship.hull / ship.maxHull,
+    }));
   const objective = {
     center: { ...state.objective.center },
     radius: state.objective.radius,
@@ -2736,6 +2746,7 @@ export function observe(state: BattleState, shipId: string) {
       self,
       mapId: state.mapId,
       contacts: cached.contacts,
+      friendlies,
       objective,
       incomingTorpedoes,
       time: state.time,
@@ -2871,6 +2882,7 @@ export function observe(state: BattleState, shipId: string) {
     self,
     mapId: state.mapId,
     contacts,
+    friendlies,
     objective,
     incomingTorpedoes,
     time: state.time,
@@ -3761,6 +3773,9 @@ export function stepSimulation(
           : undefined,
       };
     }
+    ship.aiDecision = command.aiDecision ? {
+      ...command.aiDecision,
+    } : undefined;
     ship.torpedoSpreadMode = command.torpedoSpread ?? ship.torpedoSpreadMode;
     ship.damageControlPriority = command.damageControlPriority ?? ship.damageControlPriority;
     const damageControlAllocation = damageControlAllocationFor(

@@ -79,6 +79,12 @@ import type {
   WeaponSlot,
 } from "../sim/types";
 
+export interface DeveloperViewOptions {
+  focusEntityId?: string;
+  controlledShipId?: string;
+  omniscient?: boolean;
+}
+
 interface ShipVisual {
   hullId: HullId;
   shipClassId: ShipClassId;
@@ -701,14 +707,19 @@ export class GameView implements AimProvider {
     return this.quality;
   }
 
-  private syncShips(state: BattleState, perceivedTarget?: PlayerTargetView): void {
+  private syncShips(
+    state: BattleState,
+    perceivedTarget?: PlayerTargetView,
+    omniscient = false,
+    cameraShipId = "player",
+  ): void {
     const activeIds = new Set(state.ships.map(({ id }) => id));
     for (const [id, visual] of this.ships) {
       if (activeIds.has(id)) continue;
       visual.root.dispose(false, true);
       this.ships.delete(id);
     }
-    const developerMode = Boolean(
+    const developerMode = omniscient || Boolean(
       state.ships.find(({ id }) => id === "player")?.developer?.enabled,
     );
     for (const ship of state.ships) {
@@ -731,7 +742,7 @@ export class GameView implements AimProvider {
       const visible = presentation !== "hidden";
       visual.root.setEnabled(visible);
       if (!visible) continue;
-      const targetPose = ship.team === "enemy" && perceivedTarget?.id === ship.id
+      const targetPose = !omniscient && ship.team === "enemy" && perceivedTarget?.id === ship.id
         ? perceivedTarget : undefined;
       const renderPosition = targetPose?.position ?? ship.position;
       const renderHeading = targetPose?.heading ?? ship.heading;
@@ -755,7 +766,7 @@ export class GameView implements AimProvider {
         continue;
       }
       for (const mesh of visual.bodyMeshes) mesh.renderOutline = false;
-      const bodyVisibility = ownShipBodyVisibility(ship.id, this.aiming);
+      const bodyVisibility = ownShipBodyVisibility(ship.id, this.aiming, cameraShipId);
       if (visual.bodyVisibility !== bodyVisibility) {
         applyBodyVisibility(visual.bodyMeshes, bodyVisibility);
         visual.bodyVisibility = bodyVisibility;
@@ -855,7 +866,11 @@ export class GameView implements AimProvider {
     }
   }
 
-  private syncAirSquadrons(state: BattleState, dt: number): void {
+  private syncAirSquadrons(
+    state: BattleState,
+    dt: number,
+    developerView?: Readonly<DeveloperViewOptions>,
+  ): void {
     const activeIds = new Set(state.airSquadrons.map((squadron) => squadron.id));
     for (const [id, visual] of this.airSquadronVisuals) {
       if (activeIds.has(id)) continue;
@@ -863,17 +878,24 @@ export class GameView implements AimProvider {
       this.airSquadronVisuals.delete(id);
     }
     const player = state.ships.find((ship) => ship.team === "player");
+    const focusShip = state.ships.find(({ id }) => id === developerView?.focusEntityId);
+    const focusAir = state.airSquadrons.find(({ id }) => id === developerView?.focusEntityId);
+    const anchor = focusShip?.position ?? focusAir?.position ?? player?.position;
     const maximumDistance = this.quality === "low" ? 4_200 : 5_000;
     for (const squadron of state.airSquadrons) {
-      const snapshot = airVisualSnapshot(squadron, state.time, "player");
+      const snapshot = airVisualSnapshot(
+        squadron,
+        state.time,
+        developerView?.omniscient ? squadron.team : "player",
+      );
       let visual = this.airSquadronVisuals.get(squadron.id);
       if (!snapshot) {
         visual?.root.setEnabled(false);
         continue;
       }
-      const tooFar = player && Math.hypot(
-        snapshot.position.x - player.position.x,
-        snapshot.position.z - player.position.z,
+      const tooFar = !developerView?.omniscient && anchor && Math.hypot(
+        snapshot.position.x - anchor.x,
+        snapshot.position.z - anchor.z,
       ) > maximumDistance;
       if (tooFar) {
         visual?.root.setEnabled(false);
@@ -931,10 +953,13 @@ export class GameView implements AimProvider {
     }
   }
 
-  private syncProjectiles(state: BattleState, perceivedTarget?: PlayerTargetView): void {
+  private syncProjectiles(
+    state: BattleState, perceivedTarget?: PlayerTargetView, omniscient = false,
+  ): void {
     const player = state.ships.find((ship) => ship.team === "player");
-    const visibleProjectiles = state.projectiles.filter((projectile) =>
-      isProjectileVisibleToPlayer(projectile, player, perceivedTarget));
+    const visibleProjectiles = omniscient ? state.projectiles : state.projectiles.filter(
+      (projectile) => isProjectileVisibleToPlayer(projectile, player, perceivedTarget),
+    );
     const activeIds = new Set(visibleProjectiles.map((projectile) => projectile.id));
     for (const [id, visual] of this.projectileMeshes) {
       if (!activeIds.has(id)) {
@@ -1760,6 +1785,7 @@ export class GameView implements AimProvider {
     perceivedTarget?: PlayerTargetView,
     weaponSlot: WeaponSlot = "mainGun",
     torpedoSpread: TorpedoSpreadMode = "narrow",
+    developerView?: Readonly<DeveloperViewOptions>,
   ): void {
     const steppedTime = Math.floor(state.time * 6) / 6;
     this.oceanTexture.uOffset = steppedTime * 0.0018;
@@ -1767,9 +1793,13 @@ export class GameView implements AimProvider {
     this.oceanBumpTexture.uOffset = steppedTime * 0.0021;
     this.oceanBumpTexture.vOffset = steppedTime * -0.00135;
     this.terrain.setEnabled(state.mapId === "atoll-prototype");
-    this.syncShips(state, perceivedTarget);
-    this.syncAirSquadrons(state, dt);
-    this.syncProjectiles(state, perceivedTarget);
+    const focusShip = state.ships.find(({ id }) => id === developerView?.focusEntityId);
+    const controlledShip = state.ships.find(({ id }) => id === developerView?.controlledShipId);
+    const cameraShip = focusShip ?? controlledShip
+      ?? state.ships.find((ship) => ship.team === "player");
+    this.syncShips(state, perceivedTarget, developerView?.omniscient, cameraShip?.id);
+    this.syncAirSquadrons(state, dt, developerView);
+    this.syncProjectiles(state, perceivedTarget, developerView?.omniscient);
     this.syncUnderwaterEntities(state);
     this.syncSmokeClouds(state);
     this.objectiveRing.visibility = state.mode === "battle"
@@ -1786,19 +1816,33 @@ export class GameView implements AimProvider {
           : new Color3(0.36, 0.66, 0.68);
     this.objectiveMaterial.diffuseColor.copyFrom(objectiveColor);
     this.objectiveMaterial.emissiveColor.copyFrom(objectiveColor.scale(0.36));
-    const player = state.ships.find((ship) => ship.team === "player");
-    if (player) {
-      const playerHull = getShipClass(player.shipClassId);
-      const cameraScale = Math.sqrt(playerHull.length / 112);
+    const focusAir = state.airSquadrons.find(({ id }) => id === developerView?.focusEntityId);
+    const waveAnchor = focusAir?.position ?? cameraShip?.position;
+    if (waveAnchor) {
       for (const [index, waves] of this.waveLayers.entries()) {
         const drift = state.time * (index === 0 ? 2.4 : -1.35);
-        waves.position.x = player.position.x + Math.sin(drift * 0.021 + index) * 32;
-        waves.position.z = player.position.z + Math.cos(drift * 0.017 + index) * 28 + drift;
+        waves.position.x = waveAnchor.x + Math.sin(drift * 0.021 + index) * 32;
+        waves.position.z = waveAnchor.z + Math.cos(drift * 0.017 + index) * 28 + drift;
       }
-      this.syncAimArc(player, weaponSlot);
-      this.syncTorpedoAim(player, perceivedTarget, weaponSlot, torpedoSpread);
-      const aimX = player.aimPoint.x - player.position.x;
-      const aimZ = player.aimPoint.z - player.position.z;
+    }
+    if (focusAir && !developerView?.controlledShipId) {
+      if (cameraShip) {
+        this.syncAimArc(cameraShip, "aircraft");
+        this.syncTorpedoAim(cameraShip, undefined, "aircraft", torpedoSpread);
+      }
+      const target = new Vector3(focusAir.position.x, focusAir.position.y, focusAir.position.z);
+      if (state.time < 0.12) this.camera.target.copyFrom(target);
+      else Vector3.LerpToRef(this.camera.target, target, 0.18, this.camera.target);
+      this.camera.radius = cameraTransitionValue(this.camera.radius, 115, false);
+      this.camera.fov = cameraTransitionValue(this.camera.fov, 0.78, false);
+      this.enteringAiming = false;
+    } else if (cameraShip) {
+      const playerHull = getShipClass(cameraShip.shipClassId);
+      const cameraScale = Math.sqrt(playerHull.length / 112);
+      this.syncAimArc(cameraShip, weaponSlot);
+      this.syncTorpedoAim(cameraShip, perceivedTarget, weaponSlot, torpedoSpread);
+      const aimX = cameraShip.aimPoint.x - cameraShip.position.x;
+      const aimZ = cameraShip.aimPoint.z - cameraShip.position.z;
       const aimLength = Math.max(1, Math.hypot(aimX, aimZ));
       const skyLook = Math.max(0, this.camera.beta - 1.42);
       const aimCamera = this.aiming ? aimingCameraPlan({
@@ -1806,15 +1850,15 @@ export class GameView implements AimProvider {
         beam: playerHull.beam,
         deckHeight: playerHull.deckHeight,
         renderScaleY: playerHull.renderScale.y,
-        heading: player.heading,
+        heading: cameraShip.heading,
         cameraAlpha: this.camera.alpha,
         beta: this.camera.beta,
       }) : undefined;
       const scopeFocusDistance = aimCamera?.focusDistance ?? 0;
       const target = new Vector3(
-        player.position.x + aimX / aimLength * scopeFocusDistance,
+        cameraShip.position.x + aimX / aimLength * scopeFocusDistance,
         aimCamera?.targetHeight ?? 4 * playerHull.renderScale.y + skyLook * 170,
-        player.position.z + aimZ / aimLength * scopeFocusDistance,
+        cameraShip.position.z + aimZ / aimLength * scopeFocusDistance,
       );
       if (state.time < 0.12 || this.enteringAiming) this.camera.target.copyFrom(target);
       else Vector3.LerpToRef(this.camera.target, target, 0.16, this.camera.target);

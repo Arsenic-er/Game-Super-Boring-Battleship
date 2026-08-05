@@ -109,6 +109,7 @@ describe("developer sandbox", () => {
     const enemyAir = spawnDeveloperAirSquadron(state, "enemy", "torpedoBomber", 5)!;
 
     expect(new Set([friendly.id, enemy.id, friendlyAir.id, enemyAir.id]).size).toBe(4);
+    expect(friendly.aiControlled).toBe(true);
     expect(enemy.aiControlled).toBe(true);
     expect(enemy.countsForVictory).toBe(false);
     expect(friendlyAir.phase).toBe("patrolling");

@@ -3,6 +3,14 @@ import "./pixel.css";
 import "@fortawesome/fontawesome-free/css/all.min.css";
 import { RuleBasedAi } from "./controllers/ruleBasedAi";
 import { PlayerInput } from "./controllers/playerInput";
+import {
+  activeControlledShipId,
+  controlDeveloperShip,
+  normalDeveloperView,
+  observeDeveloperEntity,
+  reconcileDeveloperView,
+  type DeveloperViewSession,
+} from "./controllers/developerView";
 import { GameView } from "./render/gameView";
 import { CombatAudio } from "./render/combatAudio";
 import {
@@ -43,7 +51,8 @@ let input: PlayerInput;
 let tacticalMap: TacticalMap;
 let menus: GameMenus;
 let developerPanel: DeveloperPanel | undefined;
-let enemyAiByShipId = new Map<string, RuleBasedAi>();
+let shipAiById = new Map<string, RuleBasedAi>();
+let developerView: DeveloperViewSession = normalDeveloperView();
 const actorSeed = (id: string): number => {
   let seed = 2_166_136_261;
   for (let index = 0; index < id.length; index += 1) {
@@ -81,7 +90,8 @@ function startMode(mode: GameMode): void {
   developerPanel?.close();
   menus?.closeAll();
   hud.resetMetrics();
-  enemyAiByShipId = new Map();
+  shipAiById = new Map();
+  developerView = normalDeveloperView();
   playerPerception.reset();
   audio.unlock();
   started = true;
@@ -115,6 +125,7 @@ function returnToMainMenu(): void {
     equipment.torpedoId,
     equipment.shipClassId,
   );
+  developerView = normalDeveloperView();
   playerPerception.reset();
   view.resetTransient();
   hud.resetMetrics();
@@ -147,6 +158,10 @@ function applyControlSettings(next: GameSettings): void {
 applyControlSettings(settings);
 const gameShell = root.querySelector<HTMLElement>(".game-shell");
 if (!gameShell) throw new Error("Missing game shell");
+const developerObserverHud = document.createElement("aside");
+developerObserverHud.className = "developer-observer-hud";
+developerObserverHud.hidden = true;
+gameShell.append(developerObserverHud);
 tacticalMap = new TacticalMap(gameShell, {
   locale: settings.locale,
   onOpen: () => {
@@ -213,6 +228,33 @@ developerPanel = new DeveloperPanel(gameShell, () => state, {
   },
   onDebugColliders: (visible) => view.setDebugColliders(visible),
   onCursorStyle: (style) => hud.setCursorStyle(style),
+  onObserveEntity: (id) => {
+    const next = observeDeveloperEntity(state, id);
+    if (!next) return;
+    developerView = next;
+    input.reset();
+    playerPerception.reset();
+    view.setAiming(false);
+  },
+  onControlShip: (id) => {
+    const next = controlDeveloperShip(state, id);
+    if (!next) return;
+    developerView = next;
+    input.reset();
+    playerPerception.reset();
+    view.setAiming(false);
+  },
+  onReleaseControl: () => {
+    developerView = normalDeveloperView();
+    input.reset();
+    playerPerception.reset();
+    view.setAiming(false);
+  },
+  getViewStatus: () => ({
+    active: developerView.active,
+    focusEntityId: developerView.focus?.id,
+    controlledShipId: developerView.active ? developerView.controlledShipId : "player",
+  }),
 });
 
 window.addEventListener("keydown", (event) => {
@@ -248,12 +290,12 @@ window.addEventListener("keydown", (event) => {
     return;
   }
   if (tacticalMap.isExpanded()) {
-    if (tacticalMap.handleKeyDown(event)) return;
     if (event.code === "Escape") {
       event.preventDefault();
       tacticalMap.close();
       return;
     }
+    if (tacticalMap.handleKeyDown(event)) return;
     if (event.code === "F3") return;
   }
   if (event.code === "F3") {
@@ -284,41 +326,58 @@ document.addEventListener("pointerlockchange", () => {
 });
 
 view.engine.runRenderLoop(() => {
+  const reconciledView = reconcileDeveloperView(state, developerView);
+  if (reconciledView !== developerView) {
+    developerView = reconciledView;
+    input.reset();
+    playerPerception.reset();
+  }
+  const controlledShipId = activeControlledShipId(developerView);
+  const focusedAir = developerView.focus?.kind === "airSquadron"
+    ? state.airSquadrons.find(({ id }) => id === developerView.focus?.id)
+    : undefined;
+  const observerShipId = controlledShipId
+    ?? (developerView.focus?.kind === "ship" ? developerView.focus.id : focusedAir?.controllerId)
+    ?? "player";
   const frameSeconds = Math.min(view.engine.getDeltaTime() / 1_000, 0.1);
   let perceivedTarget = started && state.mode === "battle"
-    ? playerPerception.update(observe(state, "player"))
+    ? playerPerception.update(observe(state, observerShipId))
     : undefined;
   if (started && !paused && state.status === "running") {
     accumulator += frameSeconds;
     while (accumulator >= FIXED_STEP) {
-      const player = state.ships.find((ship) => ship.id === "player");
-      if (!player) break;
       const commands = new Map<string, ControlCommand>();
-      const playerCommand = input.command(player);
-      const airMissions = tacticalMap.consumeAirMissions();
-      if (airMissions.length > 0) playerCommand.airMissions = airMissions;
-      commands.set("player", playerCommand);
-      const enemyShips = state.ships.filter((ship) =>
-        ship.hull > 0 && ship.team === "enemy" && (ship.id === "enemy" || ship.aiControlled));
-      const activeEnemyIds = new Set(enemyShips.map(({ id }) => id));
-      for (const id of enemyAiByShipId.keys()) {
-        if (!activeEnemyIds.has(id)) enemyAiByShipId.delete(id);
+      const controlledShip = state.ships.find(({ id, hull }) => id === controlledShipId && hull > 0);
+      if (controlledShip) {
+        const playerCommand = input.command(controlledShip);
+        const airMissions = controlledShip.id === "player" ? tacticalMap.consumeAirMissions() : [];
+        if (airMissions.length > 0) playerCommand.airMissions = airMissions;
+        commands.set(controlledShip.id, playerCommand);
       }
-      for (const enemyShip of enemyShips) {
-        let controller = enemyAiByShipId.get(enemyShip.id);
+      const aiShips = state.ships.filter((ship) =>
+        ship.hull > 0
+        && !ship.isTestTarget
+        && ship.id !== controlledShipId
+        && (developerView.active || ship.id === "enemy" || ship.aiControlled));
+      const activeAiIds = new Set(aiShips.map(({ id }) => id));
+      for (const id of shipAiById.keys()) {
+        if (!activeAiIds.has(id)) shipAiById.delete(id);
+      }
+      for (const aiShip of aiShips) {
+        let controller = shipAiById.get(aiShip.id);
         if (!controller) {
-          controller = new RuleBasedAi(state.randomSeed ^ actorSeed(enemyShip.id));
-          enemyAiByShipId.set(enemyShip.id, controller);
+          controller = new RuleBasedAi(state.randomSeed ^ actorSeed(aiShip.id));
+          shipAiById.set(aiShip.id, controller);
         }
-        commands.set(enemyShip.id, controller.command(observe(state, enemyShip.id)));
+        commands.set(aiShip.id, controller.command(observe(state, aiShip.id)));
       }
       stepSimulation(state, commands, FIXED_STEP);
       tacticalMap.handleAirEvents(state.airEvents);
       perceivedTarget = state.mode === "battle"
-        ? playerPerception.update(observe(state, "player"))
+        ? playerPerception.update(observe(state, observerShipId))
         : undefined;
       const visibleShots = state.shots.filter((shot) =>
-        shot.team === "player" || Boolean(perceivedTarget?.live));
+        developerView.active || shot.team === "player" || Boolean(perceivedTarget?.live));
       view.consumeShots(visibleShots);
       view.consumeImpacts(state.impacts);
       audio.consumeShots(visibleShots);
@@ -330,7 +389,7 @@ view.engine.runRenderLoop(() => {
     accumulator = 0;
   }
 
-  const playerForAudio = state.ships.find((ship) => ship.id === "player");
+  const playerForAudio = state.ships.find((ship) => ship.id === observerShipId);
   audio.sync(
     playerForAudio,
     started && !paused && state.status === "running",
@@ -342,6 +401,11 @@ view.engine.runRenderLoop(() => {
     perceivedTarget,
     input.selectedWeapon,
     input.selectedTorpedoSpread,
+    developerView.active ? {
+      focusEntityId: developerView.focus?.id,
+      controlledShipId: developerView.controlledShipId,
+      omniscient: true,
+    } : undefined,
   );
   if (state.status !== "running") {
     gameShell.classList.remove("hud-details-held");
@@ -357,8 +421,19 @@ view.engine.runRenderLoop(() => {
     view.releasePointerLock();
   }
   hud.setAimMode(input.isAiming);
-  hud.update(state, input.aimRange, input.selectedWeapon, perceivedTarget);
+  hud.update(state, input.aimRange, input.selectedWeapon, perceivedTarget, observerShipId);
   tacticalMap.update(state, perceivedTarget);
+  developerObserverHud.hidden = !developerView.active;
+  if (developerView.active) {
+    const focusShip = state.ships.find(({ id }) => id === developerView.focus?.id);
+    const focusSquadron = state.airSquadrons.find(({ id }) => id === developerView.focus?.id);
+    if (focusShip) {
+      const decision = focusShip.aiDecision;
+      developerObserverHud.textContent = `开发者视角 · ${developerView.controlledShipId === focusShip.id ? "人工接管" : "AI 观察"} ${focusShip.id} · ${decision ? `${decision.role}/${decision.phase} · 目标 ${decision.targetId ?? "无"} · 航向 ${((decision.desiredHeading * 180 / Math.PI + 360) % 360).toFixed(0)}° · 车钟 ${Math.round(decision.throttle * 100)}%${decision.avoidanceReason ? ` · ${decision.avoidanceReason}` : ""}` : "等待策略遥测"} · F3 切换实体`;
+    } else if (focusSquadron) {
+      developerObserverHud.textContent = `开发者视角 · 航空 AI ${focusSquadron.id} · ${focusSquadron.role}/${focusSquadron.phase} · 指令 ${focusSquadron.order?.kind ?? "自主"} · 目标 ${focusSquadron.order?.activeTargetId ?? focusSquadron.order?.targetId ?? "无"} · 编队 ${focusSquadron.aircraftOperational}/${focusSquadron.aircraftCapacity} · F3 切换实体`;
+    }
+  }
   developerPanel?.update();
   view.render();
 });
