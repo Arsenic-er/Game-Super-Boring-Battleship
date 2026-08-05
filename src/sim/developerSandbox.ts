@@ -4,6 +4,18 @@ import { airSquadronTargetAltitude } from "./airFlightModel";
 import { createDeveloperShipState } from "./simulation";
 import { MAIN_GUNS } from "../ships/components";
 import type { MainGunId } from "../ships/components";
+import {
+  CATEGORY_META,
+  EQUIPMENT_CATALOG,
+  SHIP_CLASS_SLOT_COUNTS,
+  equipmentFor,
+  isEquipmentCompatible,
+  type EquipmentCategory,
+} from "../profile/equipmentCatalog";
+import {
+  battleLoadoutFromSlots,
+  type SlotLoadout,
+} from "../profile/localProfile";
 import { getShipClass } from "../ships/classes";
 import type { ShipClassId } from "../ships/classes";
 import { getTorpedo } from "../ships/torpedoes";
@@ -15,6 +27,7 @@ import type {
   AirSquadronState,
   BattleState,
   DeveloperShipOverrides,
+  ShipPerformanceModifiers,
   ShipState,
   Team,
   Vec3,
@@ -37,9 +50,15 @@ export interface DeveloperLoadout {
   torpedoLauncherMounts: number;
   secondaryGunId: SecondaryGunId;
   secondaryGunMounts: number;
+  secondaryGunIds?: SecondaryGunId[];
   depthChargeMounts: number;
   antiAirMounts: number;
+  antiAirEfficiencyMultiplier?: number;
+  performance?: ShipPerformanceModifiers;
+  equipmentSlots?: SlotLoadout | null;
 }
+
+const equipmentCategories = Object.keys(CATEGORY_META) as EquipmentCategory[];
 
 const finitePoint = (point: Readonly<Vec3>): boolean =>
   Number.isFinite(point.x) && Number.isFinite(point.y) && Number.isFinite(point.z);
@@ -87,6 +106,11 @@ export function reconfigureDeveloperShip(
     ...current.developer,
     enabled: true,
     mainBatteryClassId: loadout.mainBatteryClassId,
+    equipmentSlots: loadout.equipmentSlots === null
+      ? undefined
+      : loadout.equipmentSlots
+        ? structuredClone(loadout.equipmentSlots)
+        : current.developer?.equipmentSlots,
   };
   const replacement = createDeveloperShipState({
     id: current.id,
@@ -100,11 +124,12 @@ export function reconfigureDeveloperShip(
     torpedoLauncherMounts: Math.max(0, Math.min(8, Math.floor(loadout.torpedoLauncherMounts))),
     depthChargeMounts: Math.max(0, Math.min(8, Math.floor(loadout.depthChargeMounts))),
     antiAirMounts: Math.max(0, Math.min(16, Math.floor(loadout.antiAirMounts))),
-    secondaryGunIds: Array.from(
+    antiAirEfficiencyMultiplier: loadout.antiAirEfficiencyMultiplier ?? current.antiAirEfficiencyMultiplier,
+    secondaryGunIds: loadout.secondaryGunIds ?? Array.from(
       { length: Math.max(0, Math.min(12, Math.floor(loadout.secondaryGunMounts))) },
       () => loadout.secondaryGunId,
     ),
-    performance: { ...current.performance },
+    performance: { ...(loadout.performance ?? current.performance) },
     developer: overrides,
     developerSpawned: current.developerSpawned,
     aiControlled: current.aiControlled,
@@ -117,6 +142,120 @@ export function reconfigureDeveloperShip(
   state.ships[index] = replacement;
   state.sensorSnapshots = {};
   return replacement;
+}
+
+export function developerStarterEquipmentSlots(shipClassId: ShipClassId): SlotLoadout {
+  const definition = getShipClass(shipClassId);
+  return Object.fromEntries(equipmentCategories.map((category) => {
+    const count = SHIP_CLASS_SLOT_COUNTS[shipClassId][category];
+    const starterCount = category === "magazine" || category === "engine" || category === "steering"
+      ? Math.min(1, count)
+      : definition.starterSlots[category as keyof typeof definition.starterSlots] ?? 0;
+    return [category, Array.from({ length: count }, (_, index) =>
+      index < starterCount ? equipmentFor(category, "common").id : null)];
+  })) as SlotLoadout;
+}
+
+export function normalizeDeveloperEquipmentSlots(
+  shipClassId: ShipClassId,
+  source: Readonly<Partial<Record<EquipmentCategory, readonly (string | null)[]>>>,
+): SlotLoadout {
+  const normalized = Object.fromEntries(equipmentCategories.map((category) => {
+    const count = SHIP_CLASS_SLOT_COUNTS[shipClassId][category];
+    const requested = source[category] ?? [];
+    const values = Array.from({ length: count }, (_, index) => {
+      const id = requested[index];
+      const item = id ? EQUIPMENT_CATALOG.find((candidate) => candidate.id === id) : undefined;
+      return item?.category === category && isEquipmentCompatible(item, shipClassId)
+        ? item.id : null;
+    });
+    if (category === "mainGun" || category === "torpedo") {
+      const model = values.find((id): id is string => Boolean(id));
+      if (model) return [category, values.map((id) => id ? model : null)];
+    }
+    return [category, values];
+  })) as SlotLoadout;
+  if (normalized.mainGun.length > 0 && !normalized.mainGun.some(Boolean)) {
+    normalized.mainGun[0] = equipmentFor("mainGun", "common").id;
+  }
+  return normalized;
+}
+
+const closestEquipment = (
+  category: EquipmentCategory,
+  targetBonus: number,
+): string => EQUIPMENT_CATALOG
+  .filter((item) => item.category === category)
+  .sort((left, right) => Math.abs(left.bonus - targetBonus) - Math.abs(right.bonus - targetBonus))[0]!.id;
+
+export function developerEquipmentSlotsForShip(ship: Readonly<ShipState>): SlotLoadout {
+  const stored = ship.developer?.equipmentSlots as Partial<Record<EquipmentCategory, (string | null)[]>> | undefined;
+  if (stored) return normalizeDeveloperEquipmentSlots(ship.shipClassId, stored);
+  const slots = developerStarterEquipmentSlots(ship.shipClassId);
+  const mainGun = EQUIPMENT_CATALOG.find((item) =>
+    item.category === "mainGun" && item.mainGunId === ship.mainGunId)?.id
+    ?? equipmentFor("mainGun", "common").id;
+  slots.mainGun = slots.mainGun.map((_, index) =>
+    index < ship.mainBatteryMounts.length ? mainGun : null);
+  const torpedo = EQUIPMENT_CATALOG.find((item) =>
+    item.category === "torpedo" && item.torpedoId === ship.torpedoId)?.id
+    ?? equipmentFor("torpedo", "common").id;
+  slots.torpedo = slots.torpedo.map((_, index) =>
+    index < ship.torpedoLauncherMounts ? torpedo : null);
+  slots.sideGun = slots.sideGun.map((_, index) => {
+    const secondaryId = ship.secondaryMounts[index]?.definitionId;
+    return EQUIPMENT_CATALOG.find((item) =>
+      item.category === "sideGun" && item.secondaryGunId === secondaryId)?.id ?? null;
+  });
+  const antiAir = closestEquipment("antiAir", ship.antiAirEfficiencyMultiplier - 1);
+  slots.antiAir = slots.antiAir.map((_, index) => index < ship.antiAirMounts ? antiAir : null);
+  const depthCharge = equipmentFor("depthCharge", "common").id;
+  slots.depthCharge = slots.depthCharge.map((_, index) =>
+    index < ship.depthChargeMounts ? depthCharge : null);
+  if (slots.engine.length) {
+    slots.engine[0] = closestEquipment("engine", ship.performance.maxSpeedMultiplier - 1);
+  }
+  if (slots.steering.length) {
+    slots.steering[0] = closestEquipment("steering", ship.performance.turnMultiplier - 1);
+  }
+  if (slots.magazine.length) {
+    slots.magazine[0] = closestEquipment(
+      "magazine", (1 - ship.performance.reloadMultiplier) / 0.72,
+    );
+  }
+  return normalizeDeveloperEquipmentSlots(ship.shipClassId, slots);
+}
+
+export function applyDeveloperEquipmentLoadout(
+  state: BattleState,
+  shipId: string,
+  shipClassId: ShipClassId,
+  source: Readonly<Partial<Record<EquipmentCategory, readonly (string | null)[]>>>,
+): ShipState | undefined {
+  const slots = normalizeDeveloperEquipmentSlots(shipClassId, source);
+  const runtime = battleLoadoutFromSlots(shipClassId, slots);
+  return reconfigureDeveloperShip(state, shipId, {
+    shipClassId,
+    mainBatteryClassId: shipClassId,
+    mainGunId: runtime.mainGunId,
+    mainGunMounts: runtime.mainGunMounts,
+    torpedoId: runtime.torpedoId,
+    torpedoLauncherMounts: runtime.torpedoLauncherMounts,
+    secondaryGunId: runtime.secondaryGunIds[0] ?? "sideGun-common",
+    secondaryGunMounts: runtime.secondaryGunIds.length,
+    secondaryGunIds: runtime.secondaryGunIds,
+    depthChargeMounts: runtime.depthChargeMounts,
+    antiAirMounts: runtime.antiAirMounts,
+    antiAirEfficiencyMultiplier: runtime.antiAirEfficiencyMultiplier,
+    performance: {
+      maxSpeedMultiplier: runtime.maxSpeedMultiplier,
+      accelerationMultiplier: runtime.accelerationMultiplier,
+      turnMultiplier: runtime.turnMultiplier,
+      reloadMultiplier: runtime.reloadMultiplier,
+      magazineRiskMultiplier: runtime.magazineRiskMultiplier,
+    },
+    equipmentSlots: slots,
+  });
 }
 
 export function spawnDeveloperShip(

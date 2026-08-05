@@ -272,6 +272,8 @@ export interface DeveloperShipOverrides {
   speedMultiplier: number;
   forcedSpeedKnots?: number;
   mainBatteryClassId?: ShipClassId;
+  /** Current-battle-only equipment preset; never written to the player profile. */
+  equipmentSlots?: Partial<Record<string, (string | null)[]>>;
 }
 
 export interface ShipState {

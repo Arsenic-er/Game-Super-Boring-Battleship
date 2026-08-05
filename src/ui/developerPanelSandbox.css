@@ -15,6 +15,63 @@
 .dev-loadout { display: grid; gap: 7px; }
 .dev-loadout h3,
 .dev-entity-tools h3 { margin-bottom: 2px; }
+
+.dev-equipment-armory {
+  display: grid;
+  gap: 8px;
+  border-color: rgba(217, 173, 85, .46);
+  background: linear-gradient(155deg, rgba(30, 63, 67, .76), rgba(8, 35, 43, .92));
+}
+.dev-equipment-armory h3 { margin-bottom: 0; color: #f0d88a; }
+.dev-equipment-note {
+  padding: 7px 9px;
+  border-left: 2px solid rgba(217, 173, 85, .78);
+  background: rgba(217, 173, 85, .08);
+  color: #b9cfca;
+  font-size: 9px;
+  line-height: 1.55;
+}
+.dev-equipment-slots { display: grid; gap: 7px; }
+.dev-equipment-row {
+  display: grid;
+  gap: 6px;
+  padding: 8px;
+  border: 1px solid rgba(101, 184, 190, .18);
+  background: rgba(3, 24, 31, .52);
+}
+.dev-equipment-model-row { grid-template-columns: minmax(0, 1fr) 82px; }
+.dev-equipment-model-row .dev-equipment-category { grid-column: 1 / -1; }
+.dev-equipment-category { display: flex; align-items: center; gap: 6px; color: #d8efea; }
+.dev-equipment-category i { width: 14px; color: #70d3df; text-align: center; }
+.dev-equipment-category small { margin-left: auto; color: #769397; font-size: 8px; }
+.dev-equipment-row label { display: grid; min-width: 0; gap: 4px; color: #829fa2; font-size: 8px; }
+.dev-equipment-slot-list { display: grid; gap: 6px; }
+.dev-equipment-select,
+.dev-equipment-count input {
+  width: 100%;
+  min-width: 0;
+  box-sizing: border-box;
+  padding: 7px;
+  color: #e4efeb;
+  border: 1px solid #7f9da0;
+  background: #092832;
+  font-size: 9px;
+}
+.dev-equipment-select.rarity-common { border-color: #7f9da0; }
+.dev-equipment-select.rarity-purple { border-color: #a574d1; box-shadow: inset 2px 0 #a574d1; }
+.dev-equipment-select.rarity-gold { border-color: #d9ad55; box-shadow: inset 2px 0 #d9ad55; }
+.dev-equipment-select.rarity-redGold { border-color: #e36a4e; box-shadow: inset 2px 0 #e36a4e; }
+.dev-equipment-select.rarity-empty { border-color: rgba(127, 157, 160, .32); color: #789092; }
+.dev-equipment-caveat { color: #d5b86a; font-size: 8px; line-height: 1.4; }
+.dev-equipment-summary {
+  padding: 8px;
+  border: 1px dashed rgba(112, 211, 223, .28);
+  color: #9fd8d5;
+  background: rgba(4, 24, 31, .6);
+  font-size: 8px;
+  line-height: 1.65;
+}
+.dev-equipment-apply { border-color: rgba(217, 173, 85, .65); color: #f4dda0; }
 .dev-select input,
 .dev-spawn-grid select,
 .dev-spawn-grid input {

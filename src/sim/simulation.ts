@@ -324,6 +324,7 @@ export interface DeveloperShipStateOptions {
   torpedoLauncherMounts?: number;
   depthChargeMounts?: number;
   antiAirMounts?: number;
+  antiAirEfficiencyMultiplier?: number;
   secondaryGunIds?: SecondaryGunId[];
   performance?: ShipPerformanceModifiers;
   developer?: ShipState["developer"];
@@ -355,7 +356,7 @@ export function createDeveloperShipState(options: DeveloperShipStateOptions): Sh
     Math.max(0, options.torpedoLauncherMounts ?? definition.starterSlots.torpedo),
     Math.max(0, options.depthChargeMounts ?? definition.starterSlots.depthCharge),
     Math.max(0, options.antiAirMounts ?? definition.starterSlots.antiAir),
-    1,
+    options.antiAirEfficiencyMultiplier ?? 1,
     secondaryGunIds,
   );
   ship.position.y = options.position.y;

@@ -95,9 +95,17 @@ export class DeveloperPanel {
         <label><input data-role="developer-speed-lock" type="checkbox" /> 锁定绝对航速</label>
         ${this.devField("forcedSpeedKnots", "锁定航速 kn", -40, 200, 1)}
       </section>
-      <section class="dev-section dev-loadout">
-        <h3>自由舰体与武器</h3>
+      <section class="dev-section dev-equipment-armory">
+        <h3>全装备直装</h3>
+        <div class="dev-equipment-note">完整装备目录已开放 · 不检查购买、研发、库存或货币 · 仅当前战斗生效</div>
         <label class="dev-select"><span>舰体型号</span><select data-loadout="shipClassId">${shipClassOptions}</select></label>
+        <div class="dev-equipment-slots" data-role="developer-equipment-slots"></div>
+        <div class="dev-equipment-summary" data-role="developer-equipment-summary">等待选择装备</div>
+        <button class="dev-wide-action dev-equipment-apply" data-action="apply-equipment-loadout" type="button">立即装配所选装备</button>
+      </section>
+      <section class="dev-section dev-loadout">
+        <h3>越界实验：舰体与武器</h3>
+        <div class="dev-equipment-note">允许跨舰型炮术方案与超量挂载；会退出上方的正式槽位配置。</div>
         <label class="dev-select"><span>主炮方案</span><select data-loadout="mainBatteryClassId">${shipClassOptions}</select></label>
         <label class="dev-select"><span>炮术组件</span><select data-loadout="mainGunId">${gunOptions}</select></label>
         ${this.loadoutNumber("mainGunMounts", "主炮座", 1, 8)}
@@ -107,7 +115,7 @@ export class DeveloperPanel {
         ${this.loadoutNumber("secondaryGunMounts", "副炮座", 0, 12)}
         ${this.loadoutNumber("depthChargeMounts", "深弹架", 0, 8)}
         ${this.loadoutNumber("antiAirMounts", "防空座", 0, 16)}
-        <button class="dev-wide-action" data-action="apply-loadout" type="button">应用舰体与武器配置</button>
+        <button class="dev-wide-action" data-action="apply-loadout" type="button">应用越界实验配置</button>
       </section>
       <section class="dev-section dev-entity-tools">
         <h3>战场实体编辑器</h3>

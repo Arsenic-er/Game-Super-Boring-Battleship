@@ -428,10 +428,13 @@ export function selectShipClass(source: LocalProfile, shipClassId: ShipClassId):
   });
 }
 
-export function battleLoadout(profileSource: LocalProfile): BattleLoadout {
-  const profile = normalizeLocalProfile(profileSource);
+/** Shared slot-to-runtime conversion used by both the dockyard and developer sandbox. */
+export function battleLoadoutFromSlots(
+  shipClassId: ShipClassId,
+  slots: Readonly<SlotLoadout>,
+): BattleLoadout {
   const equipped = (category: EquipmentCategory) => {
-    const id = profile.loadout[category];
+    const id = slots[category]?.find((candidate): candidate is string => Boolean(candidate));
     return id ? EQUIPMENT_BY_ID[id] : undefined;
   };
   const gun = equipped("mainGun");
@@ -439,13 +442,13 @@ export function battleLoadout(profileSource: LocalProfile): BattleLoadout {
   const engine = equipped("engine");
   const steering = equipped("steering");
   const magazine = equipped("magazine");
-  const antiAirDefinitions = profile.slotLoadoutsByShipClass[profile.shipClassId].antiAir
+  const antiAirDefinitions = slots.antiAir
     .flatMap((id) => id && EQUIPMENT_BY_ID[id] ? [EQUIPMENT_BY_ID[id]] : []);
   const antiAirEfficiencyMultiplier = antiAirDefinitions.length === 0 ? 1 : 1
     + antiAirDefinitions.reduce((sum, item) => sum + item.bonus, 0) / antiAirDefinitions.length;
   return {
-    hullId: profile.hullId,
-    shipClassId: profile.shipClassId,
+    hullId: getShipClass(shipClassId).hullId,
+    shipClassId,
     mainGunId: gun?.mainGunId ?? DEFAULT_MAIN_GUN_ID,
     torpedoId: torpedo?.torpedoId ?? DEFAULT_TORPEDO_ID,
     maxSpeedMultiplier: 1 + (engine?.bonus ?? 0),
@@ -453,16 +456,24 @@ export function battleLoadout(profileSource: LocalProfile): BattleLoadout {
     turnMultiplier: 1 + (steering?.bonus ?? 0),
     reloadMultiplier: 1 - (magazine?.bonus ?? 0) * 0.72,
     magazineRiskMultiplier: (1 + (magazine?.drawback ?? 0)) * (1 + (torpedo?.drawback ?? 0)),
-    mainGunMounts: profile.slotLoadoutsByShipClass[profile.shipClassId].mainGun.filter(Boolean).length,
-    torpedoLauncherMounts: profile.slotLoadoutsByShipClass[profile.shipClassId].torpedo.filter(Boolean).length,
-    depthChargeMounts: profile.slotLoadoutsByShipClass[profile.shipClassId].depthCharge.filter(Boolean).length,
+    mainGunMounts: slots.mainGun.filter(Boolean).length,
+    torpedoLauncherMounts: slots.torpedo.filter(Boolean).length,
+    depthChargeMounts: slots.depthCharge.filter(Boolean).length,
     antiAirMounts: antiAirDefinitions.length,
     antiAirEfficiencyMultiplier,
-    secondaryGunIds: profile.slotLoadoutsByShipClass[profile.shipClassId].sideGun.flatMap((id) => {
+    secondaryGunIds: slots.sideGun.flatMap((id) => {
       const definition = id ? EQUIPMENT_BY_ID[id] : undefined;
       return definition?.secondaryGunId ? [definition.secondaryGunId] : [];
     }),
   };
+}
+
+export function battleLoadout(profileSource: LocalProfile): BattleLoadout {
+  const profile = normalizeLocalProfile(profileSource);
+  return battleLoadoutFromSlots(
+    profile.shipClassId,
+    profile.slotLoadoutsByShipClass[profile.shipClassId],
+  );
 }
 
 export function guaranteeProgress(drawCount: number, threshold: 10 | 50 | 100): number {
