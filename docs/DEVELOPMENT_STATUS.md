@@ -50,11 +50,12 @@ server access, browser testing, and short-lived transfer staging.
   24-squadron default performance guardrails.
 - Reduced combat HUD, hold-Tab details, naval instruments, and dedicated scope view.
 - Ocean, sky, volumetric smoke, fire, splashes, shell trails, and naval audio.
+- Living friendly ships render as distinct cyan markers on both tactical-map scales.
 
 ## Quality baseline
 
-- Version: `0.6.5`
-- Tests: 364 passing; two offline balance reports intentionally skipped.
+- Version: `0.6.6`
+- Tests: 368 passing; two offline balance reports intentionally skipped.
 - Production build: passing.
 - Worst auxiliary-equipment test fixture: no more than 70 meshes.
 - Fifty loadout rebuilds return mesh, node, and material counts to baseline.
@@ -62,7 +63,8 @@ server access, browser testing, and short-lived transfer staging.
   including all torpedo wake planes.
 - The balance lab supports class-specific standard loadouts, paired mirrored spawns,
   batch matrices, citadel telemetry, tracking telemetry, and repeatable CLI reports.
-- Latest feature set: 3v3 mission, role-aware fleet AI, and lifecycle guardrails.
+- Latest feature set: 3v3 mission, role-aware fleet AI, lifecycle guardrails,
+  friendly tactical-map markers, and layered transient/pressure/echo main-gun audio.
 
 ## Balance calibration snapshot
 
@@ -77,7 +79,7 @@ server access, browser testing, and short-lived transfer staging.
 
 ## Next priorities
 
-1. Capture 0.6.5 visual-regression baselines for menu, dock, combat, scope,
+1. Capture 0.6.6 visual-regression baselines for menu, dock, combat, scope,
    tactical map, and developer mode at 1440x900 and 1280x720.
 2. Establish external-model, hardpoint, material, and LOD pipelines with Fletcher,
    Cleveland, and Yamato as the three benchmark ships.

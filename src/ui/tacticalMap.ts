@@ -69,6 +69,24 @@ export function largeMapScale(
   return Math.min(width, height) * .46 / Math.max(1, halfExtent);
 }
 
+export interface FriendlyMapShips {
+  own?: ShipState;
+  allies: readonly ShipState[];
+}
+
+/** Keeps the player marker stable even when developer spawns reorder the ship list. */
+export function friendlyMapShips(
+  ships: readonly ShipState[],
+  preferredOwnId = "player",
+): FriendlyMapShips {
+  const active = ships.filter(({ team, hull }) => team === "player" && hull > 0);
+  const own = active.find(({ id }) => id === preferredOwnId) ?? active[0];
+  return {
+    own,
+    allies: own ? active.filter(({ id }) => id !== own.id) : [],
+  };
+}
+
 /** Zooms around the world point under the cursor instead of jumping to center. */
 export function zoomLargeMapView(
   view: Readonly<LargeMapView>,
@@ -166,25 +184,26 @@ function drawBattleTerrain(
 }
 
 
-function drawShip(
+function drawFriendlyShip(
   context: CanvasRenderingContext2D,
   ship: ShipState,
   point: MapPoint,
   heading: number,
-  player: boolean,
+  kind: "own" | "friendly",
 ): void {
+  const own = kind === "own";
   context.save();
   context.globalAlpha = ship.hull > 0 ? 1 : 0.42;
   context.translate(point.x, point.y);
   context.rotate(heading);
   context.beginPath();
-  context.moveTo(0, player ? -10 : -8);
-  context.lineTo(player ? 6 : 5, player ? 8 : 6);
-  context.lineTo(0, player ? 5 : 4);
-  context.lineTo(player ? -6 : -5, player ? 8 : 6);
+  context.moveTo(0, own ? -10 : -8);
+  context.lineTo(own ? 6 : 5, own ? 8 : 6);
+  context.lineTo(0, own ? 5 : 4);
+  context.lineTo(own ? -6 : -5, own ? 8 : 6);
   context.closePath();
-  context.fillStyle = player ? "#9ce1bd" : "#ef806b";
-  context.strokeStyle = player ? "#e8fff2" : "#ffe1d9";
+  context.fillStyle = own ? "#9ce1bd" : "#58d9d2";
+  context.strokeStyle = own ? "#e8fff2" : "#dcffff";
   context.lineWidth = 1.2;
   context.fill();
   context.stroke();
@@ -630,7 +649,7 @@ export class TacticalMap {
   update(state: BattleState, target?: PlayerTargetView): void {
     this.lastState = state;
     this.lastTarget = target;
-    const player = state.ships.find((ship) => ship.team === "player");
+    const { own: player } = friendlyMapShips(state.ships);
     if (!player) return;
     this.compassNeedle.style.transform = `rotate(${-player.heading}rad)`;
     if (this.lastDrawTime >= 0 && state.time - this.lastDrawTime < 1 / 15) return;
@@ -751,6 +770,25 @@ export class TacticalMap {
       scale,
     );
     drawObjective(context, state, objectivePoint, state.objective.radius * scale);
+    const { allies } = friendlyMapShips(state.ships, player.id);
+    for (const ally of allies) {
+      const point = worldToHeadingUpMap(
+        ally.position.x - player.position.x,
+        ally.position.z - player.position.z,
+        player.heading,
+        scale,
+        center.x,
+        center.y,
+      );
+      if (point.x < 6 || point.x > width - 6 || point.y < 6 || point.y > height - 6) continue;
+      drawFriendlyShip(
+        context,
+        ally,
+        point,
+        ally.heading - player.heading,
+        "friendly",
+      );
+    }
     const playerPoint = worldToHeadingUpMap(
       0,
       0,
@@ -760,7 +798,7 @@ export class TacticalMap {
       center.y,
     );
     drawHydroRange(context, player, playerPoint, scale);
-    drawShip(context, player, playerPoint, 0, true);
+    drawFriendlyShip(context, player, playerPoint, 0, "own");
     drawDetectedTorpedoes(
       context,
       state,
@@ -847,7 +885,9 @@ export class TacticalMap {
       state.objective.radius * scale,
     );
     const entities: TacticalMapEntity[] = [];
-    for (const ship of state.ships.filter(({ team }) => team === "player")) {
+    const { own: player, allies: friendlyShips } = friendlyMapShips(state.ships);
+    const activeFriendlyShips = player ? [player, ...friendlyShips] : [];
+    for (const ship of activeFriendlyShips) {
       entities.push({
         id: ship.id,
         category: "friendlyShip",
@@ -865,11 +905,16 @@ export class TacticalMap {
         world: { ...target.position },
       });
     }
-    const player = state.ships.find((ship) => ship.team === "player");
+    for (const ship of friendlyShips) {
+      const point = project(ship.position.x, ship.position.z);
+      drawFriendlyShip(context, ship, point, ship.heading, "friendly");
+      context.fillStyle = "#a7f1eb";
+      context.fillText("友舰", point.x + 9, point.y - 7);
+    }
     if (player) {
       const point = project(player.position.x, player.position.z);
       drawHydroRange(context, player, point, scale);
-      drawShip(context, player, point, player.heading, true);
+      drawFriendlyShip(context, player, point, player.heading, "own");
       drawDetectedTorpedoes(
         context,
         state,

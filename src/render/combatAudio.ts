@@ -10,6 +10,25 @@ const AUDIO = {
   birdIntervalJitterSeconds: 13,
 } as const;
 
+export interface MainGunLayerGains {
+  crack: number;
+  blast: number;
+  pressure: number;
+  sub: number;
+  echo: number;
+}
+
+export function mainGunLayerGains(volume: number): MainGunLayerGains {
+  const level = Math.min(1, Math.max(0, Number.isFinite(volume) ? volume : 0));
+  return {
+    crack: level * 1.28,
+    blast: level * 0.92,
+    pressure: level * 0.78,
+    sub: level * 0.38,
+    echo: level * 0.3,
+  };
+}
+
 const wrapAngle = (angle: number): number => {
   let wrapped = angle;
   while (wrapped > Math.PI) wrapped -= Math.PI * 2;
@@ -52,6 +71,8 @@ export function combatShotSoundKind(shot: Pick<ShotEvent, "kind" | "weaponSource
 export class CombatAudio {
   private context?: AudioContext;
   private master?: GainNode;
+  private limiter?: DynamicsCompressorNode;
+  private transientNoise?: AudioBuffer;
   private oceanGain?: GainNode;
   private machineryGain?: GainNode;
   private ambientStarted = false;
@@ -67,6 +88,8 @@ export class CombatAudio {
     if (this.context?.state === "closed") {
       this.context = undefined;
       this.master = undefined;
+      this.limiter = undefined;
+      this.transientNoise = undefined;
       this.oceanGain = undefined;
       this.machineryGain = undefined;
       this.ambientStarted = false;
@@ -75,7 +98,13 @@ export class CombatAudio {
       this.context = new AudioContext();
       this.master = this.context.createGain();
       this.master.gain.value = this.muted ? 0 : this.volume;
-      this.master.connect(this.context.destination);
+      this.limiter = this.context.createDynamicsCompressor();
+      this.limiter.threshold.value = -12;
+      this.limiter.knee.value = 10;
+      this.limiter.ratio.value = 5;
+      this.limiter.attack.value = 0.002;
+      this.limiter.release.value = 0.24;
+      this.master.connect(this.limiter).connect(this.context.destination);
     }
     void this.context.resume().then(() => {
       if (!this.battleActive) return;
@@ -454,17 +483,34 @@ export class CombatAudio {
     const output = this.output();
     if (!context || !output) return;
     const now = context.currentTime;
-    const oscillator = context.createOscillator();
-    const gain = context.createGain();
-    oscillator.type = "triangle";
-    oscillator.frequency.setValueAtTime(92, now);
-    oscillator.frequency.exponentialRampToValueAtTime(34, now + 0.42);
-    gain.gain.setValueAtTime(volume, now);
-    gain.gain.exponentialRampToValueAtTime(0.001, now + 0.48);
-    oscillator.connect(gain).connect(output);
-    oscillator.start(now);
-    oscillator.stop(now + 0.5);
-    this.noiseBurst(volume * 0.45, 0.2, 420);
+    const layers = mainGunLayerGains(volume);
+    const pressure = context.createOscillator();
+    const pressureGain = context.createGain();
+    pressure.type = "triangle";
+    pressure.frequency.setValueAtTime(118, now);
+    pressure.frequency.exponentialRampToValueAtTime(42, now + 0.48);
+    pressureGain.gain.setValueAtTime(0.000_1, now);
+    pressureGain.gain.exponentialRampToValueAtTime(layers.pressure, now + 0.006);
+    pressureGain.gain.exponentialRampToValueAtTime(0.000_1, now + 0.58);
+    pressure.connect(pressureGain).connect(output);
+    pressure.start(now);
+    pressure.stop(now + 0.6);
+
+    const sub = context.createOscillator();
+    const subGain = context.createGain();
+    sub.type = "sine";
+    sub.frequency.setValueAtTime(54, now);
+    sub.frequency.exponentialRampToValueAtTime(26, now + 0.72);
+    subGain.gain.setValueAtTime(0.000_1, now);
+    subGain.gain.exponentialRampToValueAtTime(layers.sub, now + 0.012);
+    subGain.gain.exponentialRampToValueAtTime(0.000_1, now + 0.78);
+    sub.connect(subGain).connect(output);
+    sub.start(now);
+    sub.stop(now + 0.8);
+
+    this.filteredNoiseBurst(layers.crack, 0.055, "highpass", 1_650, 0.7, 0, 0.001);
+    this.filteredNoiseBurst(layers.blast, 0.24, "bandpass", 780, 0.65, 0, 0.003);
+    this.filteredNoiseBurst(layers.echo, 0.62, "lowpass", 950, 0.6, 0.115, 0.035);
   }
 
   private secondaryBoom(volume: number): void {
@@ -486,23 +532,50 @@ export class CombatAudio {
   }
 
   private noiseBurst(volume: number, duration: number, cutoff: number): void {
+    this.filteredNoiseBurst(volume, duration, "lowpass", cutoff);
+  }
+
+  private transientNoiseBuffer(): AudioBuffer | undefined {
+    const context = this.context;
+    if (!context) return undefined;
+    if (this.transientNoise) return this.transientNoise;
+    const frameCount = Math.max(1, Math.floor(context.sampleRate * 1.25));
+    this.transientNoise = context.createBuffer(1, frameCount, context.sampleRate);
+    const samples = this.transientNoise.getChannelData(0);
+    for (let index = 0; index < samples.length; index += 1) {
+      samples[index] = Math.random() * 2 - 1;
+    }
+    return this.transientNoise;
+  }
+
+  private filteredNoiseBurst(
+    volume: number,
+    duration: number,
+    filterType: BiquadFilterType,
+    frequency: number,
+    q = 0.7,
+    delay = 0,
+    attack = 0.002,
+  ): void {
     const context = this.context;
     const output = this.output();
-    if (!context || !output) return;
-    const frameCount = Math.max(1, Math.floor(context.sampleRate * duration));
-    const buffer = context.createBuffer(1, frameCount, context.sampleRate);
-    const samples = buffer.getChannelData(0);
-    for (let index = 0; index < samples.length; index += 1) {
-      samples[index] = (Math.random() * 2 - 1) * (1 - index / samples.length);
-    }
+    const buffer = this.transientNoiseBuffer();
+    if (!context || !output || !buffer || volume <= 0 || duration <= 0) return;
+    const startAt = context.currentTime + Math.max(0, delay);
+    const safeDuration = Math.min(duration, buffer.duration - 0.001);
+    const maxOffset = Math.max(0, buffer.duration - safeDuration - 0.001);
+    const offset = Math.random() * maxOffset;
     const source = context.createBufferSource();
     const filter = context.createBiquadFilter();
     const gain = context.createGain();
-    filter.type = "lowpass";
-    filter.frequency.value = cutoff;
-    gain.gain.value = volume;
+    filter.type = filterType;
+    filter.frequency.value = frequency;
+    filter.Q.value = q;
+    gain.gain.setValueAtTime(0.000_1, startAt);
+    gain.gain.exponentialRampToValueAtTime(volume, startAt + Math.min(attack, safeDuration * 0.35));
+    gain.gain.exponentialRampToValueAtTime(0.000_1, startAt + safeDuration);
     source.buffer = buffer;
     source.connect(filter).connect(gain).connect(output);
-    source.start();
+    source.start(startAt, offset, safeDuration);
   }
 }

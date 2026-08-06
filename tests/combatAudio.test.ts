@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import {
   audioAngularDelta,
   combatShotSoundKind,
+  mainGunLayerGains,
   mountTraversed,
   throttleOrderChanged,
 } from "../src/render/combatAudio";
@@ -62,5 +63,19 @@ describe("combat audio telemetry", () => {
       weaponSource: "mainGun",
       airWeapon: undefined,
     })).toBe("mainGun");
+  });
+
+  it("gives main guns a sharp transient above their pressure and echo layers", () => {
+    const layers = mainGunLayerGains(0.2);
+    expect(layers.crack).toBeGreaterThan(layers.blast);
+    expect(layers.blast).toBeGreaterThan(layers.pressure);
+    expect(layers.pressure).toBeGreaterThan(layers.echo);
+    expect(layers.echo).toBeGreaterThan(0);
+  });
+
+  it("clamps invalid main-gun layer input", () => {
+    expect(mainGunLayerGains(Number.NaN).crack).toBe(0);
+    expect(mainGunLayerGains(-1).pressure).toBe(0);
+    expect(mainGunLayerGains(2).crack).toBeCloseTo(1.28);
   });
 });
