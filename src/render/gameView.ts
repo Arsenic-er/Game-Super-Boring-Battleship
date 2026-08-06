@@ -52,6 +52,7 @@ import {
   createCombatEquipmentVisual,
 } from "./combatEquipmentVisuals";
 import {
+  applyPixelSkyWeather,
   applyWaterAtmosphere,
   createDeepWaterMaterial,
   createPixelOceanSurface,
@@ -61,6 +62,7 @@ import {
 } from "./environmentMaterials";
 import { createAtollTerrain, type AtollTerrainVisual } from "./atollTerrain";
 import { createPixelVfxMaterial } from "./vfxMaterials";
+import { normalizeWeatherId, weatherPreset, type WeatherId } from "../sim/weather";
 import type { PixelVfxKind } from "./vfxMaterials";
 import {
   createAirSquadronGeometry,
@@ -198,6 +200,8 @@ export class GameView implements AimProvider {
   private readonly objectiveMaterial: StandardMaterial;
   private aimArc?: LinesMesh;
   private barrelArc?: LinesMesh;
+  private readonly waveMaterials: readonly StandardMaterial[];
+  private readonly skyMaterial: StandardMaterial;
   private readonly torpedoSpreadLines: LinesMesh[] = [];
   private readonly torpedoLauncherLines: LinesMesh[] = [];
   private torpedoLeadLine?: LinesMesh;
@@ -210,6 +214,8 @@ export class GameView implements AimProvider {
   private debugColliders = false;
   private underwaterView = false;
   private quality: "low" | "medium" = "low";
+  private currentWeatherId: WeatherId = "clear";
+  private weatherScrollMultiplier = 1;
 
   constructor(private readonly canvas: HTMLCanvasElement) {
     this.engine = new Engine(canvas, false, {
@@ -284,14 +290,15 @@ export class GameView implements AimProvider {
     );
     farWaveMaterial.alpha = 0.26;
     farWaveMaterial.disableLighting = true;
+    this.waveMaterials = [nearWaveMaterial, farWaveMaterial];
     this.waveLayers = [
       this.createWaveLayer("near-waves", 54, 1_500, nearWaveMaterial, 19),
       this.createWaveLayer("far-waves", 38, 2_100, farWaveMaterial, 43),
     ];
 
     const sky = CreateSphere("sky-dome", { diameter: 28_000, segments: 8 }, this.scene);
-    const skyMaterial = createPixelSkyMaterial(this.scene);
-    sky.material = skyMaterial;
+    this.skyMaterial = createPixelSkyMaterial(this.scene);
+    sky.material = this.skyMaterial;
     sky.infiniteDistance = true;
     sky.isPickable = false;
 
@@ -1815,11 +1822,12 @@ export class GameView implements AimProvider {
     torpedoSpread: TorpedoSpreadMode = "narrow",
     developerView?: Readonly<DeveloperViewOptions>,
   ): void {
+    this.syncWeather(state.weatherId);
     const steppedTime = Math.floor(state.time * 6) / 6;
-    this.oceanTexture.uOffset = steppedTime * 0.0018;
-    this.oceanTexture.vOffset = steppedTime * -0.00115;
-    this.oceanBumpTexture.uOffset = steppedTime * 0.0021;
-    this.oceanBumpTexture.vOffset = steppedTime * -0.00135;
+    this.oceanTexture.uOffset = steppedTime * 0.0018 * this.weatherScrollMultiplier;
+    this.oceanTexture.vOffset = steppedTime * -0.00115 * this.weatherScrollMultiplier;
+    this.oceanBumpTexture.uOffset = steppedTime * 0.0021 * this.weatherScrollMultiplier;
+    this.oceanBumpTexture.vOffset = steppedTime * -0.00135 * this.weatherScrollMultiplier;
     this.terrain.setEnabled(state.mapId === "atoll-prototype");
     const focusShip = state.ships.find(({ id }) => id === developerView?.focusEntityId);
     const controlledShip = state.ships.find(({ id }) => id === developerView?.controlledShipId);
@@ -1905,6 +1913,31 @@ export class GameView implements AimProvider {
     this.updateEffects(dt);
   }
 
+  private syncWeather(value: unknown): void {
+    const weatherId = normalizeWeatherId(value);
+    if (weatherId === this.currentWeatherId) return;
+    this.currentWeatherId = applyPixelSkyWeather(this.skyMaterial, this.scene, weatherId);
+    const preset = weatherPreset(weatherId);
+    this.weatherScrollMultiplier = preset.oceanScrollMultiplier;
+    this.oceanBumpTexture.level = preset.oceanBumpLevel;
+    this.waveMaterials[0]!.alpha = 0.36 * preset.waveVisibilityMultiplier;
+    this.waveMaterials[1]!.alpha = 0.26 * preset.waveVisibilityMultiplier;
+    const sunDisk = this.scene.getMeshByName("sky-sun");
+    if (sunDisk) sunDisk.visibility = preset.sunDiskVisibility;
+    applyWaterAtmosphere(this.scene, this.underwaterView, weatherId);
+    if (!this.underwaterView) {
+      this.ambientLight.intensity = preset.ambientIntensity;
+      this.sunLight.intensity = preset.sunIntensity;
+      this.scene.imageProcessingConfiguration.exposure = preset.exposure;
+      this.scene.imageProcessingConfiguration.contrast = preset.contrast;
+    }
+    const shell = this.canvas.closest<HTMLElement>(".game-shell");
+    if (shell) {
+      shell.dataset.weather = weatherId;
+      shell.style.setProperty("--weather-rain-opacity", String(preset.rainOpacity));
+    }
+  }
+
   private syncWaterAtmosphere(): void {
     const transitionY = this.underwaterView
       ? WATER_RENDER.surfaceY + 0.15
@@ -1912,11 +1945,12 @@ export class GameView implements AimProvider {
     const underwater = this.camera.globalPosition.y < transitionY;
     if (underwater === this.underwaterView) return;
     this.underwaterView = underwater;
-    applyWaterAtmosphere(this.scene, underwater);
-    this.ambientLight.intensity = underwater ? 0.35 : CLEAR_DAY_RENDER.ambientIntensity;
-    this.sunLight.intensity = underwater ? 0.15 : CLEAR_DAY_RENDER.sunIntensity;
-    this.scene.imageProcessingConfiguration.exposure = underwater ? 0.82 : CLEAR_DAY_RENDER.exposure;
-    this.scene.imageProcessingConfiguration.contrast = underwater ? 1.02 : CLEAR_DAY_RENDER.contrast;
+    const preset = weatherPreset(this.currentWeatherId);
+    applyWaterAtmosphere(this.scene, underwater, this.currentWeatherId);
+    this.ambientLight.intensity = underwater ? 0.35 : preset.ambientIntensity;
+    this.sunLight.intensity = underwater ? 0.15 : preset.sunIntensity;
+    this.scene.imageProcessingConfiguration.exposure = underwater ? 0.82 : preset.exposure;
+    this.scene.imageProcessingConfiguration.contrast = underwater ? 1.02 : preset.contrast;
   }
 
   resetTransient(): void {

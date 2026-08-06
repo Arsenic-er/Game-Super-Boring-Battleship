@@ -24,7 +24,7 @@ describe("local commander profile", () => {
     expect(profile.credits).toBe(0);
     expect(profile.inventory["mainGun-purple"]).toBeGreaterThanOrEqual(1);
     expect(profile.loadout.mainGun).toBe("mainGun-purple");
-    expect(profile.version).toBe(5);
+    expect(profile.version).toBe(6);
     expect(profile.unlockedEquipment["mainGun-purple"]).toBe(true);
   });
 

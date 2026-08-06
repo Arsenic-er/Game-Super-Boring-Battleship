@@ -3,6 +3,7 @@ import { Material } from "@babylonjs/core/Materials/material";
 import { Texture } from "@babylonjs/core/Materials/Textures/texture";
 import { Color3 } from "@babylonjs/core/Maths/math.color";
 import type { Scene } from "@babylonjs/core/scene";
+import { normalizeWeatherId, weatherPreset, type WeatherId } from "../sim/weather";
 
 export interface PixelOceanSurface {
   material: StandardMaterial;
@@ -70,28 +71,73 @@ export function createDeepWaterMaterial(scene: Scene): StandardMaterial {
   return material;
 }
 
-export function applyWaterAtmosphere(scene: Scene, underwater: boolean): void {
-  const fog = underwater ? WATER_RENDER.underwaterFog : WATER_RENDER.aboveFog;
-  scene.fogStart = fog.start;
-  scene.fogEnd = fog.end;
-  scene.fogColor.copyFrom(fog.color);
-  scene.clearColor.set(fog.color.r, fog.color.g, fog.color.b, 1);
+export function applyWaterAtmosphere(
+  scene: Scene,
+  underwater: boolean,
+  weatherId: WeatherId = "clear",
+): void {
+  if (underwater) {
+    scene.fogStart = WATER_RENDER.underwaterFog.start;
+    scene.fogEnd = WATER_RENDER.underwaterFog.end;
+    scene.fogColor.copyFrom(WATER_RENDER.underwaterFog.color);
+    scene.clearColor.set(
+      WATER_RENDER.underwaterFog.color.r,
+      WATER_RENDER.underwaterFog.color.g,
+      WATER_RENDER.underwaterFog.color.b,
+      1,
+    );
+    return;
+  }
+  const preset = weatherPreset(weatherId);
+  const [r, g, b] = preset.fogColor;
+  scene.fogStart = preset.fogStart;
+  scene.fogEnd = preset.fogEnd;
+  scene.fogColor.set(r, g, b);
+  scene.clearColor.set(r, g, b, 1);
 }
 
-export function createPixelSkyMaterial(scene: Scene): StandardMaterial {
-  const url = `${import.meta.env.BASE_URL}assets/textures/pixel-sky-clear-v1.png`;
-  const texture = new Texture(url, scene, false, false, Texture.NEAREST_SAMPLINGMODE);
-  texture.name = CLEAR_DAY_RENDER.skyTextureName;
+function skyTexture(scene: Scene, weatherId: WeatherId): Texture {
+  const preset = weatherPreset(weatherId);
+  const filename = preset.skyTexture === "clear"
+    ? "pixel-sky-clear-v1.png"
+    : "pixel-sky-overcast-v1.png";
+  const texture = new Texture(
+    `${import.meta.env.BASE_URL}assets/textures/${filename}`,
+    scene,
+    false,
+    false,
+    Texture.NEAREST_SAMPLINGMODE,
+  );
+  texture.name = `pixel-sky-${preset.skyTexture}-texture`;
   texture.wrapU = Texture.WRAP_ADDRESSMODE;
   texture.wrapV = Texture.CLAMP_ADDRESSMODE;
+  return texture;
+}
 
-  const material = new StandardMaterial("pixel-sky-clear-material", scene);
+export function applyPixelSkyWeather(
+  material: StandardMaterial,
+  scene: Scene,
+  value: unknown,
+): WeatherId {
+  const weatherId = normalizeWeatherId(value);
+  const previous = material.emissiveTexture;
+  material.emissiveTexture = skyTexture(scene, weatherId);
+  previous?.dispose();
+  material.name = `pixel-sky-${weatherId}-material`;
+  return weatherId;
+}
+
+export function createPixelSkyMaterial(
+  scene: Scene,
+  weatherId: WeatherId = "clear",
+): StandardMaterial {
+  const material = new StandardMaterial(`pixel-sky-${weatherId}-material`, scene);
   material.backFaceCulling = false;
   material.disableLighting = true;
   material.fogEnabled = false;
   material.diffuseColor = Color3.Black();
   material.emissiveColor = Color3.Black();
-  material.emissiveTexture = texture;
+  material.emissiveTexture = skyTexture(scene, weatherId);
   material.specularColor = Color3.Black();
   return material;
 }

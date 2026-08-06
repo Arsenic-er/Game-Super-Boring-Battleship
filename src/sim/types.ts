@@ -4,6 +4,7 @@ import type { ShipClassId } from "../ships/classes";
 import type { TorpedoId } from "../ships/torpedoes";
 import type { SecondaryGunId } from "../ships/secondaryGuns";
 import type { BattleMapId } from "../maps/atollMap";
+import type { WeatherId } from "./weather";
 
 export interface Vec3 {
   x: number;
@@ -487,6 +488,8 @@ export interface TorpedoLaunchSolution {
 export interface BattleState {
   mode: GameMode;
   mapId: BattleMapId;
+  weatherId: WeatherId;
+  airSupport: "none" | "fleet-edge";
   time: number;
   status: BattleStatus;
   endReason?: BattleEndReason;

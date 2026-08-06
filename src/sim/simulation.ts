@@ -52,7 +52,9 @@ import {
 } from "../ships/mainBatteries";
 import { classArmorThickness } from "../ships/armorProfiles";
 import { effectiveTorpedoDetectionRange } from "./detection";
-import { buildDawnAtollBattleScenario } from "./scenarios";
+import { buildAtollBattleScenario } from "./scenarios";
+import { isFleetSize, type BattleSetup } from "./battleSetup";
+import { normalizeWeatherId, weatherPreset } from "./weather";
 import type {
   AmmoType,
   ArmorZoneId,
@@ -418,6 +420,7 @@ export function createInitialState(
   playerPerformance?: Partial<ShipPerformanceModifiers>,
   playerTorpedoId: TorpedoId = DEFAULT_TORPEDO_ID,
   playerShipClassId: ShipClassId = DEFAULT_SHIP_CLASS_ID,
+  battleSetup?: Partial<BattleSetup>,
 ): BattleState {
   const playerShipClass = getShipClass(playerShipClassId);
   const armament = playerPerformance as (Partial<ShipPerformanceModifiers> & {
@@ -442,8 +445,12 @@ export function createInitialState(
       { length: playerShipClass.starterSlots.sideGun },
       () => "sideGun-common" as const,
     );
+  const teamSize = isFleetSize(battleSetup?.teamSize) ? battleSetup.teamSize : 3;
+  const weatherId = normalizeWeatherId(battleSetup?.weatherId);
   const battleScenario = mode === "battle"
-    ? buildDawnAtollBattleScenario(playerShipClassId)
+    ? buildAtollBattleScenario({
+      playerShipClassId, teamSize, seed,
+    })
     : undefined;
   const playerSlot = battleScenario?.ships.find(({ playerControlled }) => playerControlled);
   const playerSpawn = playerSlot?.position ?? { x: 0, y: 0, z: -900 };
@@ -507,6 +514,8 @@ export function createInitialState(
   return {
     mode,
     mapId: battleScenario?.mapId ?? "open-sea-range",
+    weatherId,
+    airSupport: battleScenario?.airSupport ?? "fleet-edge",
     time: 0,
     status: "running",
     objective: {
@@ -2908,9 +2917,13 @@ export function observe(state: BattleState, shipId: string) {
       effectiveMainBattery(target)
         .maximumRangeMeters,
     );
-    const detectionRange = recentlyFiredMainGun
+    const rawDetectionRange = recentlyFiredMainGun
       ? Math.max(passiveDetectionRange, targetMainBatteryRange)
       : passiveDetectionRange;
+    const detectionRange = Math.max(
+      SENSOR.guaranteedDetectionMeters,
+      rawDetectionRange * weatherPreset(state.weatherId).opticalVisibilityMultiplier,
+    );
     const gunBloomReveal = recentlyFiredMainGun
       && actualRange <= targetMainBatteryRange;
     const rangeFactor = hydroDetected ? 0 : clamp(

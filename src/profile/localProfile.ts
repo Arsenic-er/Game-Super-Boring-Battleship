@@ -20,8 +20,20 @@ import type { EquipmentCategory, EquipmentRarity } from "./equipmentCatalog";
 
 export type SlotLoadout = Record<EquipmentCategory, (string | null)[]>;
 
+export interface SavedShipBuild {
+  id: string;
+  name: string;
+  shipClassId: ShipClassId;
+  slots: SlotLoadout;
+}
+
+export interface SavedBuildReadiness {
+  ready: boolean;
+  missing: { itemId: string; required: number; owned: number }[];
+}
+
 export interface LocalProfile {
-  version: 5;
+  version: 6;
   commanderName: string;
   credits: number;
   researchPoints: number;
@@ -36,6 +48,8 @@ export interface LocalProfile {
   shipClassId: ShipClassId;
   loadout: Record<EquipmentCategory, string | null>;
   slotLoadoutsByShipClass: Record<ShipClassId, SlotLoadout>;
+  savedShipBuilds: SavedShipBuild[];
+  selectedBattleBuildId: string | null;
 }
 
 export interface ArmoryTransaction {
@@ -80,8 +94,9 @@ export interface BattleLoadout {
   installedEquipment: InstalledEquipmentIds;
 }
 
-const STORAGE_KEY = "grey-sea-local-profile-v5";
-const LEGACY_STORAGE_KEYS = ["grey-sea-local-profile-v4", "grey-sea-local-profile-v3", "grey-sea-local-profile-v1"] as const;
+const STORAGE_KEY = "grey-sea-local-profile-v6";
+const LEGACY_STORAGE_KEYS = ["grey-sea-local-profile-v5", "grey-sea-local-profile-v4", "grey-sea-local-profile-v3", "grey-sea-local-profile-v1"] as const;
+const MAX_SAVED_SHIP_BUILDS = 24;
 const categories = Object.keys(CATEGORY_META) as EquipmentCategory[];
 const weaponCategories = ["mainGun", "torpedo", "antiAir", "sideGun", "depthCharge"] as const;
 
@@ -125,9 +140,15 @@ export function createDefaultLocalProfile(): LocalProfile {
   const slotLoadoutsByShipClass = Object.fromEntries(
     SHIP_CLASS_IDS.map((shipClassId) => [shipClassId, baseSlotLoadout(shipClassId)]),
   ) as LocalProfile["slotLoadoutsByShipClass"];
+  const defaultBuild: SavedShipBuild = {
+    id: "default-fletcher",
+    name: "弗莱彻级 标准配置",
+    shipClassId: DEFAULT_SHIP_CLASS_ID,
+    slots: structuredClone(slotLoadoutsByShipClass[DEFAULT_SHIP_CLASS_ID]),
+  };
   const loadout = primaryLoadout(slotLoadoutsByShipClass[DEFAULT_SHIP_CLASS_ID]);
   return {
-    version: 5,
+    version: 6,
     commanderName: "本地舰长",
     credits: 12_000,
     researchPoints: 220,
@@ -142,6 +163,8 @@ export function createDefaultLocalProfile(): LocalProfile {
     shipClassId: DEFAULT_SHIP_CLASS_ID,
     loadout,
     slotLoadoutsByShipClass,
+    savedShipBuilds: [defaultBuild],
+    selectedBattleBuildId: defaultBuild.id,
   };
 }
 
@@ -224,8 +247,53 @@ export function normalizeLocalProfile(value: unknown): LocalProfile {
   const recent = Array.isArray(candidate.recentDraws)
     ? candidate.recentDraws.filter((entry) => entry && typeof entry === "object").slice(0, 10) as SupplyDrawResult[]
     : [];
+  const normalizedBuildIds = new Set<string>();
+  const normalizeBlueprintSlots = (targetShipClassId: ShipClassId, source: unknown): SlotLoadout => {
+    const counts = SHIP_CLASS_SLOT_COUNTS[targetShipClassId];
+    const requested = source && typeof source === "object" ? source as Record<string, unknown> : {};
+    return Object.fromEntries(categories.map((category) => {
+      const sourceSlots = Array.isArray(requested[category]) ? requested[category] as unknown[] : [];
+      return [category, Array.from({ length: counts[category] }, (_, index) => {
+        const id = sourceSlots[index];
+        if (id === null || id === undefined) return null;
+        const item = typeof id === "string" ? EQUIPMENT_BY_ID[id] : undefined;
+        return item?.category === category && isEquipmentCompatible(item, targetShipClassId)
+          ? item.id
+          : null;
+      })];
+    })) as SlotLoadout;
+  };
+  const savedShipBuilds = Array.isArray(candidate.savedShipBuilds)
+    ? candidate.savedShipBuilds.flatMap((entry, index): SavedShipBuild[] => {
+      if (!entry || typeof entry !== "object") return [];
+      const source = entry as Record<string, unknown>;
+      if (!isShipClassId(source.shipClassId)) return [];
+      const rawId = typeof source.id === "string" ? source.id.trim().slice(0, 64) : "";
+      const id = rawId && !normalizedBuildIds.has(rawId) ? rawId : `build-${index + 1}`;
+      if (normalizedBuildIds.has(id)) return [];
+      normalizedBuildIds.add(id);
+      const rawName = typeof source.name === "string" ? source.name.trim().slice(0, 24) : "";
+      return [{
+        id,
+        name: rawName || `${getShipClass(source.shipClassId).name} 配置`,
+        shipClassId: source.shipClassId,
+        slots: normalizeBlueprintSlots(source.shipClassId, source.slots),
+      }];
+    }).slice(0, MAX_SAVED_SHIP_BUILDS)
+    : [{
+      id: "legacy-current",
+      name: `${getShipClass(shipClassId).name} 继承配置`,
+      shipClassId,
+      slots: structuredClone(slotLoadoutsByShipClass[shipClassId]),
+    }];
+  const requestedBuildId = typeof candidate.selectedBattleBuildId === "string"
+    ? candidate.selectedBattleBuildId
+    : null;
+  const selectedBattleBuildId = savedShipBuilds.some(({ id }) => id === requestedBuildId)
+    ? requestedBuildId
+    : savedShipBuilds[0]?.id ?? null;
   return {
-    version: 5,
+    version: 6,
     commanderName: requestedName || defaults.commanderName,
     credits: finiteInt(candidate.credits, defaults.credits, 999_999),
     researchPoints: finiteInt(candidate.researchPoints, defaults.researchPoints, 999_999),
@@ -243,6 +311,8 @@ export function normalizeLocalProfile(value: unknown): LocalProfile {
     shipClassId,
     loadout,
     slotLoadoutsByShipClass,
+    savedShipBuilds,
+    selectedBattleBuildId,
   };
 }
 

@@ -20,6 +20,7 @@ import {
   saveLocalProfile,
 } from "./profile/localProfile";
 import type { LocalProfile } from "./profile/localProfile";
+import { battleLoadoutForSavedBuild } from "./profile/savedBuilds";
 import { loadGameSettings, saveGameSettings } from "./settings/gameSettings";
 import type { GameSettings } from "./settings/gameSettings";
 import { FIXED_STEP } from "./sim/config";
@@ -27,6 +28,7 @@ import { createInitialState, observe, stepSimulation } from "./sim/simulation";
 import { deployFleetAirSupport } from "./sim/airOperations";
 import { PlayerPerceptionTracker } from "./sim/playerPerception";
 import type { BattleState, ControlCommand, GameMode } from "./sim/types";
+import type { GameLaunchRequest } from "./sim/battleSetup";
 import { GameMenus } from "./ui/gameMenus";
 import { Hud } from "./ui/hud";
 import { auxiliaryHudVisible } from "./ui/auxiliaryHud";
@@ -67,13 +69,23 @@ let started = false;
 let paused = true;
 let accumulator = 0;
 let currentMode: GameMode = "battle";
+let currentLaunchRequest: GameLaunchRequest = {
+  mode: "battle",
+  buildId: profile.selectedBattleBuildId ?? profile.savedShipBuilds[0]?.id ?? "",
+  teamSize: 5,
+  weatherId: "clear",
+};
 let battleRewarded = false;
 
-function startMode(mode: GameMode): void {
+function startMode(request: GameLaunchRequest): void {
   gameShell?.classList.remove("hud-details-held");
+  const mode = request.mode;
   currentMode = mode;
+  currentLaunchRequest = request;
   battleRewarded = false;
-  const equipment = battleLoadout(profile);
+  const equipment = request.mode === "battle"
+    ? battleLoadoutForSavedBuild(profile, request.buildId) ?? battleLoadout(profile)
+    : battleLoadout(profile);
   state = createInitialState(
     undefined,
     mode,
@@ -81,8 +93,11 @@ function startMode(mode: GameMode): void {
     equipment,
     equipment.torpedoId,
     equipment.shipClassId,
+    request.mode === "battle"
+      ? { teamSize: request.teamSize, weatherId: request.weatherId }
+      : { weatherId: "clear" },
   );
-  deployFleetAirSupport(state);
+  if (state.airSupport === "fleet-edge") deployFleetAirSupport(state);
   input.reset();
   view.resetTransient();
   tacticalMap?.close();
@@ -102,7 +117,7 @@ function startMode(mode: GameMode): void {
 }
 
 function restart(): void {
-  startMode(currentMode);
+  startMode(currentLaunchRequest);
 }
 
 function returnToMainMenu(): void {

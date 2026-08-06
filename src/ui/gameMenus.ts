@@ -21,6 +21,13 @@ import {
   setCommanderName,
 } from "../profile/localProfile";
 import {
+  deleteShipBuild,
+  overwriteShipBuild,
+  saveCurrentShipBuild,
+  savedBuildReadiness,
+  selectBattleBuild,
+} from "../profile/savedBuilds";
+import {
   CATEGORY_META,
   EQUIPMENT_BY_ID,
   EQUIPMENT_CATALOG,
@@ -37,12 +44,18 @@ import type { ShipClassId } from "../ships/classes";
 import { getMainBattery } from "../ships/mainBatteries";
 import { getTorpedo } from "../ships/torpedoes";
 import type { GameSettings } from "../settings/gameSettings";
-import type { GameMode } from "../sim/types";
+import {
+  FLEET_SIZES,
+  fleetCompositionForSize,
+  type FleetSize,
+  type GameLaunchRequest,
+} from "../sim/battleSetup";
+import { WEATHER_IDS, WEATHER_PRESETS, type WeatherId } from "../sim/weather";
 import { DockPreview } from "../render/dockPreview";
 import { equipmentArtworkMarkup } from "./equipmentArtwork";
 
 export interface GameMenuCallbacks {
-  onStart: (mode: GameMode) => void;
+  onStart: (request: GameLaunchRequest) => void;
   onPause: () => void;
   onResume: () => void;
   onRestart: () => void;
@@ -131,6 +144,9 @@ export class GameMenus {
   private warehouseCategory: EquipmentCategory | "all" = "all";
   private selectedArmoryItemId?: string;
   private selectedWarehouseItemId?: string;
+  private battleSetupOpen = false;
+  private selectedFleetSize: FleetSize = 5;
+  private selectedWeatherId: WeatherId = "clear";
   private pauseOpen = false;
   private settingsOpen = false;
 
@@ -166,7 +182,7 @@ export class GameMenus {
           </div>
           <div class="menu-tab-panel mission-panel" data-menu-panel="mission">
             <p class="eyebrow">单人战术原型 · 1943</p><h1>灰海行动</h1>
-            <p>使用当前船坞配装出击，或进入海试场验证舰船性能。</p>
+            <p>从船坞保存舰船方案，再选择舰队规模、天气与旗舰出击；海试仍使用当前船坞配装。</p>
             <div class="mission-brief">击沉敌舰，或控制中央 A 区率先达到 375 分。双方争夺时，舰体状态更好的一方会缓慢建立区域优势。当前本地配装会真实影响战斗性能。</div>
             <div class="menu-controls">
               <span><kbd>W S</kbd> 航速</span><span><kbd>A D</kbd> 转向</span><span><kbd>移动鼠标</kbd> 视角</span>
@@ -174,8 +190,17 @@ export class GameMenus {
               <span><kbd>M</kbd> 地图</span><span><kbd>F3</kbd> 调试</span><span><kbd>Esc</kbd> 暂停</span>
             </div>
             <div class="mode-choice">
-              <button class="mode-card start-battle" type="button"><b>单人战斗</b><span>10 分钟 · 击沉或 375 分获胜 · 3v3 混编舰队</span></button>
+              <button class="mode-card start-battle" type="button"><b>单人战斗</b><span>选择规模、天气与已保存旗舰后开始</span></button>
               <button class="mode-card start-trials" type="button"><b>舰船测试模式</b><span>无攻击 AI · 无时间限制 · 测试装配性能</span></button>
+            </div>
+            <div class="battle-setup" hidden>
+              <div class="screen-heading"><div><p class="eyebrow">单人战斗准备</p><h2>编成与海况</h2></div><button class="text-button battle-setup-back" type="button">返回任务</button></div>
+              <div class="battle-setup-grid">
+                <section><h3>1 · 对战规模</h3><div class="fleet-size-options"></div><div class="fleet-composition"></div></section>
+                <section><h3>2 · 天气</h3><div class="weather-options"></div><p class="weather-gameplay-note">天气会同时影响天空、海况与双方光学发现距离。</p></section>
+                <section><h3>3 · 选择旗舰方案</h3><div class="battle-build-list"></div></section>
+              </div>
+              <div class="battle-setup-footer"><span class="battle-setup-status" aria-live="polite"></span><button class="menu-button primary confirm-battle-setup" type="button">确认编成并开始战斗</button></div>
             </div>
           </div>
           <div class="menu-tab-panel store-panel" data-menu-panel="store" hidden>
@@ -195,7 +220,8 @@ export class GameMenus {
             </div>
           </div>
           <div class="menu-tab-panel dock-panel" data-menu-panel="dock" hidden>
-            <div class="screen-heading"><div><p class="eyebrow">模块化船坞蓝图</p><h2>舰队船坞</h2></div><span class="dock-save-state">配装自动保存至本机</span></div>
+            <div class="screen-heading"><div><p class="eyebrow">模块化船坞蓝图</p><h2>舰队船坞</h2></div><div class="dock-build-tools"><input class="build-name" maxlength="24" placeholder="方案名称" aria-label="方案名称" /><button class="save-ship-build" type="button">保存当前方案</button><span class="dock-save-state">配装自动保存至本机</span></div></div>
+            <div class="saved-build-list" aria-label="已保存舰船方案"></div>
             <div class="dock-layout">
               <aside class="hull-list"><h3>更换舰体</h3>${hullOptionsMarkup()}<div class="slot-list"></div></aside>
               <section class="dock-blueprint"><canvas class="dock-preview" aria-label="可旋转舰艇船坞预览"></canvas><div class="dock-callouts"></div><small>拖动舰船预览可旋转 · 滚轮缩放</small></section>
@@ -243,8 +269,11 @@ export class GameMenus {
     for (const selector of this.languageSelectors) selector.value = this.settings.locale;
     this.renderStaticContent(); this.updateSensitivityLabels(); this.setQuality(initialQuality); this.renderProfile(); this.setStartTab("mission");
 
-    find<HTMLButtonElement>(".start-battle").addEventListener("click", () => this.start("battle"));
-    find<HTMLButtonElement>(".start-trials").addEventListener("click", () => this.start("sea-trials"));
+    find<HTMLButtonElement>(".start-battle").addEventListener("click", () => this.openBattleSetup());
+    find<HTMLButtonElement>(".start-trials").addEventListener("click", () => this.start({ mode: "sea-trials" }));
+    find<HTMLButtonElement>(".battle-setup-back").addEventListener("click", () => this.closeBattleSetup());
+    find<HTMLButtonElement>(".confirm-battle-setup").addEventListener("click", () => this.confirmBattleSetup());
+    find<HTMLButtonElement>(".save-ship-build").addEventListener("click", () => this.saveShipBuild());
     find<HTMLButtonElement>(".resume-battle").addEventListener("click", () => this.resume()); find<HTMLButtonElement>(".open-settings").addEventListener("click", () => this.openSettings());
     find<HTMLButtonElement>(".restart-battle").addEventListener("click", () => this.restart()); find<HTMLButtonElement>(".exit-main-menu").addEventListener("click", () => this.exitToMenu()); find<HTMLButtonElement>(".settings-back").addEventListener("click", () => this.backToPause());
     find<HTMLButtonElement>(".draw-once").addEventListener("click", () => this.draw(1)); find<HTMLButtonElement>(".draw-ten").addEventListener("click", () => this.draw(10)); find<HTMLButtonElement>(".open-codex").addEventListener("click", () => this.setStartTab("codex"));
@@ -347,6 +376,8 @@ export class GameMenus {
     this.dockPreview.setMainGun(equipment.mainGunId);
     this.dockPreview.setTorpedo(equipment.torpedoId);
     this.renderDock();
+    this.renderSavedBuilds();
+    if (this.battleSetupOpen) this.renderBattleSetup();
     this.applyLocale();
   }
 
@@ -483,6 +514,132 @@ export class GameMenus {
     this.componentDetail.querySelector<HTMLButtonElement>(".equip-selected")?.addEventListener("click", () => { this.profile = equipComponent(this.profile, item.id); this.emitProfile(); });
   }
 
+  private saveShipBuild(): void {
+    const input = this.startOverlay.querySelector<HTMLInputElement>(".build-name");
+    const status = this.startOverlay.querySelector<HTMLElement>(".dock-save-state");
+    const fallback = `${SHIP_CLASSES[this.profile.shipClassId].name} 配置 ${this.profile.savedShipBuilds.length + 1}`;
+    const result = saveCurrentShipBuild(this.profile, input?.value || fallback);
+    if (status) status.textContent = result.success
+      ? "方案已保存（本机）"
+      : result.reason === "limit" ? "最多保存 24 套方案" : "请输入方案名称";
+    if (!result.success) return;
+    this.profile = result.profile;
+    if (input) input.value = "";
+    this.emitProfile();
+  }
+
+  private renderSavedBuilds(): void {
+    const host = this.startOverlay.querySelector<HTMLElement>(".saved-build-list");
+    if (!host) return;
+    host.innerHTML = this.profile.savedShipBuilds.length
+      ? this.profile.savedShipBuilds.map((build) => {
+        const readiness = savedBuildReadiness(this.profile, build);
+        const shipClass = SHIP_CLASSES[build.shipClassId];
+        return `<article class="saved-build-card${this.profile.selectedBattleBuildId === build.id ? " selected" : ""}"><div><b>${build.name}</b><span>${shipClass.name} · ${shipClass.country} · ${readiness.ready ? "可出击" : "组件不足"}</span></div><div><button data-build-select="${build.id}" type="button">设为出击舰</button><button data-build-overwrite="${build.id}" type="button">以当前配装覆盖</button><button data-build-delete="${build.id}" type="button">删除</button></div></article>`;
+      }).join("")
+      : "<p class=\"empty-inventory\">尚未保存舰船方案。当前配装仍会保存在船坞中。</p>";
+    for (const button of host.querySelectorAll<HTMLButtonElement>("[data-build-select]")) {
+      button.addEventListener("click", () => {
+        this.profile = selectBattleBuild(this.profile, button.dataset.buildSelect ?? "");
+        this.emitProfile();
+      });
+    }
+    for (const button of host.querySelectorAll<HTMLButtonElement>("[data-build-overwrite]")) {
+      button.addEventListener("click", () => {
+        this.profile = overwriteShipBuild(this.profile, button.dataset.buildOverwrite ?? "");
+        this.emitProfile();
+      });
+    }
+    for (const button of host.querySelectorAll<HTMLButtonElement>("[data-build-delete]")) {
+      button.addEventListener("click", () => {
+        this.profile = deleteShipBuild(this.profile, button.dataset.buildDelete ?? "");
+        this.emitProfile();
+      });
+    }
+  }
+
+  private openBattleSetup(): void {
+    this.battleSetupOpen = true;
+    this.panels.mission.classList.add("setup-active");
+    const panel = this.panels.mission.querySelector<HTMLElement>(".battle-setup");
+    if (panel) panel.hidden = false;
+    const selected = this.profile.savedShipBuilds.find(({ id }) =>
+      id === this.profile.selectedBattleBuildId);
+    if (!selected || !savedBuildReadiness(this.profile, selected).ready) {
+      this.profile.selectedBattleBuildId = this.profile.savedShipBuilds
+        .find((build) => savedBuildReadiness(this.profile, build).ready)?.id ?? null;
+    }
+    this.renderBattleSetup();
+  }
+
+  private closeBattleSetup(): void {
+    this.battleSetupOpen = false;
+    this.panels.mission.classList.remove("setup-active");
+    const panel = this.panels.mission.querySelector<HTMLElement>(".battle-setup");
+    if (panel) panel.hidden = true;
+  }
+
+  private renderBattleSetup(): void {
+    const build = this.profile.savedShipBuilds.find(({ id }) =>
+      id === this.profile.selectedBattleBuildId);
+    const shipClassId = build?.shipClassId ?? this.profile.shipClassId;
+    const composition = fleetCompositionForSize(this.selectedFleetSize, shipClassId);
+    const sizeHost = this.panels.mission.querySelector<HTMLElement>(".fleet-size-options");
+    const compositionHost = this.panels.mission.querySelector<HTMLElement>(".fleet-composition");
+    const weatherHost = this.panels.mission.querySelector<HTMLElement>(".weather-options");
+    const buildHost = this.panels.mission.querySelector<HTMLElement>(".battle-build-list");
+    const confirm = this.panels.mission.querySelector<HTMLButtonElement>(".confirm-battle-setup");
+    const status = this.panels.mission.querySelector<HTMLElement>(".battle-setup-status");
+    if (sizeHost) {
+      sizeHost.innerHTML = FLEET_SIZES.map((size) => `<button type="button" data-fleet-size="${size}" class="${size === this.selectedFleetSize ? "active" : ""}">${size} v ${size}<small>${size === 5 ? "推荐" : size === 7 ? "较高负载" : "快速战斗"}</small></button>`).join("");
+      for (const button of sizeHost.querySelectorAll<HTMLButtonElement>("[data-fleet-size]")) {
+        button.addEventListener("click", () => {
+          this.selectedFleetSize = Number(button.dataset.fleetSize) as FleetSize;
+          this.renderBattleSetup();
+        });
+      }
+    }
+    if (compositionHost) compositionHost.innerHTML = `<h4>双方自动编成</h4><span>驱逐舰 <b>${composition.destroyer}</b></span><span>轻巡洋舰 <b>${composition.lightCruiser}</b></span><span>战列舰 <b>${composition.battleship}</b></span><span>航母 <b>${composition.carrier}</b></span><span>舰队航空支援 <b>${composition.airSupport ? "有" : "无"}</b></span><small>双方舰种数量完全对称。真正航母舰体尚未实装，因此不会用其他舰型冒充。</small>`;
+    if (weatherHost) {
+      weatherHost.innerHTML = WEATHER_IDS.map((id) => {
+        const weather = WEATHER_PRESETS[id];
+        return `<button type="button" data-weather-id="${id}" class="${id === this.selectedWeatherId ? "active" : ""}"><b>${weather.name}</b><small>${weather.description}</small><em>能见度 ${Math.round(weather.opticalVisibilityMultiplier * 100)}%</em></button>`;
+      }).join("");
+      for (const button of weatherHost.querySelectorAll<HTMLButtonElement>("[data-weather-id]")) {
+        button.addEventListener("click", () => {
+          this.selectedWeatherId = button.dataset.weatherId as WeatherId;
+          this.renderBattleSetup();
+        });
+      }
+    }
+    if (buildHost) {
+      buildHost.innerHTML = this.profile.savedShipBuilds.map((entry) => {
+        const readiness = savedBuildReadiness(this.profile, entry);
+        return `<button type="button" data-battle-build="${entry.id}" class="${entry.id === this.profile.selectedBattleBuildId ? "active" : ""}" ${readiness.ready ? "" : "disabled"}><b>${entry.name}</b><span>${SHIP_CLASSES[entry.shipClassId].name}</span><small>${readiness.ready ? "装备完整" : "缺少库存组件"}</small></button>`;
+      }).join("") || "<p>请先到船坞保存一套舰船方案。</p>";
+      for (const button of buildHost.querySelectorAll<HTMLButtonElement>("[data-battle-build]")) {
+        button.addEventListener("click", () => {
+          this.profile = selectBattleBuild(this.profile, button.dataset.battleBuild ?? "");
+          this.callbacks.onProfileChange(this.profile);
+          this.renderBattleSetup();
+        });
+      }
+    }
+    const ready = Boolean(build && savedBuildReadiness(this.profile, build).ready);
+    if (confirm) confirm.disabled = !ready;
+    if (status) status.textContent = ready
+      ? `${build?.name} · ${this.selectedFleetSize}v${this.selectedFleetSize} · ${WEATHER_PRESETS[this.selectedWeatherId].name}`
+      : "请先选择一套装备完整的舰船方案";
+    this.applyLocale();
+  }
+
+  private confirmBattleSetup(): void {
+    const buildId = this.profile.selectedBattleBuildId;
+    const build = buildId ? this.profile.savedShipBuilds.find(({ id }) => id === buildId) : undefined;
+    if (!buildId || !build || !savedBuildReadiness(this.profile, build).ready) return;
+    this.start({ mode: "battle", buildId, teamSize: this.selectedFleetSize, weatherId: this.selectedWeatherId });
+  }
+
   private decorateEquipmentCards(
     root: HTMLElement,
     selector: string,
@@ -521,7 +678,7 @@ export class GameMenus {
 
   private emitProfile(): void { this.renderProfile(); this.callbacks.onProfileChange(normalizeLocalProfile(this.profile)); }
   private setStartTab(tab: StartTab): void { for (const [id, panel] of Object.entries(this.panels)) panel.hidden = id !== tab; for (const button of this.tabButtons) { const active = button.dataset.menuTab === tab; button.classList.toggle("active", active); button.setAttribute("aria-selected", String(active)); } if (tab === "dock") setTimeout(() => this.dockPreview.resize(), 0); }
-  private start(mode: GameMode): void { this.startOverlay.hidden = true; this.callbacks.onStart(mode); }
+  private start(request: GameLaunchRequest): void { this.startOverlay.hidden = true; this.callbacks.onStart(request); }
   openPause(): void { this.pauseOpen = true; this.settingsOpen = false; this.pauseOverlay.hidden = false; this.settingsOverlay.hidden = true; this.callbacks.onPause(); }
   private resume(): void { this.pauseOpen = false; this.pauseOverlay.hidden = true; this.callbacks.onResume(); }
   private restart(): void { this.closeAll(); this.callbacks.onRestart(); }
@@ -532,7 +689,7 @@ export class GameMenus {
   isOpen(): boolean { return !this.startOverlay.hidden || this.pauseOpen || this.settingsOpen; }
   closeAll(): void { this.startOverlay.hidden = true; this.pauseOverlay.hidden = true; this.settingsOverlay.hidden = true; this.pauseOpen = false; this.settingsOpen = false; }
   setProfile(profile: LocalProfile): void { this.profile = normalizeLocalProfile(profile); this.renderProfile(); }
-  showStart(): void { this.pauseOverlay.hidden = true; this.settingsOverlay.hidden = true; this.startOverlay.hidden = false; this.pauseOpen = false; this.settingsOpen = false; this.setStartTab("mission"); }
+  showStart(): void { this.pauseOverlay.hidden = true; this.settingsOverlay.hidden = true; this.startOverlay.hidden = false; this.pauseOpen = false; this.settingsOpen = false; this.closeBattleSetup(); this.setStartTab("mission"); }
   setQuality(quality: "low" | "medium"): void { for (const button of this.qualityButtons) button.classList.toggle("active", button.dataset.quality === quality); }
   private emitSettings(): void { this.updateSensitivityLabels(); this.applyLocale(); this.callbacks.onSettingsChange({ ...this.settings }); }
   private updateSensitivityLabels(): void { this.steeringValue.textContent = `${Math.round(this.settings.steeringSensitivity * 100)}%`; this.aimValue.textContent = `${Math.round(this.settings.aimSensitivity * 100)}%`; this.masterVolumeValue.textContent = `${Math.round(this.settings.masterVolume * 100)}%`; this.muteAudio.textContent = this.settings.muted ? "静音：开" : "静音：关"; this.muteAudio.setAttribute("aria-pressed", String(this.settings.muted)); this.muteAudio.classList.toggle("active", this.settings.muted); }
