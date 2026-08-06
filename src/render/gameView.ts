@@ -56,6 +56,7 @@ import {
   createDeepWaterMaterial,
   createPixelOceanSurface,
   createPixelSkyMaterial,
+  CLEAR_DAY_RENDER,
   WATER_RENDER,
 } from "./environmentMaterials";
 import { createAtollTerrain, type AtollTerrainVisual } from "./atollTerrain";
@@ -73,6 +74,7 @@ import {
   aimingCameraPlan,
   cameraPointerMoveAllowed,
   cameraTransitionValue,
+  observationCameraPlan,
 } from "./combatCamera";
 import { applyBodyVisibility, ownShipBodyVisibility } from "./shipAimPresentation";
 import { disposeProjectileTrailResources } from "./resourceLifecycle";
@@ -217,19 +219,23 @@ export class GameView implements AimProvider {
     });
     this.engine.setHardwareScalingLevel(1.35);
     this.scene = new Scene(this.engine);
-    this.scene.clearColor = new Color4(0.36, 0.56, 0.66, 1);
+    this.scene.clearColor = new Color4(0, 0, 0, 1);
     this.scene.fogMode = Scene.FOGMODE_LINEAR;
-    this.scene.fogStart = 2_200;
-    this.scene.fogEnd = 4_700;
-    this.scene.fogColor = new Color3(0.36, 0.56, 0.66);
+    this.scene.fogColor = new Color3(0, 0, 0);
+    applyWaterAtmosphere(this.scene, false);
+    this.scene.imageProcessingConfiguration.exposure = CLEAR_DAY_RENDER.exposure;
+    this.scene.imageProcessingConfiguration.contrast = CLEAR_DAY_RENDER.contrast;
 
     this.ambientLight = new HemisphericLight("ambient", new Vector3(0, 1, 0), this.scene);
-    this.ambientLight.intensity = 0.78;
-    this.ambientLight.groundColor = new Color3(0.07, 0.13, 0.16);
-    this.sunLight = new DirectionalLight("sun", new Vector3(-0.4, -1, 0.25), this.scene);
-    this.sunLight.intensity = 0.65;
+    this.ambientLight.intensity = CLEAR_DAY_RENDER.ambientIntensity;
+    this.ambientLight.diffuse = new Color3(0.88, 0.96, 1);
+    this.ambientLight.groundColor = new Color3(0.2, 0.26, 0.28);
+    this.sunLight = new DirectionalLight("sun", new Vector3(0.558, -0.558, -0.648), this.scene);
+    this.sunLight.intensity = CLEAR_DAY_RENDER.sunIntensity;
+    this.sunLight.diffuse = new Color3(1, 0.95, 0.82);
+    this.sunLight.specular = new Color3(1, 0.92, 0.74);
 
-    const ocean = CreateGround("ocean", { width: 12_000, height: 12_000, subdivisions: 2 }, this.scene);
+    const ocean = CreateGround("ocean", { width: 30_000, height: 30_000, subdivisions: 2 }, this.scene);
     const oceanSurface = createPixelOceanSurface(this.scene);
     this.oceanTexture = oceanSurface.texture;
     this.oceanBumpTexture = oceanSurface.bumpTexture;
@@ -240,8 +246,8 @@ export class GameView implements AimProvider {
     ocean.freezeWorldMatrix();
 
     const deepWater = CreateGround("deep-water", {
-      width: 12_000,
-      height: 12_000,
+      width: 30_000,
+      height: 30_000,
       subdivisions: 1,
     }, this.scene);
     deepWater.position.y = WATER_RENDER.deepWaterY;
@@ -266,24 +272,24 @@ export class GameView implements AimProvider {
 
     const nearWaveMaterial = this.material(
       "near-wave-material",
-      new Color3(0.24, 0.55, 0.62),
-      new Color3(0.03, 0.11, 0.13),
+      new Color3(0.45, 0.76, 0.83),
+      new Color3(0.05, 0.16, 0.18),
     );
-    nearWaveMaterial.alpha = 0.32;
+    nearWaveMaterial.alpha = 0.36;
     nearWaveMaterial.disableLighting = true;
     const farWaveMaterial = this.material(
       "far-wave-material",
-      new Color3(0.12, 0.39, 0.49),
+      new Color3(0.25, 0.58, 0.7),
       Color3.Black(),
     );
-    farWaveMaterial.alpha = 0.22;
+    farWaveMaterial.alpha = 0.26;
     farWaveMaterial.disableLighting = true;
     this.waveLayers = [
       this.createWaveLayer("near-waves", 54, 1_500, nearWaveMaterial, 19),
       this.createWaveLayer("far-waves", 38, 2_100, farWaveMaterial, 43),
     ];
 
-    const sky = CreateSphere("sky-dome", { diameter: 10_500, segments: 8 }, this.scene);
+    const sky = CreateSphere("sky-dome", { diameter: 28_000, segments: 8 }, this.scene);
     const skyMaterial = createPixelSkyMaterial(this.scene);
     sky.material = skyMaterial;
     sky.infiniteDistance = true;
@@ -292,27 +298,32 @@ export class GameView implements AimProvider {
     const sunDisk = CreateSphere("sky-sun", { diameter: 210, segments: 8 }, this.scene);
     const sunMaterial = this.material(
       "sky-sun-material",
-      new Color3(0.96, 0.87, 0.57),
-      new Color3(0.62, 0.48, 0.2),
+      new Color3(1, 0.94, 0.68),
+      new Color3(1, 0.72, 0.25),
     );
     sunMaterial.disableLighting = true;
-    sunDisk.position.set(-2_800, 1_760, 3_250);
+    sunMaterial.fogEnabled = false;
+    sunDisk.position.set(-2_800, 2_800, 3_250);
     sunDisk.material = sunMaterial;
     sunDisk.infiniteDistance = true;
     sunDisk.isPickable = false;
 
+    const initialCamera = observationCameraPlan(112);
     this.camera = new ArcRotateCamera(
       "camera",
       -Math.PI / 2,
-      1.08,
-      205,
+      1.2,
+      initialCamera.radius,
       new Vector3(0, 0, 0),
       this.scene,
     );
+    this.camera.fov = initialCamera.fov;
+    this.camera.minZ = 1;
+    this.camera.maxZ = 18_000;
     this.camera.lowerBetaLimit = 0.28;
     this.camera.upperBetaLimit = 1.86;
     this.camera.lowerRadiusLimit = 70;
-    this.camera.upperRadiusLimit = 300;
+    this.camera.upperRadiusLimit = 650;
     this.camera.wheelPrecision = 12;
     this.camera.panningSensibility = 0;
     canvas.addEventListener("pointermove", (event) => {
@@ -1851,12 +1862,12 @@ export class GameView implements AimProvider {
       const target = new Vector3(focusAir.position.x, focusAir.position.y, focusAir.position.z);
       if (state.time < 0.12) this.camera.target.copyFrom(target);
       else Vector3.LerpToRef(this.camera.target, target, 0.18, this.camera.target);
-      this.camera.radius = cameraTransitionValue(this.camera.radius, 115, false);
-      this.camera.fov = cameraTransitionValue(this.camera.fov, 0.78, false);
+      this.camera.radius = cameraTransitionValue(this.camera.radius, 140, false);
+      this.camera.fov = cameraTransitionValue(this.camera.fov, 0.72, false);
       this.enteringAiming = false;
     } else if (cameraShip) {
       const playerHull = getShipClass(cameraShip.shipClassId);
-      const cameraScale = Math.sqrt(playerHull.length / 112);
+      const observationCamera = observationCameraPlan(playerHull.length);
       this.syncAimArc(cameraShip, weaponSlot);
       this.syncTorpedoAim(cameraShip, perceivedTarget, weaponSlot, torpedoSpread);
       const aimX = cameraShip.aimPoint.x - cameraShip.position.x;
@@ -1880,8 +1891,8 @@ export class GameView implements AimProvider {
       );
       if (state.time < 0.12 || this.enteringAiming) this.camera.target.copyFrom(target);
       else Vector3.LerpToRef(this.camera.target, target, 0.16, this.camera.target);
-      const targetRadius = aimCamera?.radius ?? 205 * cameraScale;
-      const targetFov = aimCamera?.fov ?? 0.8;
+      const targetRadius = aimCamera?.radius ?? observationCamera.radius;
+      const targetFov = aimCamera?.fov ?? observationCamera.fov;
       this.camera.radius = cameraTransitionValue(
         this.camera.radius,
         targetRadius,
@@ -1902,8 +1913,10 @@ export class GameView implements AimProvider {
     if (underwater === this.underwaterView) return;
     this.underwaterView = underwater;
     applyWaterAtmosphere(this.scene, underwater);
-    this.ambientLight.intensity = underwater ? 0.35 : 0.78;
-    this.sunLight.intensity = underwater ? 0.15 : 0.65;
+    this.ambientLight.intensity = underwater ? 0.35 : CLEAR_DAY_RENDER.ambientIntensity;
+    this.sunLight.intensity = underwater ? 0.15 : CLEAR_DAY_RENDER.sunIntensity;
+    this.scene.imageProcessingConfiguration.exposure = underwater ? 0.82 : CLEAR_DAY_RENDER.exposure;
+    this.scene.imageProcessingConfiguration.contrast = underwater ? 1.02 : CLEAR_DAY_RENDER.contrast;
   }
 
   resetTransient(): void {
@@ -1921,10 +1934,11 @@ export class GameView implements AimProvider {
     for (const visual of this.smokeCloudMeshes.values()) visual.root.dispose(false, true);
     this.smokeCloudMeshes.clear();
     this.effects.length = 0;
+    const defaultCamera = observationCameraPlan(112);
     this.camera.alpha = -Math.PI / 2;
-    this.camera.beta = 1.08;
-    this.camera.radius = 205;
-    this.camera.fov = 0.8;
+    this.camera.beta = 1.2;
+    this.camera.radius = defaultCamera.radius;
+    this.camera.fov = defaultCamera.fov;
     this.aiming = false;
     this.enteringAiming = false;
   }

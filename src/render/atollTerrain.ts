@@ -48,12 +48,12 @@ function terrainVertexColor(
   if (zone.kind === "shallow") return [.18, .72, .73, 1];
   if (zone.kind === "sandbar") {
     const ratio = Math.min(1, height / Math.max(1, zone.heightMeters ?? 1));
-    return [.68 + ratio * .18, .58 + ratio * .18, .34 + ratio * .12, 1];
+    return [.76 + ratio * .18, .66 + ratio * .17, .4 + ratio * .12, 1];
   }
   const ratio = Math.min(1, height / Math.max(1, zone.heightMeters ?? 1));
-  if (ratio < .3) return [.12 + ratio * .22, .25 + ratio * .2, .15 + ratio * .12, 1];
-  if (ratio < .62) return [.24 + ratio * .12, .31 + ratio * .08, .22 + ratio * .05, 1];
-  return [.34 + ratio * .12, .35 + ratio * .1, .31 + ratio * .1, 1];
+  if (ratio < .3) return [.18 + ratio * .24, .34 + ratio * .2, .2 + ratio * .14, 1];
+  if (ratio < .62) return [.32 + ratio * .14, .42 + ratio * .1, .28 + ratio * .07, 1];
+  return [.46 + ratio * .12, .46 + ratio * .1, .4 + ratio * .1, 1];
 }
 
 function createTerrainMesh(
@@ -122,13 +122,13 @@ export function createAtollTerrain(scene: Scene): AtollTerrainVisual {
     scene,
     "atoll-sand",
     Color3.White(),
-    new Color3(0.08, 0.065, 0.025),
+    new Color3(0.12, 0.1, 0.04),
   );
   const mountain = material(
     scene,
     "atoll-mountain",
     Color3.White(),
-    new Color3(0.015, 0.025, 0.018),
+    new Color3(0.03, 0.05, 0.035),
   );
   const meshes: Mesh[] = [];
   for (const zone of ATOLL_MAP.terrain) {

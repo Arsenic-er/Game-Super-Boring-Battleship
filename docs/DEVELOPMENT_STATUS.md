@@ -51,11 +51,14 @@ server access, browser testing, and short-lived transfer staging.
 - Reduced combat HUD, hold-Tab details, naval instruments, and dedicated scope view.
 - Ocean, sky, volumetric smoke, fire, splashes, shell trails, and naval audio.
 - Living friendly ships render as distinct cyan markers on both tactical-map scales.
+- Clear-day battlefield rendering uses a seamless sunny sky, long-range atmospheric
+  perspective, brighter water and materials, and hull-length-aware camera distance
+  without adding GPU-heavy shadows or post-processing effects.
 
 ## Quality baseline
 
-- Version: `0.6.6`
-- Tests: 368 passing; two offline balance reports intentionally skipped.
+- Version: `0.6.7`
+- Tests: 371 passing; two offline balance reports intentionally skipped.
 - Production build: passing.
 - Worst auxiliary-equipment test fixture: no more than 70 meshes.
 - Fifty loadout rebuilds return mesh, node, and material counts to baseline.
@@ -79,7 +82,7 @@ server access, browser testing, and short-lived transfer staging.
 
 ## Next priorities
 
-1. Capture 0.6.6 visual-regression baselines for menu, dock, combat, scope,
+1. Capture 0.6.7 visual-regression baselines for menu, dock, combat, scope,
    tactical map, and developer mode at 1440x900 and 1280x720.
 2. Establish external-model, hardpoint, material, and LOD pipelines with Fletcher,
    Cleveland, and Yamato as the three benchmark ships.

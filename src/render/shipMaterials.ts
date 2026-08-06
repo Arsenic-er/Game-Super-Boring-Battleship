@@ -82,10 +82,10 @@ export function createPixelShipPalette(
   side: "ally" | "enemy" | "target" = "ally",
 ): PixelShipPalette {
   const hullTint = side === "ally"
-    ? new Color3(0.72, 0.83, 0.84)
+    ? new Color3(0.92, 0.97, 0.98)
     : side === "target"
-      ? new Color3(0.82, 0.72, 0.42)
-      : new Color3(0.78, 0.61, 0.56);
+      ? new Color3(0.96, 0.86, 0.56)
+      : new Color3(0.94, 0.75, 0.7);
   const accentTint = side === "ally"
     ? new Color3(0.78, 0.9, 0.88)
     : side === "target"
@@ -93,9 +93,9 @@ export function createPixelShipPalette(
       : new Color3(0.94, 0.62, 0.52);
   return {
     hull: texturedMaterial(scene, `${name}-hull`, [0, 0], hullTint),
-    deck: texturedMaterial(scene, `${name}-deck`, [1, 0], new Color3(0.68, 0.72, 0.66)),
-    structure: flatFittingMaterial(scene, `${name}-structure`, hullTint.scale(.86)),
-    dark: flatFittingMaterial(scene, `${name}-fittings`, new Color3(.2, .25, .25)),
-    accent: flatFittingMaterial(scene, `${name}-accent`, accentTint.scale(.82)),
+    deck: texturedMaterial(scene, `${name}-deck`, [1, 0], new Color3(0.9, 0.89, 0.8)),
+    structure: flatFittingMaterial(scene, `${name}-structure`, hullTint.scale(.94)),
+    dark: flatFittingMaterial(scene, `${name}-fittings`, new Color3(.28, .33, .33)),
+    accent: flatFittingMaterial(scene, `${name}-accent`, accentTint.scale(.94)),
   };
 }

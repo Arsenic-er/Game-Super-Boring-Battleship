@@ -17,12 +17,27 @@ export interface AimingCameraPlan {
   clearance: number;
 }
 
+export interface ObservationCameraPlan {
+  radius: number;
+  fov: number;
+}
+
 /** Central input gate used while modal developer tools own the pointer. */
 export function cameraPointerMoveAllowed(
   cameraInputEnabled: boolean,
   pointerType: string,
 ): boolean {
   return cameraInputEnabled && (!pointerType || pointerType === "mouse");
+}
+
+/** Keeps large hulls from sitting disproportionately close to the camera. */
+export function observationCameraPlan(length: number): ObservationCameraPlan {
+  const referenceLength = 112;
+  const safeLength = Math.max(64, length);
+  return {
+    radius: 240 * Math.pow(safeLength / referenceLength, 0.9),
+    fov: 0.68,
+  };
 }
 
 /** Keeps the scope camera beyond the view-facing edge of every hull size. */

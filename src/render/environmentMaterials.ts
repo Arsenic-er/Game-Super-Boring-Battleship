@@ -10,14 +10,22 @@ export interface PixelOceanSurface {
   bumpTexture: Texture;
 }
 
+export const CLEAR_DAY_RENDER = {
+  exposure: 1.1,
+  contrast: 1.06,
+  ambientIntensity: 0.8,
+  sunIntensity: 1.15,
+  skyTextureName: "pixel-sky-clear-texture",
+} as const;
+
 export const WATER_RENDER = {
   surfaceY: -0.8,
   deepWaterY: -220,
   surfaceAlpha: 0.66,
   aboveFog: {
-    start: 2_200,
-    end: 4_700,
-    color: new Color3(0.36, 0.56, 0.66),
+    start: 7_000,
+    end: 13_000,
+    color: new Color3(0.7, 0.86, 0.95),
   },
   underwaterFog: {
     start: 24,
@@ -34,17 +42,17 @@ export function createPixelOceanSurface(scene: Scene): PixelOceanSurface {
   texture.wrapV = Texture.WRAP_ADDRESSMODE;
   texture.uScale = 42;
   texture.vScale = 42;
-  texture.level = 0.68;
+  texture.level = 0.8;
   const bumpTexture = texture.clone();
   bumpTexture.name = "pixel-ocean-bump-texture";
-  bumpTexture.level = 0.22;
+  bumpTexture.level = 0.16;
 
   const material = new StandardMaterial("pixel-ocean-material", scene);
   material.diffuseTexture = texture;
   material.bumpTexture = bumpTexture;
-  material.diffuseColor = new Color3(0.36, 0.58, 0.64);
-  material.specularColor = new Color3(0.2, 0.34, 0.37);
-  material.specularPower = 36;
+  material.diffuseColor = new Color3(0.32, 0.66, 0.76);
+  material.specularColor = new Color3(0.7, 0.82, 0.9);
+  material.specularPower = 64;
   material.alpha = WATER_RENDER.surfaceAlpha;
   material.backFaceCulling = false;
   material.twoSidedLighting = true;
@@ -56,8 +64,8 @@ export function createPixelOceanSurface(scene: Scene): PixelOceanSurface {
 
 export function createDeepWaterMaterial(scene: Scene): StandardMaterial {
   const material = new StandardMaterial("deep-water-material", scene);
-  material.diffuseColor = new Color3(0.012, 0.075, 0.105);
-  material.emissiveColor = new Color3(0.006, 0.025, 0.035);
+  material.diffuseColor = new Color3(0.035, 0.17, 0.23);
+  material.emissiveColor = new Color3(0.01, 0.045, 0.06);
   material.specularColor = Color3.Black();
   return material;
 }
@@ -71,15 +79,16 @@ export function applyWaterAtmosphere(scene: Scene, underwater: boolean): void {
 }
 
 export function createPixelSkyMaterial(scene: Scene): StandardMaterial {
-  const url = `${import.meta.env.BASE_URL}assets/textures/pixel-sky-overcast-v1.png`;
+  const url = `${import.meta.env.BASE_URL}assets/textures/pixel-sky-clear-v1.png`;
   const texture = new Texture(url, scene, false, false, Texture.NEAREST_SAMPLINGMODE);
-  texture.name = "pixel-sky-overcast-texture";
+  texture.name = CLEAR_DAY_RENDER.skyTextureName;
   texture.wrapU = Texture.WRAP_ADDRESSMODE;
   texture.wrapV = Texture.CLAMP_ADDRESSMODE;
 
-  const material = new StandardMaterial("pixel-sky-overcast-material", scene);
+  const material = new StandardMaterial("pixel-sky-clear-material", scene);
   material.backFaceCulling = false;
   material.disableLighting = true;
+  material.fogEnabled = false;
   material.diffuseColor = Color3.Black();
   material.emissiveColor = Color3.White();
   material.emissiveTexture = texture;

@@ -176,6 +176,10 @@ button { font: inherit; }
   background: linear-gradient(180deg, rgba(3, 15, 22, .46), transparent 24%, transparent 70%, rgba(2, 11, 16, .58));
 }
 
+.game-shell.game-active .vignette {
+  background: linear-gradient(180deg, rgba(3, 15, 22, .1), transparent 24%, transparent 72%, rgba(2, 11, 16, .16));
+}
+
 .topbar {
   position: fixed;
   inset: 0 0 auto;

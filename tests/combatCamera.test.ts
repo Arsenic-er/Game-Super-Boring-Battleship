@@ -3,6 +3,7 @@ import {
   aimingCameraPlan,
   cameraPointerMoveAllowed,
   cameraTransitionValue,
+  observationCameraPlan,
 } from "../src/render/combatCamera";
 import { SHIP_CLASSES } from "../src/ships/classes";
 
@@ -43,6 +44,17 @@ describe("aiming camera placement", () => {
   it("snaps the first aiming frame to the safe radius", () => {
     expect(cameraTransitionValue(205, 92, true)).toBe(92);
     expect(cameraTransitionValue(205, 92, false)).toBeCloseTo(189.18);
+  });
+
+  it("keeps observation perspective consistent across hull lengths", () => {
+    const ratios = Object.values(SHIP_CLASSES).map((shipClass) => {
+      const plan = observationCameraPlan(shipClass.length);
+      expect(plan.fov).toBeCloseTo(0.68);
+      expect(plan.radius).toBeGreaterThan(shipClass.length);
+      expect(plan.radius).toBeLessThanOrEqual(650);
+      return plan.radius / shipClass.length;
+    });
+    expect(Math.max(...ratios) / Math.min(...ratios)).toBeLessThan(1.12);
   });
 
   it("blocks background camera motion while developer tools own the pointer", () => {
