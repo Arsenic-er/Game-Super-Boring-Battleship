@@ -90,7 +90,7 @@ export function createPixelSkyMaterial(scene: Scene): StandardMaterial {
   material.disableLighting = true;
   material.fogEnabled = false;
   material.diffuseColor = Color3.Black();
-  material.emissiveColor = Color3.White();
+  material.emissiveColor = Color3.Black();
   material.emissiveTexture = texture;
   material.specularColor = Color3.Black();
   return material;

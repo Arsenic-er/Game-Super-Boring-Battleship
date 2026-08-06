@@ -15,6 +15,9 @@ describe("clear-day environment materials", () => {
     const sky = createPixelSkyMaterial(scene);
 
     expect(sky.fogEnabled).toBe(false);
+    expect(sky.emissiveColor.r).toBe(0);
+    expect(sky.emissiveColor.g).toBe(0);
+    expect(sky.emissiveColor.b).toBe(0);
     expect(sky.emissiveTexture?.name).toBe(CLEAR_DAY_RENDER.skyTextureName);
     expect(WATER_RENDER.aboveFog.start).toBeGreaterThan(5_000);
     expect(WATER_RENDER.aboveFog.end).toBeGreaterThan(10_000);

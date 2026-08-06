@@ -57,7 +57,7 @@ server access, browser testing, and short-lived transfer staging.
 
 ## Quality baseline
 
-- Version: `0.6.7`
+- Version: `0.6.8`
 - Tests: 371 passing; two offline balance reports intentionally skipped.
 - Production build: passing.
 - Worst auxiliary-equipment test fixture: no more than 70 meshes.
@@ -82,7 +82,7 @@ server access, browser testing, and short-lived transfer staging.
 
 ## Next priorities
 
-1. Capture 0.6.7 visual-regression baselines for menu, dock, combat, scope,
+1. Capture 0.6.8 visual-regression baselines for menu, dock, combat, scope,
    tactical map, and developer mode at 1440x900 and 1280x720.
 2. Establish external-model, hardpoint, material, and LOD pipelines with Fletcher,
    Cleveland, and Yamato as the three benchmark ships.
