@@ -54,9 +54,9 @@ export const CATEGORY_META: Record<EquipmentCategory, { label: string; icon: str
 
 const bonuses: Record<EquipmentRarity, number> = {
   common: 0.03,
-  purple: 0.08,
-  gold: 0.14,
-  redGold: 0.22,
+  purple: 0.06,
+  gold: 0.10,
+  redGold: 0.15,
 };
 
 const economyByRarity: Record<EquipmentRarity, {

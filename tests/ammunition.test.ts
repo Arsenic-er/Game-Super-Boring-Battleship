@@ -3,15 +3,19 @@ import {
   armorThicknessFor,
   compartmentSaturationMultiplier,
   createInitialState,
+  isCitadelHit,
   moduleForProjectileHit,
   projectileHitContact,
   projectileImpactAngleDegrees,
   resolveArmorInteraction,
+  recoverableFractionForHit,
   stepSimulation,
+  type ArmorResolution,
+  type ProjectileHitContact,
 } from "../src/sim/simulation";
 import { recommendedAmmoForTarget } from "../src/controllers/ruleBasedAi";
 import { FIXED_STEP } from "../src/sim/config";
-import type { ControlCommand } from "../src/sim/types";
+import type { ControlCommand, ProjectileState } from "../src/sim/types";
 import { SHIP_CLASSES } from "../src/ships/classes";
 import { SHIP_ARMOR_PROFILES } from "../src/ships/armorProfiles";
 import { getMainBattery } from "../src/ships/mainBatteries";
@@ -95,11 +99,79 @@ describe("ammunition and armor interaction", () => {
     expect(resolveArmorInteraction("ap", 8, 80, 1, 20, 0).result).not.toBe("ricochet");
   });
 
-  it("applies 100, 50 and 10 percent compartment saturation tiers", () => {
+  it("keeps penetration damage at 33, 16.5 and 10 percent through saturation", () => {
     expect(compartmentSaturationMultiplier(100, 100)).toBe(1);
     expect(compartmentSaturationMultiplier(50, 100)).toBe(0.5);
     expect(compartmentSaturationMultiplier(1, 100)).toBe(0.5);
-    expect(compartmentSaturationMultiplier(0, 100)).toBe(0.1);
+    expect(compartmentSaturationMultiplier(0, 100)).toBeCloseTo(0.1 / 0.33, 8);
+  });
+
+  it("recognizes low AP penetrations into cruiser and battleship citadels only", () => {
+    const cruiser = createInitialState(
+      101,
+      "sea-trials",
+      undefined,
+      undefined,
+      undefined,
+      "cleveland",
+    ).ships[0]!;
+    const destroyer = createInitialState(102, "sea-trials").ships[0]!;
+    const projectile: ProjectileState = {
+      id: 1,
+      ownerId: "test",
+      team: "enemy",
+      kind: "shell",
+      ammoType: "ap",
+      position: { x: 0, y: 3, z: 0 },
+      previousPosition: { x: -10, y: 3, z: 0 },
+      velocity: { x: 100, y: 0, z: 0 },
+      damage: 300,
+      age: 1,
+    };
+    const penetration: ArmorResolution = {
+      result: "penetration",
+      penetrationMm: 180,
+      effectiveArmorMm: 100,
+      damageMultiplier: 0.33,
+      moduleDamageMultiplier: 0.58,
+      fireChanceMultiplier: 0,
+      floodingChanceMultiplier: 0,
+    };
+    const side: ProjectileHitContact = {
+      point: { x: 0, y: 3, z: 0 },
+      localPoint: { longitudinal: 0, lateral: 0, height: 3 },
+      surfaceNormal: { x: 1, y: 0, z: 0 },
+      armorZone: "side",
+      distanceFraction: 0.5,
+    };
+    expect(isCitadelHit(cruiser, projectile, penetration, "engineRoom", side)).toBe(true);
+    expect(isCitadelHit(cruiser, projectile, penetration, "magazine", {
+      ...side,
+      armorZone: "deck",
+      localPoint: { ...side.localPoint, height: cruiser.maxHull },
+    })).toBe(true);
+    expect(isCitadelHit(cruiser, projectile, penetration, "bridge", side)).toBe(false);
+    expect(isCitadelHit(destroyer, projectile, penetration, "engineRoom", side)).toBe(false);
+    expect(isCitadelHit(cruiser, { ...projectile, ammoType: "he" }, penetration, "engineRoom", side))
+      .toBe(false);
+    expect(isCitadelHit(cruiser, projectile, { ...penetration, result: "overpenetration" }, "engineRoom", side))
+      .toBe(false);
+    expect(isCitadelHit(cruiser, projectile, penetration, "engineRoom", {
+      ...side,
+      localPoint: {
+        ...side.localPoint,
+        height: SHIP_CLASSES.cleveland.deckHeight,
+      },
+    })).toBe(false);
+  });
+
+  it("maps hit types to WoWS-style recoverable damage fractions", () => {
+    const shell = { kind: "shell" } as ProjectileState;
+    const torpedo = { kind: "torpedo" } as ProjectileState;
+    expect(recoverableFractionForHit(shell, false, "overpenetration")).toBe(1);
+    expect(recoverableFractionForHit(shell, false, "penetration")).toBe(0.5);
+    expect(recoverableFractionForHit(shell, true, "penetration")).toBe(0.1);
+    expect(recoverableFractionForHit(torpedo, false, "penetration")).toBe(0.5);
   });
 
   it("uses thicker armor around machinery and the magazine", () => {

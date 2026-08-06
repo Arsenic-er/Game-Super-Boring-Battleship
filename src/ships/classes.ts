@@ -31,6 +31,8 @@ export interface ShipClassDefinition {
   armorMultiplier: number;
   detectionBonusMeters: number;
   massFactor: number;
+  torpedoTubesPerLauncher: number;
+  torpedoBroadsideLaunchers: number;
   slotCounts: Record<WeaponHardpointCategory, number>;
   starterSlots: Record<WeaponHardpointCategory, number>;
   renderScale: { x: number; y: number; z: number };
@@ -39,9 +41,14 @@ export interface ShipClassDefinition {
 
 const degrees = (value: number): number => value * Math.PI / 180;
 
-type ClassInput = Omit<ShipClassDefinition, "renderScale">;
+type ClassInput = Omit<
+  ShipClassDefinition,
+  "renderScale" | "torpedoTubesPerLauncher" | "torpedoBroadsideLaunchers"
+> & Partial<Pick<ShipClassDefinition, "torpedoTubesPerLauncher" | "torpedoBroadsideLaunchers">>;
 const define = (input: ClassInput): ShipClassDefinition => ({
   ...input,
+  torpedoTubesPerLauncher: input.torpedoTubesPerLauncher ?? 0,
+  torpedoBroadsideLaunchers: input.torpedoBroadsideLaunchers ?? 0,
   renderScale: { x: input.beam / 11, y: input.deckHeight / 8, z: input.length / 112 },
 });
 
@@ -53,6 +60,7 @@ export const SHIP_CLASSES: Record<ShipClassId, ShipClassDefinition> = {
     length: 114.7, beam: 12.1, deckHeight: 8.4, maxHull: 1_100, maxSpeedKnots: 36.5,
     accelerationKnotsPerSecond: .39, brakingKnotsPerSecond: .57, rudderShiftPerSecond: .34, maximumTurningSpeedLoss: .12, maxTurnRateRadians: degrees(3),
     compartmentHealthMultiplier: 1.12, armorMultiplier: 1, detectionBonusMeters: 40, massFactor: 1.08,
+    torpedoTubesPerLauncher: 5, torpedoBroadsideLaunchers: 2,
     slotCounts: { mainGun: 5, torpedo: 2, antiAir: 4, sideGun: 0, depthCharge: 2 }, starterSlots: { mainGun: 5, torpedo: 1, antiAir: 1, sideGun: 0, depthCharge: 1 }, visualVariant: 0,
   }),
   "j-class": define({
@@ -62,6 +70,7 @@ export const SHIP_CLASSES: Record<ShipClassId, ShipClassDefinition> = {
     length: 108.7, beam: 10.9, deckHeight: 7.8, maxHull: 1_000, maxSpeedKnots: 36,
     accelerationKnotsPerSecond: .4, brakingKnotsPerSecond: .59, rudderShiftPerSecond: .35, maximumTurningSpeedLoss: .11, maxTurnRateRadians: degrees(3.15),
     compartmentHealthMultiplier: 1, armorMultiplier: .98, detectionBonusMeters: 0, massFactor: .96,
+    torpedoTubesPerLauncher: 5, torpedoBroadsideLaunchers: 2,
     slotCounts: { mainGun: 3, torpedo: 2, antiAir: 3, sideGun: 0, depthCharge: 2 }, starterSlots: { mainGun: 3, torpedo: 1, antiAir: 1, sideGun: 0, depthCharge: 1 }, visualVariant: 1,
   }),
   kagero: define({
@@ -71,6 +80,7 @@ export const SHIP_CLASSES: Record<ShipClassId, ShipClassDefinition> = {
     length: 118.5, beam: 10.8, deckHeight: 8, maxHull: 1_050, maxSpeedKnots: 35,
     accelerationKnotsPerSecond: .37, brakingKnotsPerSecond: .55, rudderShiftPerSecond: .33, maximumTurningSpeedLoss: .12, maxTurnRateRadians: degrees(2.95),
     compartmentHealthMultiplier: 1.05, armorMultiplier: 1, detectionBonusMeters: -90, massFactor: 1.02,
+    torpedoTubesPerLauncher: 4, torpedoBroadsideLaunchers: 2,
     slotCounts: { mainGun: 3, torpedo: 2, antiAir: 3, sideGun: 0, depthCharge: 2 }, starterSlots: { mainGun: 3, torpedo: 1, antiAir: 1, sideGun: 0, depthCharge: 1 }, visualVariant: 2,
   }),
   "type-1936a": define({
@@ -80,6 +90,7 @@ export const SHIP_CLASSES: Record<ShipClassId, ShipClassDefinition> = {
     length: 127, beam: 12, deckHeight: 8.8, maxHull: 1_200, maxSpeedKnots: 36,
     accelerationKnotsPerSecond: .34, brakingKnotsPerSecond: .51, rudderShiftPerSecond: .3, maximumTurningSpeedLoss: .14, maxTurnRateRadians: degrees(2.65),
     compartmentHealthMultiplier: 1.2, armorMultiplier: 1.08, detectionBonusMeters: 170, massFactor: 1.28,
+    torpedoTubesPerLauncher: 4, torpedoBroadsideLaunchers: 2,
     slotCounts: { mainGun: 4, torpedo: 2, antiAir: 3, sideGun: 0, depthCharge: 2 }, starterSlots: { mainGun: 4, torpedo: 1, antiAir: 1, sideGun: 0, depthCharge: 1 }, visualVariant: 3,
   }),
   tashkent: define({
@@ -89,6 +100,7 @@ export const SHIP_CLASSES: Record<ShipClassId, ShipClassDefinition> = {
     length: 139.8, beam: 13.7, deckHeight: 9.2, maxHull: 1_250, maxSpeedKnots: 42.5,
     accelerationKnotsPerSecond: .41, brakingKnotsPerSecond: .53, rudderShiftPerSecond: .27, maximumTurningSpeedLoss: .17, maxTurnRateRadians: degrees(2.5),
     compartmentHealthMultiplier: 1.28, armorMultiplier: 1.04, detectionBonusMeters: 260, massFactor: 1.42,
+    torpedoTubesPerLauncher: 3, torpedoBroadsideLaunchers: 3,
     slotCounts: { mainGun: 3, torpedo: 3, antiAir: 3, sideGun: 0, depthCharge: 2 }, starterSlots: { mainGun: 3, torpedo: 1, antiAir: 1, sideGun: 0, depthCharge: 1 }, visualVariant: 4,
   }),
   cleveland: define({
@@ -107,6 +119,7 @@ export const SHIP_CLASSES: Record<ShipClassId, ShipClassDefinition> = {
     length: 187, beam: 19.3, deckHeight: 12.8, maxHull: 2_100, maxSpeedKnots: 32.25,
     accelerationKnotsPerSecond: .23, brakingKnotsPerSecond: .38, rudderShiftPerSecond: .21, maximumTurningSpeedLoss: .17, maxTurnRateRadians: degrees(1.65),
     compartmentHealthMultiplier: 1.86, armorMultiplier: 1.4, detectionBonusMeters: 590, massFactor: 3.05,
+    torpedoTubesPerLauncher: 3, torpedoBroadsideLaunchers: 1,
     slotCounts: { mainGun: 4, torpedo: 2, antiAir: 4, sideGun: 6, depthCharge: 0 }, starterSlots: { mainGun: 4, torpedo: 1, antiAir: 1, sideGun: 6, depthCharge: 0 }, visualVariant: 1,
   }),
   nurnberg: define({
@@ -116,6 +129,7 @@ export const SHIP_CLASSES: Record<ShipClassId, ShipClassDefinition> = {
     length: 181.3, beam: 16.3, deckHeight: 11.6, maxHull: 1_850, maxSpeedKnots: 32,
     accelerationKnotsPerSecond: .25, brakingKnotsPerSecond: .4, rudderShiftPerSecond: .23, maximumTurningSpeedLoss: .15, maxTurnRateRadians: degrees(1.82),
     compartmentHealthMultiplier: 1.65, armorMultiplier: 1.32, detectionBonusMeters: 450, massFactor: 2.55,
+    torpedoTubesPerLauncher: 3, torpedoBroadsideLaunchers: 2,
     slotCounts: { mainGun: 3, torpedo: 4, antiAir: 4, sideGun: 0, depthCharge: 0 }, starterSlots: { mainGun: 3, torpedo: 2, antiAir: 1, sideGun: 0, depthCharge: 0 }, visualVariant: 2,
   }),
   agano: define({
@@ -125,6 +139,7 @@ export const SHIP_CLASSES: Record<ShipClassId, ShipClassDefinition> = {
     length: 174.1, beam: 15.2, deckHeight: 11.5, maxHull: 1_750, maxSpeedKnots: 35,
     accelerationKnotsPerSecond: .27, brakingKnotsPerSecond: .4, rudderShiftPerSecond: .24, maximumTurningSpeedLoss: .15, maxTurnRateRadians: degrees(1.9),
     compartmentHealthMultiplier: 1.58, armorMultiplier: 1.25, detectionBonusMeters: 360, massFactor: 2.35,
+    torpedoTubesPerLauncher: 4, torpedoBroadsideLaunchers: 2,
     slotCounts: { mainGun: 3, torpedo: 2, antiAir: 3, sideGun: 2, depthCharge: 0 }, starterSlots: { mainGun: 3, torpedo: 1, antiAir: 1, sideGun: 2, depthCharge: 0 }, visualVariant: 3,
   }),
   dido: define({
@@ -134,6 +149,7 @@ export const SHIP_CLASSES: Record<ShipClassId, ShipClassDefinition> = {
     length: 156, beam: 15.4, deckHeight: 11.2, maxHull: 1_700, maxSpeedKnots: 32.25,
     accelerationKnotsPerSecond: .28, brakingKnotsPerSecond: .42, rudderShiftPerSecond: .25, maximumTurningSpeedLoss: .14, maxTurnRateRadians: degrees(1.98),
     compartmentHealthMultiplier: 1.5, armorMultiplier: 1.22, detectionBonusMeters: 300, massFactor: 2.1,
+    torpedoTubesPerLauncher: 3, torpedoBroadsideLaunchers: 1,
     slotCounts: { mainGun: 5, torpedo: 2, antiAir: 3, sideGun: 0, depthCharge: 0 }, starterSlots: { mainGun: 5, torpedo: 1, antiAir: 1, sideGun: 0, depthCharge: 0 }, visualVariant: 4,
   }),
   "north-carolina": define({
@@ -182,6 +198,15 @@ export const SHIP_CLASSES: Record<ShipClassId, ShipClassDefinition> = {
     slotCounts: { mainGun: 2, torpedo: 0, antiAir: 6, sideGun: 3, depthCharge: 0 }, starterSlots: { mainGun: 2, torpedo: 0, antiAir: 2, sideGun: 3, depthCharge: 0 }, visualVariant: 4,
   }),
 };
+
+export function torpedoesPerSalvo(shipClassId: ShipClassId, equippedLaunchers: number): number {
+  const shipClass = SHIP_CLASSES[shipClassId];
+  const launchers = Math.min(
+    Math.max(0, Math.floor(equippedLaunchers)),
+    shipClass.torpedoBroadsideLaunchers,
+  );
+  return launchers * shipClass.torpedoTubesPerLauncher;
+}
 
 export const DEFAULT_SHIP_CLASS_ID: ShipClassId = "fletcher";
 export const SHIP_CLASS_IDS = Object.keys(SHIP_CLASSES) as ShipClassId[];

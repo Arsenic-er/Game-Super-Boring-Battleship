@@ -453,6 +453,7 @@ export interface ImpactEvent {
   terrainId?: string;
   ammoType?: AmmoType;
   penetrationResult?: PenetrationResult;
+  citadel?: boolean;
   armorThicknessMm?: number;
   penetrationMm?: number;
   effectiveArmorMm?: number;

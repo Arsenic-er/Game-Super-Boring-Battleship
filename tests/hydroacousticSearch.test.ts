@@ -101,7 +101,7 @@ describe("Hydroacoustic Search", () => {
   it("uses one shared boosted range for warnings and rendered torpedo visibility", () => {
     const state = createInitialState(5103);
     const [player, enemy] = placeShips(state, 2_500);
-    const torpedo = incomingTorpedo(state, enemy, 1_000);
+    const torpedo = incomingTorpedo(state, enemy, 800);
     state.projectiles.push(torpedo);
     expect(torpedoThreatsFor(state, player.id)).toHaveLength(0);
     expect(isProjectileVisibleToPlayer(torpedo, player)).toBe(false);

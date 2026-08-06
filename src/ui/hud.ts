@@ -61,6 +61,7 @@ const penetrationLabels: Record<PenetrationResult, string> = {
 export interface CombatSalvoSummary {
   salvoId: number;
   hits: number;
+  citadels: number;
   penetration: number;
   overpenetration: number;
   ricochet: number;
@@ -72,7 +73,7 @@ export interface CombatSalvoSummary {
 }
 
 const emptySalvoSummary = (salvoId: number): CombatSalvoSummary => ({
-  salvoId, hits: 0, penetration: 0, overpenetration: 0, ricochet: 0,
+  salvoId, hits: 0, citadels: 0, penetration: 0, overpenetration: 0, ricochet: 0,
   shatter: 0, fires: 0, floods: 0, modules: 0, damage: 0,
 });
 
@@ -95,7 +96,11 @@ export function summarizePlayerSalvos(
       summaries.set(salvoId, summary);
     }
     summary.hits += 1;
-    if (impact.penetrationResult) summary[impact.penetrationResult] += 1;
+    if (impact.citadel) {
+      summary.citadels += 1;
+    } else if (impact.penetrationResult) {
+      summary[impact.penetrationResult] += 1;
+    }
     if (impact.startedFire) summary.fires += 1;
     if (impact.startedFlooding) summary.floods += 1;
     if (impact.module && (impact.moduleDamage ?? 0) > 0) summary.modules += 1;
@@ -499,6 +504,7 @@ export class Hud {
       }
       const summary = visual.summary;
       summary.hits += fragment.hits;
+      summary.citadels += fragment.citadels;
       summary.penetration += fragment.penetration;
       summary.overpenetration += fragment.overpenetration;
       summary.ricochet += fragment.ricochet;
@@ -512,6 +518,7 @@ export class Hud {
 
       const ribbons: Array<readonly [string, number, string]> = [
         ["命中", summary.hits, "hit"],
+        ["核心区", summary.citadels, "citadel"],
         ["击穿", summary.penetration, "penetration"],
         ["过穿", summary.overpenetration, "overpenetration"],
         ["跳弹", summary.ricochet, "ricochet"],
@@ -540,8 +547,10 @@ export class Hud {
       if (!incoming && impact.sourceId === "player" && impact.weaponSource === "mainGun") continue;
       const moduleText = impact.module ? ` · ${moduleLabels[impact.module]}受损` : "";
       const hazard = `${impact.startedFire ? " · 起火" : ""}${impact.startedFlooding ? " · 进水" : ""}`;
-      const armorResult = impact.penetrationResult
-        ? ` · ${impact.ammoType ? ammoLabels[impact.ammoType].split(" ")[0] : ""}${penetrationLabels[impact.penetrationResult]}`
+      const armorResult = impact.citadel
+        ? " · AP核心区"
+        : impact.penetrationResult
+          ? ` · ${impact.ammoType ? ammoLabels[impact.ammoType].split(" ")[0] : ""}${penetrationLabels[impact.penetrationResult]}`
         : "";
       const armorDetail = impact.penetrationMm !== undefined && impact.armorThicknessMm !== undefined
         ? ` · 穿深 ${Math.round(impact.penetrationMm)}/${Math.round(impact.armorThicknessMm)} mm`

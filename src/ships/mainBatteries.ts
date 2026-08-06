@@ -175,9 +175,9 @@ const UPGRADE_MODIFIERS: Record<MainGunId, {
   damage: number; reload: number; traverse: number; dispersion: number; velocity: number;
 }> = {
   "mk1-single": { damage: 1, reload: 1, traverse: 1, dispersion: 1, velocity: 1 },
-  "mk2-twin": { damage: 1.04, reload: 1.04, traverse: .96, dispersion: 1.05, velocity: 1.01 },
-  "mk3-twin": { damage: 1.08, reload: .96, traverse: 1.02, dispersion: .97, velocity: 1.02 },
-  "mk4-twin": { damage: 1.12, reload: .92, traverse: 1.06, dispersion: .92, velocity: 1.04 },
+  "mk2-twin": { damage: 1.015, reload: 1.015, traverse: .98, dispersion: 1.025, velocity: 1.005 },
+  "mk3-twin": { damage: 1.035, reload: .985, traverse: 1.01, dispersion: .985, velocity: 1.01 },
+  "mk4-twin": { damage: 1.055, reload: .965, traverse: 1.03, dispersion: .965, velocity: 1.02 },
 };
 
 const HISTORICAL_UPGRADE_LABELS: Record<MainGunId, string> = {

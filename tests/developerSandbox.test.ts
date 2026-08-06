@@ -92,12 +92,12 @@ describe("developer sandbox", () => {
 
     stepSimulation(state, new Map([["player", fire]]), .01);
 
-    expect(state.projectiles.filter(({ kind, ownerId }) => kind === "torpedo" && ownerId === "player")).toHaveLength(2);
+    expect(state.projectiles.filter(({ kind, ownerId }) => kind === "torpedo" && ownerId === "player")).toHaveLength(5);
     expect(player.torpedoReserveSalvos).toBe(reserve);
     expect(player.torpedoReloadRemaining).toBeCloseTo(DEVELOPER_MIN_RELOAD_SECONDS);
 
     stepSimulation(state, new Map([["player", idle(1_000, player.position.z)]]), DEVELOPER_MIN_RELOAD_SECONDS);
-    expect(player.torpedoesLoaded).toBe(2);
+    expect(player.torpedoesLoaded).toBe(5);
     expect(player.torpedoReserveSalvos).toBe(reserve);
   });
 

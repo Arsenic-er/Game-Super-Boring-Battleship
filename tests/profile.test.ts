@@ -49,7 +49,7 @@ describe("local commander profile", () => {
     });
     const equipped = equipComponent(equipComponent(equipComponent(source, "engine-gold"), "steering-purple"), "magazine-gold");
     const modifiers = battleLoadout(equipped);
-    expect(modifiers.maxSpeedMultiplier).toBeGreaterThan(1.1);
+    expect(modifiers.maxSpeedMultiplier).toBeCloseTo(1.1);
     expect(modifiers.turnMultiplier).toBeGreaterThan(1.05);
     expect(modifiers.reloadMultiplier).toBeLessThan(1);
     expect(modifiers.antiAirMounts).toBeGreaterThan(0);
@@ -247,6 +247,6 @@ describe("local commander profile", () => {
     });
     const loadout = battleLoadout(upgraded);
     expect(loadout.antiAirMounts).toBe(2);
-    expect(loadout.antiAirEfficiencyMultiplier).toBeCloseTo(1.125);
+    expect(loadout.antiAirEfficiencyMultiplier).toBeCloseTo(1.09);
   });
 });

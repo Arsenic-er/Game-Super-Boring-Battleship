@@ -36,8 +36,9 @@ server access, browser testing, and short-lived transfer staging.
 - Unique equipment cards and live 3D dock preview for selected equipment.
 - Exact identities for all eight equipment categories survive into battle state.
 - Combat models render per-model secondaries, AA, depth charges, and torpedo launchers.
-- HE/AP, reload, traverse, dispersion, ballistics, modules, armor zones, and damage.
-- Collision, flooding, fire, repair, manpower allocation, and recoverable-health bars.
+- HE/AP, citadels, saturation, reload, traverse, dispersion, armor zones, and modules.
+- Historical per-class torpedo tube and broadside counts drive physical salvo sizes.
+- Collision, percentage-based flooding/fire/repair, manpower, and recoverable-health bars.
 - Smoke, hydro, depth charges, torpedo aiming, and underwater torpedo wakes.
 - Two-sided fleet AI, spotting, lost-contact silhouettes, and the Dawn Atoll map.
 - Zoomable tactical map and RTS-style air guard, intercept, patrol, and strike orders.
@@ -49,20 +50,33 @@ server access, browser testing, and short-lived transfer staging.
 ## Quality baseline
 
 - Version: `0.6.4`
-- Tests: 343 passing; one offline balance report intentionally skipped.
+- Tests: 355 passing; two offline balance reports intentionally skipped.
 - Production build: passing.
 - Worst auxiliary-equipment test fixture: no more than 70 meshes.
 - Fifty loadout rebuilds return mesh, node, and material counts to baseline.
+- The balance lab supports class-specific standard loadouts, paired mirrored spawns,
+  batch matrices, citadel telemetry, tracking telemetry, and repeatable CLI reports.
 - Latest feature commit: `b606efb Render installed equipment in combat`.
+
+## Balance calibration snapshot
+
+- First post-rebase matrix: 32 battles, four matchups, paired physical spawn mirrors.
+- Generic five-mount destroyer gun DPM is now about 3,000-3,663 instead of 14,595-21,774.
+- Secondary ranges are 2.4-2.95 km and remain below compatible main-battery ranges.
+- Native torpedo warning windows are roughly 10-12 seconds; hydro extends them to about 31-35 seconds.
+- Fletcher mirror gun hit rates were about 18-20%; torpedo damage share was about 13% combined.
+- Open findings: Kagero standard equipment is too weak against Fletcher, and larger paired samples
+  are required to separate controller-seed/team bias from map-spawn bias on heavy ships.
+
 
 ## Next priorities
 
 1. Improve hull, deck, bridge, superstructure, and turret detail; reduce blockiness.
-2. Show the complete installed external loadout in the dock, not only one candidate.
-3. Add per-mount main-gun visuals for cruisers and battleships; define mixed-gun rules.
-4. Calibrate AA, secondary, torpedo, and depth-charge hardpoints for all 15 classes.
-5. Improve fleet formations, cover use, target priority, retreat, and shared spotting.
-6. Complete battle results, difficulty, economy balance, and 10-30 minute pacing tests.
+2. Rebase each class's historical starter weapon identity, beginning with Kagero versus Fletcher.
+3. Run at least 100 paired seeds per mirror matchup before changing team or map-side balance.
+4. Show the complete installed external loadout in the dock, not only one candidate.
+5. Add per-mount main-gun visuals for cruisers and battleships; define mixed-gun rules.
+6. Improve fleet formations, cover use, target priority, retreat, and shared spotting.
 7. Package the Windows EXE only after the single-player gameplay loop is stable.
 
 ## Key recent commits

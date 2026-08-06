@@ -1,19 +1,101 @@
 import { RuleBasedAi } from "../controllers/ruleBasedAi";
-import { FIXED_STEP } from "./config";
-import { createInitialState, observe, stepSimulation } from "./simulation";
+import { DEFAULT_MAIN_GUN_ID } from "../ships/components";
+import type { MainGunId } from "../ships/components";
+import {
+  DEFAULT_SHIP_CLASS_ID,
+  getShipClass,
+} from "../ships/classes";
+import type { ShipClassId } from "../ships/classes";
+import { DEFAULT_TORPEDO_ID } from "../ships/torpedoes";
+import type { TorpedoId } from "../ships/torpedoes";
+import type { SecondaryGunId } from "../ships/secondaryGuns";
+import { BATTLE_SPAWN, FIXED_STEP } from "./config";
+import {
+  createDeveloperShipState,
+  createInitialState,
+  observe,
+  stepSimulation,
+} from "./simulation";
 import type {
   BattleEndReason,
   BattleState,
   BattleStatus,
   PerceptionMode,
+  ShipPerformanceModifiers,
   Team,
 } from "./types";
+
+export type BalanceLoadoutPreset = "baseline" | "standard";
+export type BalanceSpawnSide = "default" | "mirrored";
+
+/**
+ * A render-free ship setup for deterministic balance experiments.
+ *
+ * `baseline` keeps the original laboratory's one-main-mount assumption while
+ * `standard` fills every historical starter mount declared by the ship class.
+ * Explicit mount counts make focused weapon-isolation experiments possible.
+ */
+export interface BalanceShipConfiguration {
+  shipClassId: ShipClassId;
+  loadoutPreset?: BalanceLoadoutPreset;
+  mainGunId?: MainGunId;
+  torpedoId?: TorpedoId;
+  mainGunMounts?: number;
+  torpedoLauncherMounts?: number;
+  depthChargeMounts?: number;
+  antiAirMounts?: number;
+  secondaryGunIds?: readonly SecondaryGunId[];
+  performance?: Partial<ShipPerformanceModifiers>;
+}
+
+export interface BalanceScenario {
+  player?: BalanceShipConfiguration;
+  enemy?: BalanceShipConfiguration;
+  spawnSide?: BalanceSpawnSide;
+}
+
+export interface BalanceBatchOptions extends BalanceScenario {
+  runs: number;
+  firstSeed?: number;
+  maximumSeconds?: number;
+}
+
+export interface BalanceMatrixMatchup {
+  id?: string;
+  player: BalanceShipConfiguration;
+  enemy: BalanceShipConfiguration;
+}
+
+export interface BalanceMatrixOptions {
+  matchups: readonly BalanceMatrixMatchup[];
+  runsPerSpawn?: number;
+  firstSeed?: number;
+  maximumSeconds?: number;
+  includeMirroredSpawns?: boolean;
+}
+
+export interface BalanceMatrixEntry {
+  id: string;
+  player: BalanceShipConfiguration;
+  enemy: BalanceShipConfiguration;
+  defaultSpawn: BalanceReport;
+  mirroredSpawn?: BalanceReport;
+  combined: BalanceReport;
+  /** Positive means the default player-side spawn helped the configured player ship. */
+  spawnPlayerWinRateDelta?: number;
+}
+
+export interface BalanceMatrixReport {
+  runs: number;
+  entries: BalanceMatrixEntry[];
+}
 
 export interface TeamCombatMetrics {
   shots: number;
   salvos: number;
   hits: number;
   effectiveHits: number;
+  citadels: number;
   penetrations: number;
   overpenetrations: number;
   ricochets: number;
@@ -78,6 +160,7 @@ export interface BalanceReport {
   averagePlayerDamage: number;
   averageEnemyDamage: number;
   penetrationResults: {
+    citadels: number;
     penetrations: number;
     overpenetrations: number;
     ricochets: number;
@@ -109,6 +192,7 @@ const emptyTeamMetrics = (): TeamCombatMetrics => ({
   salvos: 0,
   hits: 0,
   effectiveHits: 0,
+  citadels: 0,
   penetrations: 0,
   overpenetrations: 0,
   ricochets: 0,
@@ -341,11 +425,123 @@ export function battleStateFingerprint(state: BattleState): string {
   });
 }
 
+const DEFAULT_PERFORMANCE: ShipPerformanceModifiers = {
+  maxSpeedMultiplier: 1,
+  accelerationMultiplier: 1,
+  turnMultiplier: 1,
+  reloadMultiplier: 1,
+  magazineRiskMultiplier: 1,
+};
+
+function clampMountCount(value: number, minimum = 0): number {
+  return Math.max(minimum, Math.floor(value));
+}
+
+function configuredShip(
+  id: string,
+  team: Team,
+  configuration: BalanceShipConfiguration,
+  position: { x: number; z: number },
+  heading: number,
+) {
+  const definition = getShipClass(configuration.shipClassId);
+  const preset = configuration.loadoutPreset ?? "standard";
+  const standard = preset === "standard";
+  const mainGunMounts = clampMountCount(
+    configuration.mainGunMounts ?? (standard ? definition.starterSlots.mainGun : 1),
+    1,
+  );
+  const torpedoLauncherMounts = clampMountCount(
+    configuration.torpedoLauncherMounts ?? (standard
+      ? definition.starterSlots.torpedo
+      : Math.min(1, definition.slotCounts.torpedo)),
+  );
+  const depthChargeMounts = clampMountCount(
+    configuration.depthChargeMounts ?? (standard
+      ? definition.starterSlots.depthCharge
+      : Math.min(1, definition.slotCounts.depthCharge)),
+  );
+  const antiAirMounts = clampMountCount(
+    configuration.antiAirMounts ?? definition.starterSlots.antiAir,
+  );
+  const secondaryGunIds = configuration.secondaryGunIds
+    ? [...configuration.secondaryGunIds]
+    : Array.from(
+      { length: definition.starterSlots.sideGun },
+      () => "sideGun-common" as const,
+    );
+
+  return createDeveloperShipState({
+    id,
+    team,
+    shipClassId: configuration.shipClassId,
+    position: { x: position.x, y: 0, z: position.z },
+    heading,
+    mainGunId: configuration.mainGunId ?? DEFAULT_MAIN_GUN_ID,
+    torpedoId: configuration.torpedoId ?? DEFAULT_TORPEDO_ID,
+    mainGunMounts,
+    torpedoLauncherMounts,
+    depthChargeMounts,
+    antiAirMounts,
+    secondaryGunIds,
+    performance: { ...DEFAULT_PERFORMANCE, ...configuration.performance },
+    aiControlled: true,
+    countsForVictory: true,
+  });
+}
+
+/**
+ * Builds a configurable battle state while leaving the legacy no-argument
+ * setup byte-for-byte compatible with `createInitialState`.
+ */
+export function createBalanceInitialState(
+  seed: number,
+  scenario?: BalanceScenario,
+): BattleState {
+  const state = createInitialState(seed, "battle");
+  if (!scenario) return state;
+
+  const playerConfiguration: BalanceShipConfiguration = scenario.player ?? {
+    shipClassId: DEFAULT_SHIP_CLASS_ID,
+    loadoutPreset: "standard",
+  };
+  const enemyConfiguration: BalanceShipConfiguration = scenario.enemy ?? {
+    ...playerConfiguration,
+    performance: playerConfiguration.performance
+      ? { ...playerConfiguration.performance }
+      : undefined,
+    secondaryGunIds: playerConfiguration.secondaryGunIds
+      ? [...playerConfiguration.secondaryGunIds]
+      : undefined,
+  };
+  const mirrored = scenario.spawnSide === "mirrored";
+  const playerSpawn = mirrored ? BATTLE_SPAWN.enemy : BATTLE_SPAWN.player;
+  const enemySpawn = mirrored ? BATTLE_SPAWN.player : BATTLE_SPAWN.enemy;
+  state.ships = [
+    configuredShip(
+      "player",
+      "player",
+      playerConfiguration,
+      playerSpawn,
+      mirrored ? Math.PI : 0,
+    ),
+    configuredShip(
+      "enemy",
+      "enemy",
+      enemyConfiguration,
+      enemySpawn,
+      mirrored ? 0 : Math.PI,
+    ),
+  ];
+  return state;
+}
+
 export function runHeadlessBattle(
   seed: number,
   maximumSeconds = 10 * 60,
+  scenario?: BalanceScenario,
 ): BattleTelemetry {
-  const state = createInitialState(seed, "battle");
+  const state = createBalanceInitialState(seed, scenario);
   const firstControllerSeed = (seed ^ 0x51f15e) >>> 0;
   const secondControllerSeed = (seed ^ 0xa11ce) >>> 0;
   // Alternate controller seeds between map spawns so a persistent personality
@@ -397,7 +593,8 @@ export function runHeadlessBattle(
       metrics[shot.team].shots += 1;
       if (shot.kind === "torpedo") metrics[shot.team].torpedoesLaunched += 1;
       else metrics[shot.team].shellsFired += 1;
-      if (commands.get(shot.ownerId)?.perception?.mode !== "tracking") {
+      if (shot.weaponSource !== "secondary"
+        && commands.get(shot.ownerId)?.perception?.mode !== "tracking") {
         metrics[shot.team].shotsWhileUntracked += 1;
       }
       teamsFiring.add(shot.team);
@@ -422,7 +619,8 @@ export function runHeadlessBattle(
         metrics[attacker].shellHits += 1;
       }
       if ((impact.damage ?? 0) > 0) metrics[attacker].effectiveHits += 1;
-      if (impact.penetrationResult === "penetration") metrics[attacker].penetrations += 1;
+      if (impact.citadel) metrics[attacker].citadels += 1;
+      else if (impact.penetrationResult === "penetration") metrics[attacker].penetrations += 1;
       if (impact.penetrationResult === "overpenetration") {
         metrics[attacker].overpenetrations += 1;
       }
@@ -524,6 +722,9 @@ export function summarizeBattles(battles: readonly BattleTelemetry[]): BalanceRe
     averagePlayerDamage: round(safeRate(total((battle) => battle.player.damage), runs), 2),
     averageEnemyDamage: round(safeRate(total((battle) => battle.enemy.damage), runs), 2),
     penetrationResults: {
+      citadels: total(
+        (battle) => battle.player.citadels + battle.enemy.citadels,
+      ),
       penetrations: total(
         (battle) => battle.player.penetrations + battle.enemy.penetrations,
       ),
@@ -591,10 +792,84 @@ export function summarizeBattles(battles: readonly BattleTelemetry[]): BalanceRe
   };
 }
 
-export function runBalanceBatch(runs: number, firstSeed = 1): BalanceReport {
-  const battles = Array.from(
+function runScenarioBattles(
+  runs: number,
+  firstSeed: number,
+  maximumSeconds: number,
+  scenario?: BalanceScenario,
+): BattleTelemetry[] {
+  return Array.from(
     { length: Math.max(0, Math.floor(runs)) },
-    (_, index) => runHeadlessBattle((firstSeed + index) >>> 0),
+    (_, index) => runHeadlessBattle(
+      (firstSeed + index) >>> 0,
+      maximumSeconds,
+      scenario,
+    ),
   );
-  return summarizeBattles(battles);
+}
+
+export function runBalanceBatch(runs: number, firstSeed = 1): BalanceReport {
+  return summarizeBattles(runScenarioBattles(runs, firstSeed, 10 * 60));
+}
+
+export function runConfiguredBalanceBatch(options: BalanceBatchOptions): BalanceReport {
+  return summarizeBattles(runScenarioBattles(
+    options.runs,
+    options.firstSeed ?? 1,
+    options.maximumSeconds ?? 10 * 60,
+    {
+      player: options.player,
+      enemy: options.enemy,
+      spawnSide: options.spawnSide,
+    },
+  ));
+}
+
+/**
+ * Runs paired spawn experiments for arbitrary class/loadout matchups. The same
+ * seed range is reused for each default/mirrored pair, isolating map-side bias
+ * from random dispersion and controller personality variance.
+ */
+export function runBalanceMatrix(options: BalanceMatrixOptions): BalanceMatrixReport {
+  const runsPerSpawn = Math.max(0, Math.floor(options.runsPerSpawn ?? 1));
+  const maximumSeconds = options.maximumSeconds ?? 10 * 60;
+  const includeMirroredSpawns = options.includeMirroredSpawns ?? true;
+  let nextSeed = options.firstSeed ?? 1;
+  let totalRuns = 0;
+  const entries = options.matchups.map((matchup): BalanceMatrixEntry => {
+    const defaultBattles = runScenarioBattles(
+      runsPerSpawn,
+      nextSeed,
+      maximumSeconds,
+      { player: matchup.player, enemy: matchup.enemy, spawnSide: "default" },
+    );
+    const mirroredBattles = includeMirroredSpawns
+      ? runScenarioBattles(
+        runsPerSpawn,
+        nextSeed,
+        maximumSeconds,
+        { player: matchup.player, enemy: matchup.enemy, spawnSide: "mirrored" },
+      )
+      : [];
+    nextSeed = (nextSeed + runsPerSpawn) >>> 0;
+    totalRuns += defaultBattles.length + mirroredBattles.length;
+    const defaultSpawn = summarizeBattles(defaultBattles);
+    const mirroredSpawn = includeMirroredSpawns
+      ? summarizeBattles(mirroredBattles)
+      : undefined;
+    const playerPreset = matchup.player.loadoutPreset ?? "standard";
+    const enemyPreset = matchup.enemy.loadoutPreset ?? "standard";
+    return {
+      id: matchup.id ?? `${matchup.player.shipClassId}-${playerPreset}-vs-${matchup.enemy.shipClassId}-${enemyPreset}`,
+      player: matchup.player,
+      enemy: matchup.enemy,
+      defaultSpawn,
+      mirroredSpawn,
+      combined: summarizeBattles([...defaultBattles, ...mirroredBattles]),
+      spawnPlayerWinRateDelta: mirroredSpawn
+        ? round(defaultSpawn.playerWinRate - mirroredSpawn.playerWinRate, 4)
+        : undefined,
+    };
+  });
+  return { runs: totalRuns, entries };
 }

@@ -16,7 +16,7 @@ import {
   battleLoadoutFromSlots,
   type SlotLoadout,
 } from "../profile/localProfile";
-import { getShipClass } from "../ships/classes";
+import { getShipClass, torpedoesPerSalvo } from "../ships/classes";
 import type { ShipClassId } from "../ships/classes";
 import { getTorpedo } from "../ships/torpedoes";
 import type { TorpedoId } from "../ships/torpedoes";
@@ -433,7 +433,7 @@ export function refillDeveloperWeapons(ship: ShipState): void {
   ship.pendingAmmoType = undefined;
   for (const mount of ship.mainBatteryMounts) mount.reloadRemaining = 0;
   for (const mount of ship.secondaryMounts) mount.reloadRemaining = 0;
-  ship.torpedoesLoaded = 2;
+  ship.torpedoesLoaded = torpedoesPerSalvo(ship.shipClassId, ship.torpedoLauncherMounts);
   ship.torpedoReserveSalvos = Math.max(ship.torpedoReserveSalvos, getTorpedo(ship.torpedoId).reserveSalvos);
   ship.torpedoReloadRemaining = 0;
   ship.depthChargeSalvos = Math.max(ship.depthChargeSalvos, DEPTH_CHARGE.salvos);

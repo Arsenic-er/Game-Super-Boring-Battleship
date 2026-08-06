@@ -1,6 +1,6 @@
 import "./developerPanelSandbox.css";
 import { COMPARTMENT_MAX_HEALTH, HYDRO, SMOKE } from "../sim/config";
-import { getShipClass, SHIP_CLASSES, SHIP_CLASS_IDS } from "../ships/classes";
+import { getShipClass, SHIP_CLASSES, SHIP_CLASS_IDS, torpedoesPerSalvo } from "../ships/classes";
 import { mainBatteryMountCanBear, torpedoLauncherAlignmentError } from "../sim/simulation";
 import type { BattleState, CompartmentId, ModuleId, ShipState } from "../sim/types";
 import { getTorpedo, TORPEDO_DEFINITIONS } from "../ships/torpedoes";
@@ -418,7 +418,7 @@ export class DeveloperPanel {
     } else if (action === "torpedo-reload") {
       const ship = this.selectedShip();
       if (!ship) return;
-      ship.torpedoesLoaded = 2;
+      ship.torpedoesLoaded = torpedoesPerSalvo(ship.shipClassId, ship.torpedoLauncherMounts);
       ship.torpedoReloadRemaining = 0;
     } else
     if (action === "collision") {
@@ -480,7 +480,7 @@ export class DeveloperPanel {
       mount.health = mount.maxHealth;
       mount.lastFiredAt = undefined;
     }
-    ship.torpedoesLoaded = 2;
+    ship.torpedoesLoaded = torpedoesPerSalvo(ship.shipClassId, ship.torpedoLauncherMounts);
     ship.torpedoReserveSalvos = torpedo.reserveSalvos;
     ship.torpedoReloadRemaining = 0;
     for (const mount of ship.secondaryMounts) mount.reloadRemaining = 0;
@@ -594,7 +594,8 @@ export class DeveloperPanel {
     const reloadEta = tubeRatio > 0 ? ship.torpedoReloadRemaining / tubeRatio : Number.POSITIVE_INFINITY;
     const relativeLauncher = ((ship.torpedoLauncherHeading - ship.heading) * 180 / Math.PI + 540) % 360 - 180;
     const alignment = torpedoLauncherAlignmentError(ship) * 180 / Math.PI;
-    this.torpedoStatus.textContent = `鱼雷 · 发射器 ${relativeLauncher >= 0 ? "右" : "左"} ${Math.abs(relativeLauncher).toFixed(1)}° · 偏差 ${alignment.toFixed(1)}° · 管内 ${ship.torpedoesLoaded}/2 · 备用 ${ship.torpedoReserveSalvos} 组 · 装填 ${Number.isFinite(reloadEta) ? `${reloadEta.toFixed(1)} s` : "已停止"}`;
+    const torpedoSalvoSize = torpedoesPerSalvo(ship.shipClassId, ship.torpedoLauncherMounts);
+    this.torpedoStatus.textContent = `鱼雷 · 发射器 ${relativeLauncher >= 0 ? "右" : "左"} ${Math.abs(relativeLauncher).toFixed(1)}° · 偏差 ${alignment.toFixed(1)}° · 管内 ${ship.torpedoesLoaded}/${torpedoSalvoSize} · 备用 ${ship.torpedoReserveSalvos} 组 · 装填 ${Number.isFinite(reloadEta) ? `${reloadEta.toFixed(1)} s` : "已停止"}`;
     const secondaryReloads = ship.secondaryMounts.map((mount) => ({
       side: mount.side,
       seconds: mount.reloadRemaining,

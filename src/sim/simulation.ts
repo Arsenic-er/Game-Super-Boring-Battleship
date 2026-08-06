@@ -8,6 +8,7 @@ import {
   COLLISION_DAMAGE_MULTIPLIER,
   COMPARTMENT_MAX_HEALTH,
   DAMAGE_CONTROL,
+  DAMAGE_RECOVERY,
   DEPTH_CHARGE,
   FIXED_STEP,
   GUN,
@@ -29,7 +30,7 @@ import {
 import type { MainGunId } from "../ships/components";
 import { DEFAULT_HULL_ID, getHull } from "../ships/hulls";
 import type { HullId } from "../ships/hulls";
-import { DEFAULT_SHIP_CLASS_ID, getShipClass, isShipClassId } from "../ships/classes";
+import { DEFAULT_SHIP_CLASS_ID, getShipClass, isShipClassId, torpedoesPerSalvo } from "../ships/classes";
 import type { ShipClassId } from "../ships/classes";
 import { DEFAULT_TORPEDO_ID, getTorpedo } from "../ships/torpedoes";
 import type { TorpedoId } from "../ships/torpedoes";
@@ -305,7 +306,9 @@ function createShip(
     torpedoReloadRemaining: 0,
     torpedoReloadDuration: getTorpedo(torpedoId).reloadSeconds,
     torpedoLauncherHeading: wrapAngle(heading + Math.PI / 2),
-    torpedoesLoaded: hullDefinition.slotCounts.torpedo > 0 && torpedoLauncherMounts > 0 ? 2 : 0,
+    torpedoesLoaded: hullDefinition.slotCounts.torpedo > 0 && torpedoLauncherMounts > 0
+      ? torpedoesPerSalvo(shipClassId, torpedoLauncherMounts)
+      : 0,
     torpedoReserveSalvos: hullDefinition.slotCounts.torpedo > 0 && torpedoLauncherMounts > 0
       ? getTorpedo(torpedoId).reserveSalvos
       : 0,
@@ -399,7 +402,7 @@ export function createDeveloperShipState(options: DeveloperShipStateOptions): Sh
   ship.aiControlled = options.aiControlled;
   ship.countsForVictory = options.countsForVictory;
   if (ship.torpedoLauncherMounts > 0) {
-    ship.torpedoesLoaded = 2;
+    ship.torpedoesLoaded = torpedoesPerSalvo(ship.shipClassId, ship.torpedoLauncherMounts);
     ship.torpedoReserveSalvos = getTorpedo(ship.torpedoId).reserveSalvos;
   }
   if (ship.developer?.unrestrictedWeapons && ship.depthChargeMounts > 0) {
@@ -538,12 +541,34 @@ function moduleRatio(ship: ShipState, id: ModuleId): number {
   return module.maxHealth === 0 ? 0 : module.health / module.maxHealth;
 }
 
-function applyHullDamage(ship: ShipState, damage: number, permanentFraction: number): void {
-  ship.hull = Math.max(0, ship.hull - damage);
+function applyHullDamage(
+  ship: ShipState,
+  requestedDamage: number,
+  options: { recoverableFraction: number },
+): number {
+  const actualDamage = Math.min(ship.hull, Math.max(0, requestedDamage));
+  ship.hull -= actualDamage;
+  const recoverableFraction = clamp(options.recoverableFraction, 0, 1);
   ship.recoverableHull = Math.max(
     ship.hull,
-    Math.min(ship.maxHull, ship.recoverableHull - damage * permanentFraction),
+    Math.min(
+      ship.maxHull,
+      ship.recoverableHull - actualDamage * (1 - recoverableFraction),
+    ),
   );
+  return actualDamage;
+}
+
+export function recoverableFractionForHit(
+  projectile: ProjectileState,
+  citadel: boolean,
+  penetrationResult: PenetrationResult,
+): number {
+  if (projectile.kind === "torpedo") return DAMAGE_RECOVERY.torpedo;
+  if (citadel) return DAMAGE_RECOVERY.citadel;
+  return penetrationResult === "overpenetration"
+    ? DAMAGE_RECOVERY.overpenetration
+    : DAMAGE_RECOVERY.penetration;
 }
 
 function desiredTurretHeading(
@@ -756,7 +781,9 @@ function moveShip(state: BattleState, ship: ShipState, command: ControlCommand, 
       0,
       ship.torpedoReloadRemaining - dt * tubeRatio,
     );
-    if (ship.torpedoReloadRemaining <= 0) ship.torpedoesLoaded = 2;
+    if (ship.torpedoReloadRemaining <= 0) {
+      ship.torpedoesLoaded = torpedoesPerSalvo(ship.shipClassId, ship.torpedoLauncherMounts);
+    }
   }
 }
 
@@ -1400,16 +1427,21 @@ function fireTorpedoes(state: BattleState, ship: ShipState): void {
   const halfSpread = ship.torpedoSpreadMode === "wide"
     ? TORPEDO.wideSpreadRadians
     : TORPEDO.narrowSpreadRadians;
-  const actualDirections = [
-    wrapAngle(ship.torpedoLauncherHeading - halfSpread),
-    wrapAngle(ship.torpedoLauncherHeading + halfSpread),
-  ];
+  const torpedoCount = ship.torpedoesLoaded;
+  const actualDirections = Array.from({ length: torpedoCount }, (_, index) =>
+    wrapAngle(
+      ship.torpedoLauncherHeading - halfSpread
+        + (torpedoCount <= 1 ? halfSpread : 2 * halfSpread * index / (torpedoCount - 1)),
+    ),
+  );
   for (const [index, direction] of actualDirections.entries()) {
     const forwardX = Math.sin(direction);
     const forwardZ = Math.cos(direction);
     const rightX = forwardZ;
     const rightZ = -forwardX;
-    const barrelOffset = (index - 0.5) * TORPEDO.tubeBarrelSpacing * renderScale.x;
+    const barrelOffset = (
+      index - (torpedoCount - 1) / 2
+    ) * TORPEDO.tubeBarrelSpacing * renderScale.x;
     const origin = {
       x: tubeCenter.x + forwardX * 3 * renderScale.z + rightX * barrelOffset,
       y: 0.35,
@@ -1822,6 +1854,7 @@ function damageModule(
   compartment: CompartmentId,
   baseDamage: number,
   preferredModule?: ModuleId,
+  allowSecondaryHullDamage = true,
 ): { moduleId: ModuleId; moduleDamage: number } {
   const candidates: Record<CompartmentId, ModuleId[]> = {
     bow: ["gun", "gun", "crew"],
@@ -1854,10 +1887,10 @@ function damageModule(
     if (mount) mount.health = Math.max(0, mount.health - moduleDamage);
   }
 
-  if (moduleId === "magazine") {
-    applyHullDamage(ship, baseDamage * 0.35, 0.72);
+  if (moduleId === "magazine" && allowSecondaryHullDamage) {
+    applyHullDamage(ship, baseDamage * 0.35, { recoverableFraction: 0.28 });
   } else if (moduleId === "torpedoTubes" && riskMultiplier > 1) {
-    applyHullDamage(ship, baseDamage * (riskMultiplier - 1) * 0.8, 0.8);
+    applyHullDamage(ship, baseDamage * (riskMultiplier - 1) * 0.8, { recoverableFraction: 0.2 });
   }
   return { moduleId, moduleDamage };
 }
@@ -1912,9 +1945,24 @@ export function compartmentSaturationMultiplier(
   compartmentHealth: number,
   compartmentMaxHealth: number,
 ): number {
-  if (compartmentHealth <= 0) return 0.1;
+  if (compartmentHealth <= 0) return 0.1 / AMMUNITION.ap.penetrationDamageMultiplier;
   if (compartmentHealth <= compartmentMaxHealth * 0.5) return 0.5;
   return 1;
+}
+
+export function isCitadelHit(
+  ship: ShipState,
+  projectile: ProjectileState,
+  armor: ArmorResolution,
+  compartment: CompartmentId,
+  contact: ProjectileHitContact,
+): boolean {
+  if (projectile.kind !== "shell" || projectile.ammoType !== "ap") return false;
+  if (armor.result !== "penetration" || ship.hullId === "destroyer") return false;
+  if (compartment !== "engineRoom" && compartment !== "magazine") return false;
+  if (contact.armorZone === "deck") return true;
+  return contact.armorZone === "side"
+    && contact.localPoint.height <= getShipClass(ship.shipClassId).deckHeight * 0.52;
 }
 
 function applyHit(
@@ -1952,20 +2000,34 @@ function applyHit(
       projectile.shellProfile,
     );
   const compartmentHealth = ship.compartments[compartment];
+  // Internal machinery, voids and shell path are abstracted below the hull mesh.
+  // A valid geometric entry therefore rolls once instead of becoming a guaranteed citadel.
+  const citadel = isCitadelHit(ship, projectile, armor, compartment, contact)
+    && random(state) < 0.55;
   const saturationMultiplier = projectile.kind === "shell"
     && armor.result !== "overpenetration"
+    && !citadel
     ? compartmentSaturationMultiplier(
       compartmentHealth,
       COMPARTMENT_MAX_HEALTH[compartment]
         * hullDefinition.compartmentHealthMultiplier,
     )
     : 1;
+  const damageMultiplier = citadel
+    ? 1
+    : armor.damageMultiplier * saturationMultiplier;
   const damage = Math.min(
-    projectile.damage * armor.damageMultiplier * saturationMultiplier,
-    compartmentHealth + 30,
+    projectile.damage * damageMultiplier,
+    citadel ? ship.hull : compartmentHealth + 30,
   );
   ship.compartments[compartment] = Math.max(0, compartmentHealth - damage * 0.72);
-  applyHullDamage(ship, damage, 0.38);
+  applyHullDamage(ship, damage, {
+    recoverableFraction: recoverableFractionForHit(
+      projectile,
+      citadel,
+      armor.result,
+    ),
+  });
   const moduleBaseDamage = projectile.damage * 0.33 * armor.moduleDamageMultiplier;
   const moduleHit = moduleBaseDamage > 0.01
     ? damageModule(
@@ -1974,6 +2036,7 @@ function applyHit(
       compartment,
       moduleBaseDamage,
       moduleForProjectileHit(compartment, contact.localPoint.height, ship.shipClassId),
+      !citadel,
     )
     : undefined;
   const fireChance = compartment === "magazine" ? 0.48
@@ -2006,6 +2069,7 @@ function applyHit(
     startedFlooding,
     ammoType: projectile.ammoType,
     penetrationResult: armor.result,
+    citadel,
     armorThicknessMm,
     penetrationMm: armor.penetrationMm,
     effectiveArmorMm: armor.effectiveArmorMm,
@@ -2102,7 +2166,7 @@ function applyCollisionDamage(
   const damage = baseDamage * collisionDamageMultiplierFor(compartment);
   const compartmentHealth = ship.compartments[compartment];
   ship.compartments[compartment] = Math.max(0, compartmentHealth - damage * 0.58);
-  applyHullDamage(ship, damage, 0.58);
+  applyHullDamage(ship, damage, { recoverableFraction: 0.42 });
   const moduleHit = damageModule(state, ship, compartment, damage);
   const startedFlooding = random(state) < Math.min(0.68, 0.12 + damage / 210);
   if (startedFlooding) ship.flooding = clamp(ship.flooding + 10 + damage * 0.22, 0, 100);
@@ -2214,7 +2278,7 @@ function resolveShipTerrainContact(state: BattleState, ship: ShipState): void {
     ship.compartments[compartment] = Math.max(
       0, ship.compartments[compartment] - damage * 0.48,
     );
-    applyHullDamage(ship, damage, 0.62);
+    applyHullDamage(ship, damage, { recoverableFraction: 0.38 });
   }
   state.impacts.push({
     id: state.nextEntityId++,
@@ -2503,8 +2567,9 @@ function updateDamageControl(
   if (ship.fireIntensity > 0) {
     applyHullDamage(
       ship,
-      ship.fireIntensity * DAMAGE_CONTROL.fireHullDamagePerPointSecond * dt,
-      0.52,
+      ship.maxHull * DAMAGE_CONTROL.fireMaxHullFractionPerSecondAtFullIntensity
+        * ship.fireIntensity / 100 * dt,
+      { recoverableFraction: DAMAGE_RECOVERY.damageOverTime },
     );
     ship.fireIntensity = Math.max(
       0,
@@ -2518,8 +2583,9 @@ function updateDamageControl(
   if (ship.flooding > 0) {
     applyHullDamage(
       ship,
-      ship.flooding * DAMAGE_CONTROL.floodingHullDamagePerPointSecond * dt,
-      0.6,
+      ship.maxHull * DAMAGE_CONTROL.floodingMaxHullFractionPerSecondAtFullIntensity
+        * ship.flooding / 100 * dt,
+      { recoverableFraction: DAMAGE_RECOVERY.damageOverTime },
     );
     ship.flooding = Math.max(
       0,
@@ -2540,7 +2606,7 @@ function repairHull(ship: ShipState, allocation: number, dt: number): void {
   ship.hull = Math.min(
     ship.recoverableHull,
     ship.hull
-      + HULL_REPAIR.pointsPerSecond
+      + ship.maxHull * HULL_REPAIR.maxHullFractionPerSecond
       * crewFactor
       * (0.25 + allocation * 0.75)
       * dt,

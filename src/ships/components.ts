@@ -14,6 +14,7 @@ export interface MainGunDefinition {
   shortLabel: string;
   description: string;
   cost: number;
+  /** Total raw damage of one complete mount salvo, divided across its barrels at runtime. */
   damage: number;
   reloadSeconds: number;
   traverseDegreesPerSecond: number;
@@ -32,7 +33,7 @@ export const MAIN_GUNS: Record<MainGunId, MainGunDefinition> = {
     shortLabel: "Mk.I 单装炮",
     description: "轻型炮座，装填和转向较快，适合持续修正射击。",
     cost: 0,
-    damage: 270,
+    damage: 55,
     reloadSeconds: 5.5,
     traverseDegreesPerSecond: 12,
     dispersionMultiplier: 1,
@@ -51,8 +52,8 @@ export const MAIN_GUNS: Record<MainGunId, MainGunDefinition> = {
     shortLabel: "Mk.II 双联装炮",
     description: "双联装重炮，单次伤害更高，但装填、转向和散布表现较差。",
     cost: 800,
-    damage: 360,
-    reloadSeconds: 7.4,
+    damage: 108,
+    reloadSeconds: 10.8,
     traverseDegreesPerSecond: 8.5,
     dispersionMultiplier: 1.12,
     muzzleVelocity: 735,
@@ -70,8 +71,8 @@ export const MAIN_GUNS: Record<MainGunId, MainGunDefinition> = {
     shortLabel: "Mk.III 强化双联装炮",
     description: "强化供弹与炮塔驱动，装填、伤害与炮管辨识度进一步提升。",
     cost: 0,
-    damage: 405,
-    reloadSeconds: 6.8,
+    damage: 112,
+    reloadSeconds: 10.1,
     traverseDegreesPerSecond: 9.4,
     dispersionMultiplier: 1.02,
     muzzleVelocity: 755,
@@ -83,8 +84,8 @@ export const MAIN_GUNS: Record<MainGunId, MainGunDefinition> = {
     shortLabel: "Mk.IV 赤金双联装炮",
     description: "舰队试制炮塔，在火力、装填和转速之间取得最高等级平衡。",
     cost: 0,
-    damage: 450,
-    reloadSeconds: 6.2,
+    damage: 116,
+    reloadSeconds: 9.5,
     traverseDegreesPerSecond: 10.2,
     dispersionMultiplier: 0.94,
     muzzleVelocity: 775,

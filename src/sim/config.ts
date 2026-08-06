@@ -25,7 +25,8 @@ export const OBJECTIVE = {
   contestedScoreMultiplier: 0.35,
   dominanceHullDifference: 0.08,
   scorePerSecond: 2.5,
-  scoreToWin: 200,
+  // 25 s to capture plus roughly 150 s of uncontested scoring.
+  scoreToWin: 375,
   destroyScore: 100,
 } as const;
 
@@ -51,7 +52,7 @@ export const SENSOR = {
   reacquisitionSamples: 2,
   aiAcquisitionSamples: 4,
   guaranteedDetectionMeters: 1_700,
-  maximumDetectionMeters: 3_400,
+  maximumDetectionMeters: 2_600,
   gunBloomDetectionMeters: 5_000,
   gunBloomSeconds: 12,
   burningDetectionBonusMeters: 650,
@@ -100,7 +101,7 @@ export const HYDRO = {
   activeSeconds: 70,
   cooldownSeconds: 130,
   shipDetectionMeters: 2_000,
-  torpedoDetectionMeters: 1_400,
+  torpedoDetectionMeters: 900,
 } as const;
 
 export const COMPARTMENT_MAX_HEALTH = {
@@ -112,8 +113,8 @@ export const COMPARTMENT_MAX_HEALTH = {
 } as const;
 
 export const DAMAGE_CONTROL = {
-  fireHullDamagePerPointSecond: 0.007,
-  floodingHullDamagePerPointSecond: 0.004,
+  fireMaxHullFractionPerSecondAtFullIntensity: 0.003,
+  floodingMaxHullFractionPerSecondAtFullIntensity: 0.0025,
   baseFireReductionPerSecond: 0.55,
   baseFloodReductionPerSecond: 0.32,
   passiveTreatmentMultiplier: 0.12,
@@ -124,8 +125,16 @@ export const DAMAGE_CONTROL = {
 } as const;
 
 export const HULL_REPAIR = {
-  pointsPerSecond: 4.2,
+  maxHullFractionPerSecond: 0.0042,
   minimumCrewFactor: 0.12,
+} as const;
+
+export const DAMAGE_RECOVERY = {
+  damageOverTime: 1,
+  overpenetration: 1,
+  penetration: 0.5,
+  citadel: 0.1,
+  torpedo: 0.5,
 } as const;
 
 export const COLLISION = {
@@ -163,8 +172,8 @@ export const TORPEDO = {
   detectionRangeMeters: 500,
   minimumLaunchAngleRadians: 38 * Math.PI / 180,
   maximumLaunchAngleRadians: 142 * Math.PI / 180,
-  narrowSpreadRadians: 0.15 * Math.PI / 180,
-  wideSpreadRadians: 4 * Math.PI / 180,
+  narrowSpreadRadians: 1.6 * Math.PI / 180,
+  wideSpreadRadians: 6 * Math.PI / 180,
   tubeLongitudinalOffset: -8,
   tubeBarrelSpacing: 1.2,
   launcherTraverseRadiansPerSecond: 24 * Math.PI / 180,

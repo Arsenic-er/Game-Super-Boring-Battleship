@@ -1,7 +1,9 @@
 import { describe, expect, it } from "vitest";
 import {
   battleStateFingerprint,
+  createBalanceInitialState,
   runBalanceBatch,
+  runBalanceMatrix,
   runHeadlessBattle,
 } from "../src/sim/balanceLab";
 import { createInitialState } from "../src/sim/simulation";
@@ -18,6 +20,76 @@ describe("headless balance lab", () => {
       .toBe(battleStateFingerprint(createInitialState(73)));
     expect(battleStateFingerprint(createInitialState(73)))
       .not.toBe(battleStateFingerprint(createInitialState(74)));
+  });
+
+  it("builds baseline and standard class loadouts without changing the legacy default", () => {
+    const legacy = createBalanceInitialState(11);
+    const baseline = createBalanceInitialState(11, {
+      player: { shipClassId: "yamato", loadoutPreset: "baseline" },
+      enemy: { shipClassId: "kagero", loadoutPreset: "baseline" },
+    });
+    const standard = createBalanceInitialState(11, {
+      player: { shipClassId: "yamato", loadoutPreset: "standard" },
+      enemy: { shipClassId: "kagero", loadoutPreset: "standard" },
+    });
+
+    expect(legacy.ships.find((ship) => ship.id === "player")?.shipClassId).toBe("fletcher");
+    expect(legacy.ships.find((ship) => ship.id === "player")?.mainGunMounts).toBe(1);
+    expect(baseline.ships.find((ship) => ship.id === "player")).toMatchObject({
+      shipClassId: "yamato",
+      mainGunMounts: 1,
+      torpedoLauncherMounts: 0,
+    });
+    expect(standard.ships.find((ship) => ship.id === "player")).toMatchObject({
+      shipClassId: "yamato",
+      mainGunMounts: 3,
+      torpedoLauncherMounts: 0,
+      antiAirMounts: 3,
+    });
+    expect(standard.ships.find((ship) => ship.id === "enemy")).toMatchObject({
+      shipClassId: "kagero",
+      mainGunMounts: 3,
+      torpedoLauncherMounts: 1,
+      depthChargeMounts: 1,
+    });
+  });
+
+  it("mirrors physical spawns while preserving team and class assignments", () => {
+    const scenario = {
+      player: { shipClassId: "cleveland" as const, loadoutPreset: "standard" as const },
+      enemy: { shipClassId: "bismarck" as const, loadoutPreset: "standard" as const },
+    };
+    const normal = createBalanceInitialState(23, scenario);
+    const mirrored = createBalanceInitialState(23, { ...scenario, spawnSide: "mirrored" });
+    const normalPlayer = normal.ships.find((ship) => ship.id === "player")!;
+    const normalEnemy = normal.ships.find((ship) => ship.id === "enemy")!;
+    const mirroredPlayer = mirrored.ships.find((ship) => ship.id === "player")!;
+    const mirroredEnemy = mirrored.ships.find((ship) => ship.id === "enemy")!;
+
+    expect(mirroredPlayer.shipClassId).toBe(normalPlayer.shipClassId);
+    expect(mirroredEnemy.shipClassId).toBe(normalEnemy.shipClassId);
+    expect(mirroredPlayer.position).toEqual(normalEnemy.position);
+    expect(mirroredEnemy.position).toEqual(normalPlayer.position);
+    expect(mirroredPlayer.heading).toBeCloseTo(Math.PI);
+    expect(mirroredEnemy.heading).toBeCloseTo(0);
+  });
+
+  it("reports paired cross-class matches with a spawn-side delta", () => {
+    const matrix = runBalanceMatrix({
+      matchups: [{
+        player: { shipClassId: "fletcher", loadoutPreset: "baseline" },
+        enemy: { shipClassId: "cleveland", loadoutPreset: "standard" },
+      }],
+      runsPerSpawn: 1,
+      maximumSeconds: 1,
+    });
+
+    expect(matrix.runs).toBe(2);
+    expect(matrix.entries).toHaveLength(1);
+    expect(matrix.entries[0]?.defaultSpawn.runs).toBe(1);
+    expect(matrix.entries[0]?.mirroredSpawn?.runs).toBe(1);
+    expect(matrix.entries[0]?.combined.runs).toBe(2);
+    expect(matrix.entries[0]?.spawnPlayerWinRateDelta).toBeTypeOf("number");
   });
 
   it("summarizes repeatable batch percentiles and combat rates", () => {
@@ -45,5 +117,5 @@ describe("headless balance lab", () => {
     expect(report.averageTorpedoSalvosPerTeam).toBeGreaterThanOrEqual(0);
     expect(report.playerGunHitRate).toBeGreaterThanOrEqual(0);
     expect(report.playerGunHitRate).toBeLessThanOrEqual(1);
-  });
+  }, 15_000);
 });

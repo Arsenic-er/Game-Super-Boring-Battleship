@@ -75,11 +75,11 @@ describe("developer equipment armory", () => {
     expect(replacement!.mainBatteryMounts).toHaveLength(SHIP_CLASS_SLOT_COUNTS.fletcher.mainGun);
     expect(replacement!.torpedoLauncherMounts).toBe(SHIP_CLASS_SLOT_COUNTS.fletcher.torpedo);
     expect(replacement!.antiAirMounts).toBe(SHIP_CLASS_SLOT_COUNTS.fletcher.antiAir);
-    expect(replacement!.antiAirEfficiencyMultiplier).toBeCloseTo(1.22);
-    expect(replacement!.performance.maxSpeedMultiplier).toBeCloseTo(1.22);
-    expect(replacement!.performance.accelerationMultiplier).toBeCloseTo(1.187);
-    expect(replacement!.performance.turnMultiplier).toBeCloseTo(1.22);
-    expect(replacement!.performance.reloadMultiplier).toBeCloseTo(0.8416);
+    expect(replacement!.antiAirEfficiencyMultiplier).toBeCloseTo(1.15);
+    expect(replacement!.performance.maxSpeedMultiplier).toBeCloseTo(1.15);
+    expect(replacement!.performance.accelerationMultiplier).toBeCloseTo(1.1275);
+    expect(replacement!.performance.turnMultiplier).toBeCloseTo(1.15);
+    expect(replacement!.performance.reloadMultiplier).toBeCloseTo(0.892);
     expect(replacement!.developer?.equipmentSlots?.engine?.[0]).toBe("engine-redGold");
     expect(profile).toEqual(profileSnapshot);
   });

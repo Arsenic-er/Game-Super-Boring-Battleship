@@ -27,7 +27,7 @@ const hit = (
 describe("main-battery salvo ribbons", () => {
   it("aggregates armor results, hazards, modules and damage by exact salvo", () => {
     const summaries = summarizePlayerSalvos([
-      hit(1, 100, "penetration", 30, { startedFire: true }),
+      hit(1, 100, "penetration", 30, { citadel: true, startedFire: true }),
       hit(2, 100, "penetration", 35, { module: "gun", moduleDamage: 8 }),
       hit(3, 100, "overpenetration", 10),
       hit(4, 100, "ricochet", 0),
@@ -37,7 +37,8 @@ describe("main-battery salvo ribbons", () => {
     expect(summaries).toEqual([{
       salvoId: 100,
       hits: 5,
-      penetration: 2,
+      citadels: 1,
+      penetration: 1,
       overpenetration: 1,
       ricochet: 1,
       shatter: 1,
