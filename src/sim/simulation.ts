@@ -3,7 +3,6 @@ import {
   ARMOR_THICKNESS_MM,
   BASE_REPAIR_PER_SECOND,
   BATTLE_DURATION_SECONDS,
-  BATTLE_SPAWN,
   COLLISION,
   COLLISION_DAMAGE_MULTIPLIER,
   COMPARTMENT_MAX_HEALTH,
@@ -53,6 +52,7 @@ import {
 } from "../ships/mainBatteries";
 import { classArmorThickness } from "../ships/armorProfiles";
 import { effectiveTorpedoDetectionRange } from "./detection";
+import { buildDawnAtollBattleScenario } from "./scenarios";
 import type {
   AmmoType,
   ArmorZoneId,
@@ -442,12 +442,12 @@ export function createInitialState(
       { length: playerShipClass.starterSlots.sideGun },
       () => "sideGun-common" as const,
     );
-  const enemySecondaryGunIds = Array.from(
-    { length: playerShipClass.starterSlots.sideGun },
-    () => "sideGun-common" as const,
-  );
-  const playerSpawn = mode === "battle" ? BATTLE_SPAWN.player : { x: 0, z: -900 };
-  const player = createShip("player", "player", playerSpawn.x, playerSpawn.z, 0, playerMainGunId, playerTorpedoId, {
+  const battleScenario = mode === "battle"
+    ? buildDawnAtollBattleScenario(playerShipClassId)
+    : undefined;
+  const playerSlot = battleScenario?.ships.find(({ playerControlled }) => playerControlled);
+  const playerSpawn = playerSlot?.position ?? { x: 0, y: 0, z: -900 };
+  const player = createShip("player", "player", playerSpawn.x, playerSpawn.z, playerSlot?.heading ?? 0, playerMainGunId, playerTorpedoId, {
     maxSpeedMultiplier: playerPerformance?.maxSpeedMultiplier ?? 1,
     accelerationMultiplier: playerPerformance?.accelerationMultiplier ?? 1,
     turnMultiplier: playerPerformance?.turnMultiplier ?? 1,
@@ -455,6 +455,35 @@ export function createInitialState(
     magazineRiskMultiplier: playerPerformance?.magazineRiskMultiplier ?? 1,
   }, playerShipClassId, mainGunMounts, torpedoLauncherMounts, depthChargeMounts,
   antiAirMounts, antiAirEfficiencyMultiplier, secondaryGunIds, armament?.installedEquipment);
+  player.countsForVictory = true;
+  const scenarioShips = battleScenario?.ships
+    .filter(({ playerControlled }) => !playerControlled)
+    .map((slot) => {
+      const definition = getShipClass(slot.shipClassId);
+      const ship = createShip(
+        slot.id,
+        slot.team,
+        slot.position.x,
+        slot.position.z,
+        slot.heading,
+        DEFAULT_MAIN_GUN_ID,
+        DEFAULT_TORPEDO_ID,
+        undefined,
+        slot.shipClassId,
+        Math.max(1, definition.starterSlots.mainGun),
+        definition.starterSlots.torpedo,
+        definition.starterSlots.depthCharge,
+        definition.starterSlots.antiAir,
+        1,
+        Array.from(
+          { length: definition.starterSlots.sideGun },
+          () => "sideGun-common" as const,
+        ),
+      );
+      ship.aiControlled = slot.aiControlled;
+      ship.countsForVictory = slot.countsForVictory;
+      return ship;
+    }) ?? [];
   const testTarget = createShip(
     "test-target",
     "enemy",
@@ -477,7 +506,7 @@ export function createInitialState(
   testTarget.isTestTarget = true;
   return {
     mode,
-    mapId: mode === "battle" ? "atoll-prototype" : "open-sea-range",
+    mapId: battleScenario?.mapId ?? "open-sea-range",
     time: 0,
     status: "running",
     objective: {
@@ -489,23 +518,7 @@ export function createInitialState(
       scores: { player: 0, enemy: 0 },
     },
     ships: mode === "battle"
-      ? [player, createShip(
-        "enemy",
-        "enemy",
-        BATTLE_SPAWN.enemy.x,
-        BATTLE_SPAWN.enemy.z,
-        Math.PI,
-        DEFAULT_MAIN_GUN_ID,
-        DEFAULT_TORPEDO_ID,
-        undefined,
-        playerShipClassId,
-        mainGunMounts,
-        torpedoLauncherMounts,
-        0,
-        playerShipClass.starterSlots.antiAir,
-        1,
-        enemySecondaryGunIds,
-      )]
+      ? [player, ...scenarioShips]
       : [player, testTarget],
     airSquadrons: [],
     airEvents: [],
@@ -2691,8 +2704,14 @@ function updateStatus(state: BattleState): void {
     state.endReason = undefined;
     return;
   }
-  const enemies = state.ships.filter((ship) => ship.team === "enemy" && ship.countsForVictory !== false);
-  const playerDestroyed = !player || player.hull <= 0;
+  const friendlies = state.ships.filter(
+    (ship) => ship.team === "player" && ship.countsForVictory !== false,
+  );
+  const enemies = state.ships.filter(
+    (ship) => ship.team === "enemy" && ship.countsForVictory !== false,
+  );
+  const playerDestroyed = friendlies.length === 0
+    || friendlies.every((friendly) => friendly.hull <= 0);
   const enemyDestroyed = enemies.length === 0 || enemies.every((enemy) => enemy.hull <= 0);
   if (playerDestroyed && enemyDestroyed) {
     state.objective.scores.player = Math.min(
@@ -2729,7 +2748,10 @@ function updateStatus(state: BattleState): void {
     state.endReason = "score";
   } else if (state.time >= BATTLE_DURATION_SECONDS) {
     const scoreDifference = state.objective.scores.player - state.objective.scores.enemy;
-    const playerRatio = player.hull / player.maxHull;
+    const playerRatio = friendlies.reduce(
+      (total, friendly) => total + friendly.hull / friendly.maxHull,
+      0,
+    ) / Math.max(1, friendlies.length);
     const enemyRatio = enemies.reduce(
       (total, enemy) => total + enemy.hull / enemy.maxHull,
       0,

@@ -40,23 +40,29 @@ server access, browser testing, and short-lived transfer staging.
 - Historical per-class torpedo tube and broadside counts drive physical salvo sizes.
 - Collision, percentage-based flooding/fire/repair, manpower, and recoverable-health bars.
 - Smoke, hydro, depth charges, torpedo aiming, and underwater torpedo wakes.
-- Two-sided fleet AI, spotting, lost-contact silhouettes, and the Dawn Atoll map.
+- Dawn Atoll now hosts a declarative 3v3 mixed-fleet mission with zero-speed,
+  deep-water spawns separated by at least five kilometres.
+- Fleet AI uses role-specific engagement bands, formation anchors, visible-contact
+  target priority, low-health withdrawal, spotting, and lost-contact silhouettes.
 - Zoomable tactical map and RTS-style air guard, intercept, patrol, and strike orders.
 - Developer mode: free equipment, entity spawning, speed controls, module debug,
-  ship control transfer, aircraft spectating, and omniscient views.
+  ship control transfer, aircraft spectating, omniscient views, and 16-ship /
+  24-squadron default performance guardrails.
 - Reduced combat HUD, hold-Tab details, naval instruments, and dedicated scope view.
 - Ocean, sky, volumetric smoke, fire, splashes, shell trails, and naval audio.
 
 ## Quality baseline
 
-- Version: `0.6.4`
-- Tests: 355 passing; two offline balance reports intentionally skipped.
+- Version: `0.6.5`
+- Tests: 364 passing; two offline balance reports intentionally skipped.
 - Production build: passing.
 - Worst auxiliary-equipment test fixture: no more than 70 meshes.
 - Fifty loadout rebuilds return mesh, node, and material counts to baseline.
+- Projectile reset and ordinary removal share one tested trail-disposal path,
+  including all torpedo wake planes.
 - The balance lab supports class-specific standard loadouts, paired mirrored spawns,
   batch matrices, citadel telemetry, tracking telemetry, and repeatable CLI reports.
-- Latest feature commit: `b606efb Render installed equipment in combat`.
+- Latest feature set: 3v3 mission, role-aware fleet AI, and lifecycle guardrails.
 
 ## Balance calibration snapshot
 
@@ -71,12 +77,15 @@ server access, browser testing, and short-lived transfer staging.
 
 ## Next priorities
 
-1. Improve hull, deck, bridge, superstructure, and turret detail; reduce blockiness.
-2. Rebase each class's historical starter weapon identity, beginning with Kagero versus Fletcher.
-3. Run at least 100 paired seeds per mirror matchup before changing team or map-side balance.
-4. Show the complete installed external loadout in the dock, not only one candidate.
-5. Add per-mount main-gun visuals for cruisers and battleships; define mixed-gun rules.
-6. Improve fleet formations, cover use, target priority, retreat, and shared spotting.
+1. Capture 0.6.5 visual-regression baselines for menu, dock, combat, scope,
+   tactical map, and developer mode at 1440x900 and 1280x720.
+2. Establish external-model, hardpoint, material, and LOD pipelines with Fletcher,
+   Cleveland, and Yamato as the three benchmark ships.
+3. Run at least 100 paired seeds per mirror matchup; rebase Kagero versus Fletcher
+   and heavy-ship hit rates without hiding real mission timeouts.
+4. Calibrate the 3v3 mission toward a 6-9 minute median and at least 70% non-timeout endings.
+5. Show the complete installed external loadout in the dock, not only one candidate.
+6. Add terrain cover use, delayed shared spotting, and two-to-three objective scenarios.
 7. Package the Windows EXE only after the single-player gameplay loop is stable.
 
 ## Key recent commits

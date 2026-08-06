@@ -102,16 +102,42 @@ export function friendlyCollisionRisk(
   return best;
 }
 
-function selectSensorContact(
+/**
+ * Chooses only from observed contacts. Lower score is better: close, damaged,
+ * confidently tracked ships are more urgent, while a small hysteresis keeps
+ * directors from oscillating between nearly equivalent targets.
+ */
+export function selectPriorityContact(
   contacts: readonly Readonly<SensorContact>[],
   currentTargetId: string | undefined,
 ): Readonly<SensorContact> | undefined {
-  const current = contacts.find(({ id }) => id === currentTargetId);
-  if (current) return current;
-  return [...contacts].sort((left, right) =>
-    left.rangeMeters - right.rangeMeters
-    || right.confidence - left.confidence
+  const priority = (contact: Readonly<SensorContact>): number =>
+    contact.rangeMeters / 1_000
+    + contact.estimatedHullRatio * 1.15
+    - contact.confidence * 0.35;
+  const best = [...contacts].sort((left, right) =>
+    priority(left) - priority(right)
     || left.id.localeCompare(right.id))[0];
+  const current = contacts.find(({ id }) => id === currentTargetId);
+  if (!current || !best) return best;
+  return priority(current) <= priority(best) + 0.28 ? current : best;
+}
+
+export interface FleetEngagementBand {
+  minimumMeters: number;
+  preferredMeters: number;
+  maximumMeters: number;
+}
+
+/** Role-specific spacing keeps mixed fleets from collapsing into one blob. */
+export function fleetEngagementBandForRole(role: FleetAiRole): FleetEngagementBand {
+  if (role === "screen") {
+    return { minimumMeters: 900, preferredMeters: 1_650, maximumMeters: 3_100 };
+  }
+  if (role === "escort") {
+    return { minimumMeters: 1_500, preferredMeters: 2_650, maximumMeters: 4_000 };
+  }
+  return { minimumMeters: 2_450, preferredMeters: 3_650, maximumMeters: 4_800 };
 }
 
 /**
@@ -294,7 +320,7 @@ export class RuleBasedAi implements Controller {
   }
 
   private updatePerception(observation: Observation): PerceptionResult {
-    const contact = selectSensorContact(observation.contacts, this.lastContact?.id);
+    const contact = selectPriorityContact(observation.contacts, this.lastContact?.id);
     const sampleIndex = Math.floor(observation.time / SENSOR.observationIntervalSeconds);
     if (sampleIndex !== this.lastEvaluatedSensorSample) {
       if (contact && contact.observedAt !== this.lastContactSample) {
@@ -516,7 +542,17 @@ export class RuleBasedAi implements Controller {
       this.solutionQuality = Math.max(0.025, this.solutionQuality - 0.012);
     }
 
-    let desiredHeading = shouldSecureObjective || !target
+    const role = fleetRoleForShip(observation.self);
+    const engagementBand = fleetEngagementBandForRole(role);
+    const friendlies = observation.friendlies ?? [];
+    const capitalAnchor = friendlies.find((friendly) =>
+      getShipClass(friendly.shipClassId).hullId === "battleship");
+    const tacticalObjectivePush = shouldSecureObjective && (
+      role !== "line"
+      || !target
+      || opposingScore - ownScore > 140
+    );
+    let desiredHeading = tacticalObjectivePush || !target
       ? objectiveBearing + this.manoeuvreOffset * 0.16
       : bearingToTarget + this.manoeuvreOffset;
     if (torpedoReady && target && !torpedoSolution?.allowed) {
@@ -527,12 +563,13 @@ export class RuleBasedAi implements Controller {
         ? portBroadside
         : starboardBroadside;
     }
-    if (target && range < 850) {
+    if (target && range < engagementBand.minimumMeters) {
       desiredHeading = bearingToTarget + Math.PI;
-    } else if (target && range < 1_300) {
-      desiredHeading = bearingToTarget + Math.PI * 0.72;
-    } else if (!torpedoReady && !shouldSecureObjective && target && range < 1_900) {
-      desiredHeading += Math.PI * 0.42;
+    } else if (target && !tacticalObjectivePush && range < engagementBand.preferredMeters) {
+      const angle = role === "screen" && torpedoReady ? Math.PI * 0.52 : Math.PI * 0.7;
+      desiredHeading = bearingToTarget + angle;
+    } else if (target && range > engagementBand.maximumMeters) {
+      desiredHeading = bearingToTarget;
     }
     const incomingTorpedo = observation.incomingTorpedoes[0];
     if (incomingTorpedo && !Number.isFinite(this.torpedoEvasionReactionAt)) {
@@ -559,6 +596,30 @@ export class RuleBasedAi implements Controller {
         ? pathBearing
         : reverseBearing;
     }
+    if (role === "screen" && capitalAnchor && !target) {
+      const screenX = capitalAnchor.position.x + Math.sin(capitalAnchor.heading) * 850;
+      const screenZ = capitalAnchor.position.z + Math.cos(capitalAnchor.heading) * 850;
+      const screenDx = screenX - observation.self.position.x;
+      const screenDz = screenZ - observation.self.position.z;
+      if (Math.hypot(screenDx, screenDz) > 320) {
+        desiredHeading = Math.atan2(screenDx, screenDz);
+      }
+    } else if (role === "escort" && capitalAnchor && !target) {
+      const anchorDx = capitalAnchor.position.x - observation.self.position.x;
+      const anchorDz = capitalAnchor.position.z - observation.self.position.z;
+      const anchorDistance = Math.hypot(anchorDx, anchorDz);
+      if (anchorDistance > 1_200) {
+        desiredHeading = Math.atan2(anchorDx, anchorDz);
+      } else if (anchorDistance < 550) {
+        desiredHeading = Math.atan2(-anchorDx, -anchorDz);
+      } else {
+        desiredHeading = capitalAnchor.heading;
+      }
+    }
+    const hullRatio = observation.self.hull / observation.self.maxHull;
+    const withdrawThreshold = role === "screen" ? 0.36 : role === "escort" ? 0.31 : 0.27;
+    const damaged = hullRatio < withdrawThreshold;
+    if (damaged && target) desiredHeading = bearingToTarget + Math.PI;
     if (observation.time >= this.nextTerrainPlanAt || this.plannedTerrainHeading === undefined) {
       this.plannedTerrainHeading = terrainSafeHeading(
         observation.mapId,
@@ -569,30 +630,22 @@ export class RuleBasedAi implements Controller {
       this.nextTerrainPlanAt = observation.time + 0.4;
     }
     desiredHeading = this.plannedTerrainHeading;
-    const role = fleetRoleForShip(observation.self);
-    const friendlies = observation.friendlies ?? [];
-    const capitalAnchor = friendlies.find((friendly) =>
-      getShipClass(friendly.shipClassId).hullId === "battleship");
-    if (role === "escort" && capitalAnchor && !target) {
-      const anchorDx = capitalAnchor.position.x - observation.self.position.x;
-      const anchorDz = capitalAnchor.position.z - observation.self.position.z;
-      if (Math.hypot(anchorDx, anchorDz) > 720) {
-        desiredHeading = Math.atan2(anchorDx, anchorDz);
-      }
-    }
     const collisionRisk = friendlyCollisionRisk(observation.self, friendlies);
     if (collisionRisk) desiredHeading = collisionRisk.avoidanceHeading;
     const headingError = wrapAngle(desiredHeading - observation.self.heading);
-    const damaged = observation.self.hull / observation.self.maxHull < 0.38;
     let tacticalThrottle = evadingTorpedo
       ? 1
-      : target && range < 850
-        ? 0.35
-      : target && range < 1_300
-        ? 0.62
-      : shouldSecureObjective || !target
-      ? 0.9
-      : range < 1_200 ? 0.88 : range > 2_300 ? 0.76 : 0.62;
+      : target && range < engagementBand.minimumMeters
+        ? 0.58
+      : target && range < engagementBand.preferredMeters
+        ? 0.68
+      : tacticalObjectivePush || !target
+        ? 0.88
+      : range > engagementBand.maximumMeters ? 0.9 : 0.62;
+    if (role === "screen" && !damaged) tacticalThrottle = Math.min(1, tacticalThrottle + 0.1);
+    if (role === "line" && target && !tacticalObjectivePush) {
+      tacticalThrottle = Math.min(tacticalThrottle, 0.74);
+    }
     if (collisionRisk) tacticalThrottle = Math.min(tacticalThrottle, 0.35);
     const priority = damageControlPriority(observation);
     const recoverableDamage = observation.self.recoverableHull - observation.self.hull;
@@ -634,7 +687,7 @@ export class RuleBasedAi implements Controller {
         + 5;
     }
     const concealmentRetreat = damaged
-      && !shouldSecureObjective
+      && !tacticalObjectivePush
       && Boolean(target)
       && range > 1_300;
     const suppressMainGun = activateSmoke
@@ -658,7 +711,7 @@ export class RuleBasedAi implements Controller {
       ? "evading"
       : damaged ? "withdrawing"
         : target ? "engaging"
-          : shouldSecureObjective ? "securing"
+          : tacticalObjectivePush ? "securing"
             : perception.mode === "lost" || perception.mode === "searching" ? "searching" : "forming";
 
     return {

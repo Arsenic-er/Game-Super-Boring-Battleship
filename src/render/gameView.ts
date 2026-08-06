@@ -75,6 +75,7 @@ import {
   cameraTransitionValue,
 } from "./combatCamera";
 import { applyBodyVisibility, ownShipBodyVisibility } from "./shipAimPresentation";
+import { disposeProjectileTrailResources } from "./resourceLifecycle";
 import type { AimProvider } from "../controllers/playerInput";
 import type {
   BattleState,
@@ -983,9 +984,7 @@ export class GameView implements AimProvider {
       if (!activeIds.has(id)) {
         visual.root.dispose(false, true);
         this.projectileMeshes.delete(id);
-        this.projectileTrails.get(id)?.core.dispose();
-        this.projectileTrails.get(id)?.plume?.dispose();
-        for (const wake of this.projectileTrails.get(id)?.wakePlanes ?? []) wake.dispose();
+        disposeProjectileTrailResources(this.projectileTrails.get(id));
         this.projectileTrails.delete(id);
       }
     }
@@ -1814,6 +1813,7 @@ export class GameView implements AimProvider {
     const focusShip = state.ships.find(({ id }) => id === developerView?.focusEntityId);
     const controlledShip = state.ships.find(({ id }) => id === developerView?.controlledShipId);
     const cameraShip = focusShip ?? controlledShip
+      ?? state.ships.find((ship) => ship.team === "player" && ship.hull > 0)
       ?? state.ships.find((ship) => ship.team === "player");
     this.syncShips(state, perceivedTarget, developerView?.omniscient, cameraShip?.id);
     this.syncAirSquadrons(state, dt, developerView);
@@ -1910,10 +1910,7 @@ export class GameView implements AimProvider {
     for (const visual of this.airSquadronVisuals.values()) visual.root.dispose(false, true);
     this.airSquadronVisuals.clear();
     for (const visual of this.projectileMeshes.values()) visual.root.dispose(false, true);
-    for (const trail of this.projectileTrails.values()) {
-      trail.core.dispose();
-      trail.plume?.dispose();
-    }
+    for (const trail of this.projectileTrails.values()) disposeProjectileTrailResources(trail);
     for (const effect of this.effects) this.releaseEffect(effect);
     this.projectileMeshes.clear();
     for (const mesh of this.depthChargeMeshes.values()) mesh.dispose();

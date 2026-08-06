@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { FIXED_STEP } from "../src/sim/config";
-import { createInitialState, stepSimulation } from "../src/sim/simulation";
+import { createDeveloperShipState, createInitialState, stepSimulation } from "../src/sim/simulation";
 import type { ControlCommand, ShipState } from "../src/sim/types";
 import type { ShipClassId } from "../src/ships/classes";
 import { SECONDARY_GUNS } from "../src/ships/secondaryGuns";
@@ -28,7 +28,14 @@ function runBroadsideExchange(shipClassId: ShipClassId): {
     shipClassId,
   );
   const player = state.ships.find((ship) => ship.id === "player")!;
-  const enemy = state.ships.find((ship) => ship.id === "enemy")!;
+  const enemy = createDeveloperShipState({
+    id: "enemy",
+    team: "enemy",
+    shipClassId,
+    position: { x: 900, y: 0, z: 0 },
+    countsForVictory: true,
+  });
+  state.ships = [player, enemy];
   player.position = { x: 0, y: 0, z: 0 };
   player.previousPosition = { ...player.position };
   enemy.position = { x: 900, y: 0, z: 0 };

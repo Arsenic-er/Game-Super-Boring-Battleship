@@ -42,6 +42,39 @@ export const DEFAULT_DEVELOPER_OVERRIDES: DeveloperShipOverrides = {
   speedMultiplier: 1,
 };
 
+export interface DeveloperEntityLimits {
+  ships: number;
+  airSquadrons: number;
+}
+
+/** Default performance guardrails; callers may explicitly override either soft limit. */
+export const DEVELOPER_ENTITY_SOFT_LIMITS: Readonly<DeveloperEntityLimits> = Object.freeze({
+  ships: 16,
+  airSquadrons: 24,
+});
+
+export type DeveloperSpawnFailureReason =
+  | "ship-limit"
+  | "air-squadron-limit"
+  | "invalid-position"
+  | "missing-controller";
+
+export type DeveloperSpawnResult<T> =
+  | { ok: true; entity: T; current: number; limit: number }
+  | {
+    ok: false;
+    reason: DeveloperSpawnFailureReason;
+    current: number;
+    limit: number;
+    message: string;
+  };
+
+function softLimit(requested: number | undefined, fallback: number): number {
+  return requested === undefined || !Number.isFinite(requested)
+    ? fallback
+    : Math.max(0, Math.floor(requested));
+}
+
 export interface DeveloperLoadout {
   shipClassId: ShipClassId;
   mainBatteryClassId: ShipClassId;
@@ -279,15 +312,26 @@ export function applyDeveloperEquipmentLoadout(
   });
 }
 
-export function spawnDeveloperShip(
+export function trySpawnDeveloperShip(
   state: BattleState,
   team: Team,
   shipClassId: ShipClassId,
   position?: Readonly<Vec3>,
-): ShipState | undefined {
+  limits?: Readonly<Partial<DeveloperEntityLimits>>,
+): DeveloperSpawnResult<ShipState> {
+  const limit = softLimit(limits?.ships, DEVELOPER_ENTITY_SOFT_LIMITS.ships);
+  const current = state.ships.length;
+  if (current >= limit) {
+    return {
+      ok: false, reason: "ship-limit", current, limit,
+      message: `舰船软上限已达到（${current}/${limit}），请先移除实体或显式提高上限。`,
+    };
+  }
   const sequence = state.nextEntityId;
   const spawn = position ? { ...position } : defaultSpawnPoint(state, team, sequence);
-  if (!finitePoint(spawn)) return undefined;
+  if (!finitePoint(spawn)) {
+    return { ok: false, reason: "invalid-position", current, limit, message: "生成坐标无效。" };
+  }
   const definition = getShipClass(shipClassId);
   const id = nextActorId(state, `dev-ship-${team}`);
   const ship = createDeveloperShipState({
@@ -306,17 +350,39 @@ export function spawnDeveloperShip(
   });
   state.ships.push(ship);
   state.sensorSnapshots = {};
-  return ship;
+  return { ok: true, entity: ship, current: state.ships.length, limit };
 }
 
-export function spawnDeveloperAirSquadron(
+export function spawnDeveloperShip(
+  state: BattleState,
+  team: Team,
+  shipClassId: ShipClassId,
+  position?: Readonly<Vec3>,
+  limits?: Readonly<Partial<DeveloperEntityLimits>>,
+): ShipState | undefined {
+  const result = trySpawnDeveloperShip(state, team, shipClassId, position, limits);
+  return result.ok ? result.entity : undefined;
+}
+
+export function trySpawnDeveloperAirSquadron(
   state: BattleState,
   team: Team,
   role: AircraftRole,
   aircraftCapacity = 5,
-): AirSquadronState | undefined {
+  limits?: Readonly<Partial<DeveloperEntityLimits>>,
+): DeveloperSpawnResult<AirSquadronState> {
+  const limit = softLimit(limits?.airSquadrons, DEVELOPER_ENTITY_SOFT_LIMITS.airSquadrons);
+  const current = state.airSquadrons.length;
+  if (current >= limit) {
+    return {
+      ok: false, reason: "air-squadron-limit", current, limit,
+      message: `机群软上限已达到（${current}/${limit}），请先移除实体或显式提高上限。`,
+    };
+  }
   const controller = state.ships.find((ship) => ship.team === team && ship.hull > 0);
-  if (!controller) return undefined;
+  if (!controller) {
+    return { ok: false, reason: "missing-controller", current, limit, message: "该阵营没有可用的舰船控制机群。" };
+  }
   const id = nextActorId(state, `dev-air-${team}-${role}`);
   const position = defaultSpawnPoint(state, team, state.nextEntityId);
   position.y = airSquadronTargetAltitude(role, "patrolling", id, state.time);
@@ -350,7 +416,18 @@ export function spawnDeveloperAirSquadron(
     };
   }
   state.airSquadrons.push(squadron);
-  return squadron;
+  return { ok: true, entity: squadron, current: state.airSquadrons.length, limit };
+}
+
+export function spawnDeveloperAirSquadron(
+  state: BattleState,
+  team: Team,
+  role: AircraftRole,
+  aircraftCapacity = 5,
+  limits?: Readonly<Partial<DeveloperEntityLimits>>,
+): AirSquadronState | undefined {
+  const result = trySpawnDeveloperAirSquadron(state, team, role, aircraftCapacity, limits);
+  return result.ok ? result.entity : undefined;
 }
 
 function removeTargetFromOrder(order: AirMissionOrder | undefined, id: string): AirMissionOrder | undefined {

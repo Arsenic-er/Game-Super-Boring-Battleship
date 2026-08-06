@@ -71,8 +71,8 @@ describe("destroyer smoke screens", () => {
     const [player, enemy] = placeShips(blocked, 1_000);
     addSmoke(blocked, 0, 500);
     expect(isLineObscuredBySmoke(blocked, player.position, enemy.position)).toBe(true);
-    expect(observe(blocked, player.id).contacts).toHaveLength(0);
-    expect(observe(blocked, enemy.id).contacts).toHaveLength(0);
+    expect(observe(blocked, player.id).contacts.some(({ id }) => id === enemy.id)).toBe(false);
+    expect(observe(blocked, enemy.id).contacts.some(({ id }) => id === player.id)).toBe(false);
 
     const close = createInitialState(4104);
     const [closePlayer] = placeShips(close, 500);
@@ -85,14 +85,15 @@ describe("destroyer smoke screens", () => {
     const [player, enemy] = placeShips(exposed, 1_000);
     addSmoke(exposed, enemy.position.x, enemy.position.z);
     enemy.lastMainGunFiredAt = exposed.time;
-    expect(observe(exposed, player.id).contacts).toHaveLength(1);
+    expect(observe(exposed, player.id).contacts.map(({ id }) => id))
+      .toContain(enemy.id);
 
     const walled = createInitialState(4106);
     const [walledPlayer, walledEnemy] = placeShips(walled, 1_000);
     addSmoke(walled, walledEnemy.position.x, walledEnemy.position.z);
     addSmoke(walled, 0, 500);
     walledEnemy.lastMainGunFiredAt = walled.time;
-    expect(observe(walled, walledPlayer.id).contacts).toHaveLength(0);
+    expect(observe(walled, walledPlayer.id).contacts.some(({ id }) => id === walledEnemy.id)).toBe(false);
   });
 
   it("does not interfere with independent close-range torpedo warnings", () => {

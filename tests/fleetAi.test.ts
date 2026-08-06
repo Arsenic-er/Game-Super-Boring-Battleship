@@ -1,8 +1,10 @@
 import { describe, expect, it } from "vitest";
 import {
+  fleetEngagementBandForRole,
   fleetRoleForShip,
   friendlyCollisionRisk,
   RuleBasedAi,
+  selectPriorityContact,
 } from "../src/controllers/ruleBasedAi";
 import { spawnDeveloperShip } from "../src/sim/developerSandbox";
 import { createInitialState, observe } from "../src/sim/simulation";
@@ -16,6 +18,43 @@ describe("two-sided fleet AI", () => {
     expect(fleetRoleForShip(destroyer)).toBe("screen");
     expect(fleetRoleForShip(cruiser)).toBe("escort");
     expect(fleetRoleForShip(battleship)).toBe("line");
+  });
+
+  it("keeps heavier fleet roles in progressively longer engagement bands", () => {
+    const screen = fleetEngagementBandForRole("screen");
+    const escort = fleetEngagementBandForRole("escort");
+    const line = fleetEngagementBandForRole("line");
+    expect(screen.preferredMeters).toBeLessThan(escort.preferredMeters);
+    expect(escort.preferredMeters).toBeLessThan(line.preferredMeters);
+    expect(screen.minimumMeters).toBeLessThan(line.minimumMeters);
+  });
+
+  it("prioritizes a damaged confident contact without reading hidden ship state", () => {
+    const contacts = [
+      {
+        id: "near-healthy",
+        team: "enemy" as const,
+        observedAt: 10,
+        position: { x: 0, y: 0, z: 1_200 },
+        heading: 0,
+        speedKnots: 20,
+        rangeMeters: 1_200,
+        confidence: 0.8,
+        estimatedHullRatio: 0.9,
+      },
+      {
+        id: "damaged-threat",
+        team: "enemy" as const,
+        observedAt: 10,
+        position: { x: 0, y: 0, z: 1_600 },
+        heading: 0,
+        speedKnots: 20,
+        rangeMeters: 1_600,
+        confidence: 0.9,
+        estimatedHullRatio: 0.1,
+      },
+    ];
+    expect(selectPriorityContact(contacts, "near-healthy")?.id).toBe("damaged-threat");
   });
 
   it("predicts a head-on friendly close approach and steers away", () => {

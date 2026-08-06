@@ -340,9 +340,15 @@ view.engine.runRenderLoop(() => {
   const focusedAir = developerView.focus?.kind === "airSquadron"
     ? state.airSquadrons.find(({ id }) => id === developerView.focus?.id)
     : undefined;
-  const observerShipId = controlledShipId
-    ?? (developerView.focus?.kind === "ship" ? developerView.focus.id : focusedAir?.controllerId)
+  const liveControlledShipId = state.ships.some(({ id, hull }) =>
+    id === controlledShipId && hull > 0) ? controlledShipId : undefined;
+  const fallbackObserverShipId = state.ships.find(({ id, hull }) =>
+    id === "player" && hull > 0)?.id
+    ?? state.ships.find(({ team, hull }) => team === "player" && hull > 0)?.id
     ?? "player";
+  const observerShipId = liveControlledShipId
+    ?? (developerView.focus?.kind === "ship" ? developerView.focus.id : focusedAir?.controllerId)
+    ?? fallbackObserverShipId;
   const frameSeconds = Math.min(view.engine.getDeltaTime() / 1_000, 0.1);
   let perceivedTarget = started && state.mode === "battle"
     ? playerPerception.update(observe(state, observerShipId))

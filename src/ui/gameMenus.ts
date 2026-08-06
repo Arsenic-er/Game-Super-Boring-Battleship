@@ -167,14 +167,14 @@ export class GameMenus {
           <div class="menu-tab-panel mission-panel" data-menu-panel="mission">
             <p class="eyebrow">单人战术原型 · 1943</p><h1>灰海行动</h1>
             <p>使用当前船坞配装出击，或进入海试场验证舰船性能。</p>
-            <div class="mission-brief">击沉敌舰，或控制中央 A 区率先达到 200 分。双方争夺时，舰体状态更好的一方会缓慢建立区域优势。当前本地配装会真实影响战斗性能。</div>
+            <div class="mission-brief">击沉敌舰，或控制中央 A 区率先达到 375 分。双方争夺时，舰体状态更好的一方会缓慢建立区域优势。当前本地配装会真实影响战斗性能。</div>
             <div class="menu-controls">
               <span><kbd>W S</kbd> 航速</span><span><kbd>A D</kbd> 转向</span><span><kbd>移动鼠标</kbd> 视角</span>
               <span><kbd>R</kbd> 瞄准</span><span><kbd>Space</kbd> 开火</span><span><kbd>4</kbd> 损管优先</span><span><kbd>H</kbd> 舰体抢修</span>
               <span><kbd>M</kbd> 地图</span><span><kbd>F3</kbd> 调试</span><span><kbd>Esc</kbd> 暂停</span>
             </div>
             <div class="mode-choice">
-              <button class="mode-card start-battle" type="button"><b>单人战斗</b><span>10 分钟 · 击沉或 200 分获胜 · 对抗 AI</span></button>
+              <button class="mode-card start-battle" type="button"><b>单人战斗</b><span>10 分钟 · 击沉或 375 分获胜 · 3v3 混编舰队</span></button>
               <button class="mode-card start-trials" type="button"><b>舰船测试模式</b><span>无攻击 AI · 无时间限制 · 测试装配性能</span></button>
             </div>
           </div>

@@ -178,9 +178,9 @@ describe("Dawn Atoll simulation integration", () => {
     enemy.position = { x: -1_680, y: 0, z: 2_600 };
     enemy.previousPosition = { ...enemy.position };
     state.time = 3;
-    expect(observe(state, player.id).contacts).toHaveLength(0);
+    expect(observe(state, player.id).contacts.some(({ id }) => id === enemy.id)).toBe(false);
     state.mapId = "open-sea-range";
     state.sensorSnapshots = {};
-    expect(observe(state, player.id).contacts).toHaveLength(1);
+    expect(observe(state, player.id).contacts.some(({ id }) => id === enemy.id)).toBe(true);
   });
 });

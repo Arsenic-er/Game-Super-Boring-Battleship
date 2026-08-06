@@ -7,6 +7,8 @@ import {
   removeDeveloperEntity,
   spawnDeveloperAirSquadron,
   spawnDeveloperShip,
+  trySpawnDeveloperAirSquadron,
+  trySpawnDeveloperShip,
 } from "../src/sim/developerSandbox";
 import {
   DEVELOPER_MIN_RELOAD_SECONDS,
@@ -127,6 +129,40 @@ describe("developer sandbox", () => {
     const cleared = clearDeveloperEntities(state);
     expect(cleared).toContain(friendly.id);
     expect(state.ships.some(({ developerSpawned }) => developerSpawned)).toBe(false);
+  });
+
+  it("returns an explicit refusal when the configurable ship soft limit is reached", () => {
+    const state = createInitialState();
+    const limit = state.ships.length + 1;
+    const first = trySpawnDeveloperShip(state, "player", "fletcher", undefined, { ships: limit });
+    expect(first.ok).toBe(true);
+    const nextEntityId = state.nextEntityId;
+
+    const blocked = trySpawnDeveloperShip(state, "enemy", "bismarck", undefined, { ships: limit });
+
+    expect(blocked).toMatchObject({ ok: false, reason: "ship-limit", current: limit, limit });
+    expect(state.ships).toHaveLength(limit);
+    expect(state.nextEntityId).toBe(nextEntityId);
+  });
+
+  it("returns an explicit refusal when the configurable air-squadron soft limit is reached", () => {
+    const state = createInitialState();
+    const limit = state.airSquadrons.length + 1;
+    const first = trySpawnDeveloperAirSquadron(
+      state, "player", "fighter", 5, { airSquadrons: limit },
+    );
+    expect(first.ok).toBe(true);
+    const nextEntityId = state.nextEntityId;
+
+    const blocked = trySpawnDeveloperAirSquadron(
+      state, "enemy", "torpedoBomber", 5, { airSquadrons: limit },
+    );
+
+    expect(blocked).toMatchObject({
+      ok: false, reason: "air-squadron-limit", current: limit, limit,
+    });
+    expect(state.airSquadrons).toHaveLength(limit);
+    expect(state.nextEntityId).toBe(nextEntityId);
   });
 
   it("keeps the sandbox running after ordinary victory conditions are emptied", () => {

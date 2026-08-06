@@ -1152,7 +1152,7 @@ describe("deterministic battle simulation", () => {
     expect(state.objective.scores).toEqual({ player: 0, enemy: 0 });
   });
 
-  it("declares a draw if both ships are destroyed in the same simulation step", () => {
+  it("declares a draw if both fleets are destroyed in the same simulation step", () => {
     const state = createInitialState(46);
     for (const ship of state.ships) ship.hull = 0;
     stepSimulation(state, new Map(), FIXED_STEP);
@@ -1191,8 +1191,9 @@ describe("deterministic battle simulation", () => {
   it("declares a draw when hull ratios are effectively equal at the time limit", () => {
     const state = createInitialState(13);
     state.time = BATTLE_DURATION_SECONDS - FIXED_STEP / 2;
-    state.ships.find((ship) => ship.id === "player")!.hull = 604;
-    state.ships.find((ship) => ship.id === "enemy")!.hull = 600;
+    for (const ship of state.ships) {
+      ship.hull = ship.maxHull * 0.55;
+    }
     stepSimulation(state, new Map([
       ["player", idle(0, 1_000)],
       ["enemy", idle(0, -1_000)],

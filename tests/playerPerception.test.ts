@@ -178,6 +178,7 @@ describe("player optical perception", () => {
     const shortRange = createInitialState(307, "battle", "mk1-single", undefined, undefined, "j-class");
     const shortObserver = shortRange.ships.find((ship) => ship.id === "player")!;
     const shortTarget = shortRange.ships.find((ship) => ship.id === "enemy")!;
+    shortTarget.shipClassId = "j-class";
     shortTarget.position = {
       x: shortObserver.position.x + 3_800,
       y: shortObserver.position.y,
@@ -190,6 +191,7 @@ describe("player optical perception", () => {
     const longRange = createInitialState(308, "battle", "mk1-single", undefined, undefined, "richelieu");
     const longObserver = longRange.ships.find((ship) => ship.id === "player")!;
     const longTarget = longRange.ships.find((ship) => ship.id === "enemy")!;
+    longTarget.shipClassId = "richelieu";
     longTarget.position = {
       x: longObserver.position.x + 4_900,
       y: longObserver.position.y,
@@ -232,7 +234,7 @@ describe("player optical perception", () => {
       expiresAt: state.time + 30,
     });
     state.sensorSnapshots = {};
-    expect(observe(state, "player").contacts).toHaveLength(0);
-    expect(observe(state, "enemy").contacts).toHaveLength(0);
+    expect(observe(state, "player").contacts.some(({ id }) => id === enemy.id)).toBe(false);
+    expect(observe(state, "enemy").contacts.some(({ id }) => id === player.id)).toBe(false);
   });
 });
