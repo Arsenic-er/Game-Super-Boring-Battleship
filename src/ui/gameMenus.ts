@@ -601,16 +601,15 @@ export class GameMenus {
     }
     if (compositionHost) compositionHost.innerHTML = `<h4>双方自动编成</h4><span>驱逐舰 <b>${composition.destroyer}</b></span><span>轻巡洋舰 <b>${composition.lightCruiser}</b></span><span>战列舰 <b>${composition.battleship}</b></span><span>航母 <b>${composition.carrier}</b></span><span>舰队航空支援 <b>${composition.airSupport ? "有" : "无"}</b></span><small>双方舰种数量完全对称。真正航母舰体尚未实装，因此不会用其他舰型冒充。</small>`;
     if (weatherHost) {
-      weatherHost.innerHTML = WEATHER_IDS.map((id) => {
+      const selectedWeather = WEATHER_PRESETS[this.selectedWeatherId];
+      weatherHost.innerHTML = `<label class="weather-select-field"><span>天气</span><select class="weather-select" aria-label="选择战斗天气">${WEATHER_IDS.map((id) => {
         const weather = WEATHER_PRESETS[id];
-        return `<button type="button" data-weather-id="${id}" class="${id === this.selectedWeatherId ? "active" : ""}"><b>${weather.name}</b><small>${weather.description}</small><em>能见度 ${Math.round(weather.opticalVisibilityMultiplier * 100)}%</em></button>`;
-      }).join("");
-      for (const button of weatherHost.querySelectorAll<HTMLButtonElement>("[data-weather-id]")) {
-        button.addEventListener("click", () => {
-          this.selectedWeatherId = button.dataset.weatherId as WeatherId;
-          this.renderBattleSetup();
-        });
-      }
+        return `<option value="${id}" ${id === this.selectedWeatherId ? "selected" : ""}>${weather.name}</option>`;
+      }).join("")}</select></label><div class="weather-selection-summary"><b>${selectedWeather.name}</b><small>${selectedWeather.description}</small><em><span>能见度</span> ${Math.round(selectedWeather.opticalVisibilityMultiplier * 100)}%</em></div>`;
+      weatherHost.querySelector<HTMLSelectElement>(".weather-select")?.addEventListener("change", (event) => {
+        this.selectedWeatherId = (event.currentTarget as HTMLSelectElement).value as WeatherId;
+        this.renderBattleSetup();
+      });
     }
     if (buildHost) {
       buildHost.innerHTML = this.profile.savedShipBuilds.map((entry) => {
