@@ -7,6 +7,7 @@ import {
   localizeElement,
 } from "../i18n/gameLocale";
 import {
+  autoEquipBestOwnedComponents,
   battleLoadout,
   drawSupplies,
   equipComponent,
@@ -65,7 +66,7 @@ export interface GameMenuCallbacks {
   onProfileChange: (profile: LocalProfile) => void;
 }
 
-type StartTab = "mission" | "store" | "inventory" | "dock" | "codex";
+type StartTab = "mission" | "store" | "dock" | "codex";
 const hullTotalSlots = (shipClassId: ShipClassId): number =>
   Object.values(SHIP_CLASS_SLOT_COUNTS[shipClassId]).reduce((total, count) => total + count, 0);
 
@@ -144,6 +145,7 @@ export class GameMenus {
   private warehouseCategory: EquipmentCategory | "all" = "all";
   private selectedArmoryItemId?: string;
   private selectedWarehouseItemId?: string;
+  private armoryView: "catalog" | "inventory" = "catalog";
   private battleSetupOpen = false;
   private selectedFleetSize: FleetSize = 5;
   private selectedWeatherId: WeatherId = "clear";
@@ -176,7 +178,6 @@ export class GameMenus {
           <div class="menu-tabs command-tabs" role="tablist" aria-label="主菜单选项卡">
             <button type="button" role="tab" data-menu-tab="mission" aria-selected="true"><i class="fa-solid fa-flag"></i> 出击</button>
             <button type="button" role="tab" data-menu-tab="store" aria-selected="false"><i class="fa-solid fa-anchor"></i> 军械库</button>
-            <button type="button" role="tab" data-menu-tab="inventory" aria-selected="false"><i class="fa-solid fa-warehouse"></i> 仓库</button>
             <button type="button" role="tab" data-menu-tab="dock" aria-selected="false"><i class="fa-solid fa-ship"></i> 船坞</button>
             <button type="button" role="tab" data-menu-tab="codex" aria-selected="false"><i class="fa-solid fa-book"></i> 图鉴</button>
           </div>
@@ -205,22 +206,24 @@ export class GameMenus {
           </div>
           <div class="menu-tab-panel store-panel" data-menu-panel="store" hidden>
             <div class="screen-heading"><div><p class="eyebrow">纯游戏内资源 · 常驻明码兑换</p><h2>舰队军械库</h2></div><button class="text-button open-codex" type="button">查看完整组件表</button></div>
-            <div class="store-layout">
-              <aside class="armory-nav"><h3>常驻分类</h3><div class="armory-filters"></div><p class="ethical-store-note"><i class="fa-solid fa-shield-heart"></i> 无现金货币、无会员、无限时促销。所有战斗组件均可定向研发和购买。</p><button class="open-warehouse" type="button">前往仓库管理</button></aside>
-              <section class="armory-catalog"><div class="armory-toolbar"><h3>历史舰装目录</h3><span>研发解锁 → 银币与材料采购</span></div><div class="armory-grid"></div><p class="armory-notice" aria-live="polite"></p></section>
-              <aside class="armory-side"><div class="armory-detail"></div><section class="battle-supply"><h3><i class="fa-solid fa-box-open"></i> 免费战斗补给</h3><p>补给券只能通过有效战斗获得，不能购买。全部组件也可在上方直接研发采购。</p><div class="draw-actions"><button class="draw-once" type="button">开启 1 张</button><button class="draw-ten" type="button">开启 10 张</button></div><div class="guarantee-panel"></div><div class="draw-results" aria-live="polite"></div></section></aside>
+            <div class="armory-mode-tabs" role="tablist" aria-label="军械库与仓库"><button class="armory-mode-tab active" data-armory-view-button="catalog" type="button" aria-selected="true">军械库</button><button class="armory-mode-tab" data-armory-view-button="inventory" type="button" aria-selected="false">仓库</button></div>
+            <div class="armory-subview" data-armory-view="catalog">
+              <div class="store-layout">
+                <aside class="armory-nav"><h3>常驻分类</h3><div class="armory-filters"></div><p class="ethical-store-note"><i class="fa-solid fa-shield-heart"></i> 无现金货币、无会员、无限时促销。所有战斗组件均可定向研发和购买。</p><button class="open-warehouse" type="button">前往仓库管理</button></aside>
+                <section class="armory-catalog"><div class="armory-toolbar"><h3>历史舰装目录</h3><span>研发解锁 → 银币与材料采购</span></div><div class="armory-grid"></div><p class="armory-notice" aria-live="polite"></p></section>
+                <aside class="armory-side"><div class="armory-detail"></div><section class="battle-supply"><h3><i class="fa-solid fa-box-open"></i> 免费战斗补给</h3><p>补给券只能通过有效战斗获得，不能购买。全部组件也可在上方直接研发采购。</p><div class="draw-actions"><button class="draw-once" type="button">开启 1 张</button><button class="draw-ten" type="button">开启 10 张</button></div><div class="guarantee-panel"></div><div class="draw-results" aria-live="polite"></div></section></aside>
+              </div>
             </div>
-          </div>
-          <div class="menu-tab-panel inventory-panel" data-menu-panel="inventory" hidden>
-            <div class="screen-heading"><div><p class="eyebrow">无限容量 · 免费保管</p><h2>舰队仓库</h2></div><span>已安装件与最后一套基础组件受保护</span></div>
-            <div class="warehouse-layout">
-              <aside class="warehouse-nav"><h3>仓库筛选</h3><div class="warehouse-filters"></div><p>出售重复件可回收银币；拆解重复件可获得定向采购所需零件。</p><button class="open-dock" type="button">前往船坞配装</button></aside>
-              <section class="warehouse-catalog"><div class="armory-toolbar"><h3>持有组件</h3><span class="warehouse-count"></span></div><div class="warehouse-grid"></div><p class="warehouse-notice" aria-live="polite"></p></section>
-              <aside class="warehouse-detail"></aside>
+            <div class="armory-subview inventory-panel" data-armory-view="inventory" hidden>
+              <div class="warehouse-layout">
+                <aside class="warehouse-nav"><h3>仓库筛选</h3><div class="warehouse-filters"></div><p>出售重复件可回收银币；拆解重复件可获得定向采购所需零件。</p><button class="open-dock" type="button">前往船坞配装</button></aside>
+                <section class="warehouse-catalog"><div class="armory-toolbar"><h3>持有组件</h3><span class="warehouse-count"></span></div><div class="warehouse-grid"></div><p class="warehouse-notice" aria-live="polite"></p></section>
+                <aside class="warehouse-detail"></aside>
+              </div>
             </div>
           </div>
           <div class="menu-tab-panel dock-panel" data-menu-panel="dock" hidden>
-            <div class="screen-heading"><div><p class="eyebrow">模块化船坞蓝图</p><h2>舰队船坞</h2></div><div class="dock-build-tools"><input class="build-name" maxlength="24" placeholder="方案名称" aria-label="方案名称" /><button class="save-ship-build" type="button">保存当前方案</button><span class="dock-save-state">配装自动保存至本机</span></div></div>
+            <div class="screen-heading"><div><p class="eyebrow">模块化船坞蓝图</p><h2>舰队船坞</h2></div><div class="dock-build-tools"><button class="auto-equip-ship" type="button">自动最优装配</button><input class="build-name" maxlength="24" placeholder="方案名称" aria-label="方案名称" /><button class="save-ship-build" type="button">保存当前方案</button><span class="dock-save-state">配装自动保存至本机</span></div></div>
             <div class="saved-build-list" aria-label="已保存舰船方案"></div>
             <div class="dock-layout">
               <aside class="hull-list"><h3>更换舰体</h3>${hullOptionsMarkup()}<div class="slot-list"></div></aside>
@@ -259,7 +262,7 @@ export class GameMenus {
     this.steering = find(".menu-steering"); this.aim = find(".menu-aim"); this.masterVolume = find(".menu-master-volume"); this.muteAudio = find(".menu-mute-audio"); this.steeringValue = find(".menu-steering-value"); this.aimValue = find(".menu-aim-value"); this.masterVolumeValue = find(".menu-master-volume-value");
     this.qualityButtons = Array.from(parent.querySelectorAll("[data-quality]")); this.tabButtons = Array.from(parent.querySelectorAll("[data-menu-tab]"));
     this.languageSelectors = Array.from(parent.querySelectorAll(".menu-language"));
-    this.panels = { mission: find(".mission-panel"), store: find(".store-panel"), inventory: find(".inventory-panel"), dock: find(".dock-panel"), codex: find(".codex-panel") };
+    this.panels = { mission: find(".mission-panel"), store: find(".store-panel"), dock: find(".dock-panel"), codex: find(".codex-panel") };
     this.commanderName = find(".commander-name"); this.credits = find(".profile-credits"); this.researchPoints = find(".profile-research"); this.supplyTokens = find(".profile-tokens"); this.materialSummary = find(".material-summary");
     this.guaranteePanel = find(".guarantee-panel"); this.drawResults = find(".draw-results"); this.inventoryGrid = find(".inventory-grid"); this.componentDetail = find(".component-detail");
     this.armoryGrid = find(".armory-grid"); this.armoryDetail = find(".armory-detail"); this.armoryNotice = find(".armory-notice");
@@ -274,11 +277,15 @@ export class GameMenus {
     find<HTMLButtonElement>(".battle-setup-back").addEventListener("click", () => this.closeBattleSetup());
     find<HTMLButtonElement>(".confirm-battle-setup").addEventListener("click", () => this.confirmBattleSetup());
     find<HTMLButtonElement>(".save-ship-build").addEventListener("click", () => this.saveShipBuild());
+    find<HTMLButtonElement>(".auto-equip-ship").addEventListener("click", () => this.autoEquipCurrentShip());
     find<HTMLButtonElement>(".resume-battle").addEventListener("click", () => this.resume()); find<HTMLButtonElement>(".open-settings").addEventListener("click", () => this.openSettings());
     find<HTMLButtonElement>(".restart-battle").addEventListener("click", () => this.restart()); find<HTMLButtonElement>(".exit-main-menu").addEventListener("click", () => this.exitToMenu()); find<HTMLButtonElement>(".settings-back").addEventListener("click", () => this.backToPause());
     find<HTMLButtonElement>(".draw-once").addEventListener("click", () => this.draw(1)); find<HTMLButtonElement>(".draw-ten").addEventListener("click", () => this.draw(10)); find<HTMLButtonElement>(".open-codex").addEventListener("click", () => this.setStartTab("codex"));
-    find<HTMLButtonElement>(".open-warehouse").addEventListener("click", () => this.setStartTab("inventory"));
+    find<HTMLButtonElement>(".open-warehouse").addEventListener("click", () => this.setArmoryView("inventory"));
     find<HTMLButtonElement>(".open-dock").addEventListener("click", () => this.setStartTab("dock"));
+    for (const button of parent.querySelectorAll<HTMLButtonElement>("[data-armory-view-button]")) {
+      button.addEventListener("click", () => this.setArmoryView(button.dataset.armoryViewButton === "inventory" ? "inventory" : "catalog"));
+    }
     for (const button of this.tabButtons) button.addEventListener("click", () => this.setStartTab((button.dataset.menuTab as StartTab) ?? "mission"));
     for (const button of parent.querySelectorAll<HTMLButtonElement>("[data-ship-class-id]")) {
       button.addEventListener("click", () => {
@@ -514,6 +521,16 @@ export class GameMenus {
     this.componentDetail.querySelector<HTMLButtonElement>(".equip-selected")?.addEventListener("click", () => { this.profile = equipComponent(this.profile, item.id); this.emitProfile(); });
   }
 
+  private autoEquipCurrentShip(): void {
+    const status = this.startOverlay.querySelector<HTMLElement>(".dock-save-state");
+    const result = autoEquipBestOwnedComponents(this.profile);
+    this.profile = result.profile;
+    if (status) status.textContent = result.changedSlots > 0
+      ? "自动装配完成"
+      : "当前已是库存最优配置";
+    this.emitProfile();
+  }
+
   private saveShipBuild(): void {
     const input = this.startOverlay.querySelector<HTMLInputElement>(".build-name");
     const status = this.startOverlay.querySelector<HTMLElement>(".dock-save-state");
@@ -535,7 +552,8 @@ export class GameMenus {
       ? this.profile.savedShipBuilds.map((build) => {
         const readiness = savedBuildReadiness(this.profile, build);
         const shipClass = SHIP_CLASSES[build.shipClassId];
-        return `<article class="saved-build-card${this.profile.selectedBattleBuildId === build.id ? " selected" : ""}"><div><b>${build.name}</b><span>${shipClass.name} · ${shipClass.country} · ${readiness.ready ? "可出击" : "组件不足"}</span></div><div><button data-build-select="${build.id}" type="button">设为出击舰</button><button data-build-overwrite="${build.id}" type="button">以当前配装覆盖</button><button data-build-delete="${build.id}" type="button">删除</button></div></article>`;
+        const state = readiness.ready ? "可出击" : readiness.missingSlots.length ? "未达到最低出海配置" : "组件不足";
+        return `<article class="saved-build-card${this.profile.selectedBattleBuildId === build.id ? " selected" : ""}"><div><b>${build.name}</b><span>${shipClass.name} · ${shipClass.country} · ${state}</span></div><div><button data-build-select="${build.id}" type="button">设为出击舰</button><button data-build-overwrite="${build.id}" type="button">以当前配装覆盖</button><button data-build-delete="${build.id}" type="button">删除</button></div></article>`;
       }).join("")
       : "<p class=\"empty-inventory\">尚未保存舰船方案。当前配装仍会保存在船坞中。</p>";
     for (const button of host.querySelectorAll<HTMLButtonElement>("[data-build-select]")) {
@@ -614,7 +632,8 @@ export class GameMenus {
     if (buildHost) {
       buildHost.innerHTML = this.profile.savedShipBuilds.map((entry) => {
         const readiness = savedBuildReadiness(this.profile, entry);
-        return `<button type="button" data-battle-build="${entry.id}" class="${entry.id === this.profile.selectedBattleBuildId ? "active" : ""}" ${readiness.ready ? "" : "disabled"}><b>${entry.name}</b><span>${SHIP_CLASSES[entry.shipClassId].name}</span><small>${readiness.ready ? "装备完整" : "缺少库存组件"}</small></button>`;
+        const state = readiness.ready ? "装备完整" : readiness.missingSlots.length ? "未达到最低出海配置" : "缺少库存组件";
+        return `<button type="button" data-battle-build="${entry.id}" class="${entry.id === this.profile.selectedBattleBuildId ? "active" : ""}" ${readiness.ready ? "" : "disabled"}><b>${entry.name}</b><span>${SHIP_CLASSES[entry.shipClassId].name}</span><small>${state}</small></button>`;
       }).join("") || "<p>请先到船坞保存一套舰船方案。</p>";
       for (const button of buildHost.querySelectorAll<HTMLButtonElement>("[data-battle-build]")) {
         button.addEventListener("click", () => {
@@ -675,8 +694,20 @@ export class GameMenus {
     document.body.dataset.locale = this.settings.locale;
   }
 
+  private setArmoryView(view: "catalog" | "inventory"): void {
+    this.armoryView = view;
+    for (const panel of this.startOverlay.querySelectorAll<HTMLElement>("[data-armory-view]")) {
+      panel.hidden = panel.dataset.armoryView !== view;
+    }
+    for (const button of this.startOverlay.querySelectorAll<HTMLButtonElement>("[data-armory-view-button]")) {
+      const active = button.dataset.armoryViewButton === view;
+      button.classList.toggle("active", active);
+      button.setAttribute("aria-selected", String(active));
+    }
+  }
+
   private emitProfile(): void { this.renderProfile(); this.callbacks.onProfileChange(normalizeLocalProfile(this.profile)); }
-  private setStartTab(tab: StartTab): void { for (const [id, panel] of Object.entries(this.panels)) panel.hidden = id !== tab; for (const button of this.tabButtons) { const active = button.dataset.menuTab === tab; button.classList.toggle("active", active); button.setAttribute("aria-selected", String(active)); } if (tab === "dock") setTimeout(() => this.dockPreview.resize(), 0); }
+  private setStartTab(tab: StartTab): void { for (const [id, panel] of Object.entries(this.panels)) panel.hidden = id !== tab; for (const button of this.tabButtons) { const active = button.dataset.menuTab === tab; button.classList.toggle("active", active); button.setAttribute("aria-selected", String(active)); } if (tab === "store") this.setArmoryView(this.armoryView); if (tab === "dock") setTimeout(() => this.dockPreview.resize(), 0); }
   private start(request: GameLaunchRequest): void { this.startOverlay.hidden = true; this.callbacks.onStart(request); }
   openPause(): void { this.pauseOpen = true; this.settingsOpen = false; this.pauseOverlay.hidden = false; this.settingsOverlay.hidden = true; this.callbacks.onPause(); }
   private resume(): void { this.pauseOpen = false; this.pauseOverlay.hidden = true; this.callbacks.onResume(); }

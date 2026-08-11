@@ -9,6 +9,7 @@ import {
 } from "./localProfile";
 import { CATEGORY_META } from "./equipmentCatalog";
 import type { EquipmentCategory } from "./equipmentCatalog";
+import { minimumSeaReadySlotCounts } from "./loadoutPolicy";
 
 const categories = Object.keys(CATEGORY_META) as EquipmentCategory[];
 const MAX_SAVED_SHIP_BUILDS = 24;
@@ -29,7 +30,13 @@ export function savedBuildReadiness(
     required: count,
     owned: profile.inventory[itemId] ?? 0,
   })).filter(({ required: count, owned }) => owned < count);
-  return { ready: missing.length === 0, missing };
+  const minimum = minimumSeaReadySlotCounts(build.shipClassId);
+  const missingSlots = categories.map((category) => ({
+    category,
+    required: minimum[category],
+    equipped: (build.slots[category] ?? []).filter(Boolean).length,
+  })).filter(({ required: count, equipped }) => equipped < count);
+  return { ready: missing.length === 0 && missingSlots.length === 0, missing, missingSlots };
 }
 
 export function saveCurrentShipBuild(
