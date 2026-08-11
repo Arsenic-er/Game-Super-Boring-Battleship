@@ -41,4 +41,15 @@ describe("game locales", () => {
     expect(translateGameText("这段主炮说明保持原样", "en-US")).toBe("这段主炮说明保持原样");
     expect(formatGameNumber(12345, "de-DE")).toBe("12.345");
   });
+
+  it("translates dynamic armory and inventory labels in every non-Chinese locale", () => {
+    const labels = ["采购组件", "研发资料不足", "当前装备", "持有 / 已安装", "安装到空槽", "出售"];
+    for (const locale of SUPPORTED_GAME_LOCALES) {
+      if (locale === "zh-CN" || locale === "zh-TW") continue;
+      for (const label of labels) {
+        expect(translateGameText(label, locale), `${locale}: ${label}`).not.toBe(label);
+      }
+    }
+    expect(translateGameText("最后一套基础组件受到保护。", "en-US")).toBe("The last baseline set is protected.");
+  });
 });

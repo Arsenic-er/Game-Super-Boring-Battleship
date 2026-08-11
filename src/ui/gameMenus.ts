@@ -1,10 +1,11 @@
-import type { LocalProfile, SupplyDrawResult } from "../profile/localProfile";
+import type { LocalProfile, SavedShipBuild, SupplyDrawResult } from "../profile/localProfile";
 import {
   GAME_LOCALE_OPTIONS,
   applyDocumentLocale,
   formatGameNumber,
   isGameLocale,
   localizeElement,
+  translateGameText,
 } from "../i18n/gameLocale";
 import {
   autoEquipBestOwnedComponents,
@@ -372,7 +373,13 @@ export class GameMenus {
     this.supplyTokens.textContent = String(this.profile.supplyTokens);
     this.materialSummary.textContent = `钢材 ${this.profile.materials.steel} · 零件 ${this.profile.materials.parts}`;
     for (const button of this.startOverlay.querySelectorAll<HTMLButtonElement>("[data-ship-class-id]")) {
-      button.classList.toggle("active", button.dataset.shipClassId === this.profile.shipClassId);
+      const shipClassId = button.dataset.shipClassId as ShipClassId;
+      const shipClass = SHIP_CLASSES[shipClassId];
+      button.classList.toggle("active", shipClassId === this.profile.shipClassId);
+      const title = button.querySelector<HTMLElement>("b");
+      const metadata = button.querySelector<HTMLElement>("span");
+      if (title) title.textContent = this.localizedShipClassName(shipClassId);
+      if (metadata) metadata.textContent = `${this.t(shipClass.country)} · ${shipClass.serviceYear}`;
     }
     this.renderHullSlots();
     this.renderCodex();
@@ -395,7 +402,7 @@ export class GameMenus {
       const unlocked = Boolean(this.profile.unlockedEquipment[item.id]);
       const owned = this.profile.inventory[item.id] ?? 0;
       const cost = item.purchaseCost;
-      return `<button class="armory-item rarity-${item.rarity}${unlocked ? " researched" : " locked"}" data-armory-item="${item.id}" type="button"><i class="${CATEGORY_META[item.category].icon}"></i><span>${item.name}</span><small>${item.origin}</small><b>${unlocked ? `${formatGameNumber(cost.credits, this.settings.locale)} 银币` : `${item.researchCost} 研发解锁`}</b><em>持有 ×${owned}</em></button>`;
+      return `<button class="armory-item rarity-${item.rarity}${unlocked ? " researched" : " locked"}" data-armory-item="${item.id}" type="button"><i class="${CATEGORY_META[item.category].icon}"></i><span>${item.name}</span><small>${item.origin}</small><b>${unlocked ? `${formatGameNumber(cost.credits, this.settings.locale)} ${this.t("银币")}` : `${item.researchCost} ${this.t("研发解锁")}`}</b><em>${this.t("持有")} ×${owned}</em></button>`;
     }).join("");
     this.decorateEquipmentCards(this.armoryGrid, "[data-armory-item]", "armoryItem");
     for (const button of this.armoryGrid.querySelectorAll<HTMLButtonElement>("[data-armory-item]")) {
@@ -407,6 +414,7 @@ export class GameMenus {
     const recent = this.profile.recentDraws;
     this.drawResults.innerHTML = recent.length ? recent.slice(0, 3).map((result) => this.resultMarkup(result)).join("") : "<small>尚无补给记录</small>";
     for (const button of this.startOverlay.querySelectorAll<HTMLButtonElement>(".draw-once,.draw-ten")) button.disabled = this.profile.supplyTokens < (button.classList.contains("draw-ten") ? 10 : 1);
+    this.localizeNodes(this.armoryGrid, this.armoryDetail, this.guaranteePanel, this.drawResults, this.armoryNotice);
   }
 
   private priceMarkup(item: EquipmentDefinition): string {
@@ -424,9 +432,9 @@ export class GameMenus {
     const current = currentId ? EQUIPMENT_BY_ID[currentId] : undefined;
     const difference = item.bonus - (current?.bonus ?? 0);
     const compatibility = isEquipmentCompatible(item, this.profile.shipClassId)
-      ? `当前${SHIP_CLASSES[this.profile.shipClassId].name}可装`
-      : "当前舰型无可用槽位";
-    this.armoryDetail.innerHTML = `<div class="detail-heading rarity-${item.rarity}"><i class="${CATEGORY_META[item.category].icon}"></i><div><b>${item.name}</b><small>${CATEGORY_META[item.category].label} · ${item.origin}</small></div></div><p>${item.description}</p><dl>${equipmentDetailRows(item)}<div><dt>当前装备</dt><dd>${current?.name ?? "无"}</dd></div><div><dt>相对核心增益</dt><dd class="${difference >= 0 ? "stat-positive" : "stat-negative"}">${difference >= 0 ? "+" : ""}${Math.round(difference * 100)}%</dd></div><div><dt>适配</dt><dd>${compatibility}</dd></div><div><dt>当前持有</dt><dd>×${this.profile.inventory[item.id] ?? 0}</dd></div></dl><div class="armory-price">${unlocked ? this.priceMarkup(item) : `<span><i class="fa-solid fa-flask"></i>${item.researchCost} 研发资料</span>`}</div><button class="armory-action" type="button" ${unlocked && !affordable ? "disabled" : ""}>${unlocked ? affordable ? "采购组件" : "资源不足" : this.profile.researchPoints >= item.researchCost ? "研发解锁" : "研发资料不足"}</button>`;
+      ? `${this.localizedShipClassName(this.profile.shipClassId)} · ${this.t("可安装")}`
+      : this.t("当前舰型无可用槽位");
+    this.armoryDetail.innerHTML = `<div class="detail-heading rarity-${item.rarity}"><i class="${CATEGORY_META[item.category].icon}"></i><div><b>${item.name}</b><small>${this.t(CATEGORY_META[item.category].label)} · ${item.origin}</small></div></div><p>${item.description}</p><dl>${equipmentDetailRows(item)}<div><dt>当前装备</dt><dd>${current?.name ?? this.t("无")}</dd></div><div><dt>相对核心增益</dt><dd class="${difference >= 0 ? "stat-positive" : "stat-negative"}">${difference >= 0 ? "+" : ""}${Math.round(difference * 100)}%</dd></div><div><dt>适配</dt><dd>${compatibility}</dd></div><div><dt>当前持有</dt><dd>×${this.profile.inventory[item.id] ?? 0}</dd></div></dl><div class="armory-price">${unlocked ? this.priceMarkup(item) : `<span><i class="fa-solid fa-flask"></i>${item.researchCost} ${this.t("研发资料")}</span>`}</div><button class="armory-action" type="button" ${unlocked && !affordable ? "disabled" : ""}>${this.t(unlocked ? affordable ? "采购组件" : "资源不足" : this.profile.researchPoints >= item.researchCost ? "研发解锁" : "研发资料不足")}</button>`;
     this.decorateEquipmentDetail(this.armoryDetail, item);
     const action = this.armoryDetail.querySelector<HTMLButtonElement>(".armory-action");
     if (!action) return;
@@ -436,8 +444,8 @@ export class GameMenus {
         ? purchaseComponent(this.profile, item.id)
         : researchComponent(this.profile, item.id);
       this.armoryNotice.textContent = transaction.success
-        ? unlocked ? `已采购：${item.name}` : `研发完成：${item.name}`
-        : "交易未完成，请检查资源与研发状态。";
+        ? `${this.t(unlocked ? "已采购" : "研发完成")}：${item.name}`
+        : this.t("交易未完成，请检查资源与研发状态。");
       if (transaction.success) { this.profile = transaction.profile; this.emitProfile(); }
     });
   }
@@ -460,18 +468,18 @@ export class GameMenus {
     if (!this.selectedWarehouseItemId || !owned.some((item) => item.id === this.selectedWarehouseItemId)) this.selectedWarehouseItemId = owned[0]?.id;
     const total = Object.values(this.profile.inventory).reduce((sum, count) => sum + count, 0);
     const count = this.startOverlay.querySelector<HTMLElement>(".warehouse-count");
-    if (count) count.textContent = `${owned.length} 型号 · ${total} 件组件`;
+    if (count) count.textContent = `${owned.length} ${this.t("型号")} · ${total} ${this.t("件组件")}`;
     this.warehouseGrid.innerHTML = owned.map((item) => {
       const installed = installedCopies(this.profile, item.id);
       const quantity = this.profile.inventory[item.id] ?? 0;
-      return `<button class="warehouse-item rarity-${item.rarity}${installed ? " installed" : ""}" data-warehouse-item="${item.id}" type="button"><i class="${CATEGORY_META[item.category].icon}"></i><span>${item.name}</span><small>${item.origin}</small><b>×${quantity}</b><em>${installed ? `已安装 ×${installed}` : quantity > 1 ? "有重复件" : "在库"}</em></button>`;
+      return `<button class="warehouse-item rarity-${item.rarity}${installed ? " installed" : ""}" data-warehouse-item="${item.id}" type="button"><i class="${CATEGORY_META[item.category].icon}"></i><span>${item.name}</span><small>${item.origin}</small><b>×${quantity}</b><em>${installed ? `${this.t("已安装")} ×${installed}` : this.t(quantity > 1 ? "有重复件" : "在库")}</em></button>`;
     }).join("") || '<p class="empty-inventory">该分类暂无组件</p>';
     this.decorateEquipmentCards(this.warehouseGrid, "[data-warehouse-item]", "warehouseItem");
     for (const button of this.warehouseGrid.querySelectorAll<HTMLButtonElement>("[data-warehouse-item]")) {
       button.addEventListener("click", () => { this.selectedWarehouseItemId = button.dataset.warehouseItem; this.renderWarehouse(); });
     }
     const item = this.selectedWarehouseItemId ? EQUIPMENT_BY_ID[this.selectedWarehouseItemId] : undefined;
-    if (!item) { this.warehouseDetail.innerHTML = "<p>选择组件查看库存详情</p>"; return; }
+    if (!item) { this.warehouseDetail.innerHTML = "<p>选择组件查看库存详情</p>"; this.localizeNodes(this.warehouseGrid, this.warehouseDetail, this.warehouseNotice, count); return; }
     const quantity = this.profile.inventory[item.id] ?? 0;
     const installed = installedCopies(this.profile, item.id);
     const disposable = Math.max(0, quantity - installed);
@@ -480,25 +488,26 @@ export class GameMenus {
     const currentId = this.profile.loadout[item.category];
     const current = currentId ? EQUIPMENT_BY_ID[currentId] : undefined;
     const difference = item.bonus - (current?.bonus ?? 0);
-    this.warehouseDetail.innerHTML = `<div class="detail-heading rarity-${item.rarity}"><i class="${CATEGORY_META[item.category].icon}"></i><div><b>${item.name}</b><small>${CATEGORY_META[item.category].label} · ${item.origin}</small></div></div><p>${item.description}</p><dl>${equipmentDetailRows(item)}<div><dt>当前装备</dt><dd>${current?.name ?? "无"}</dd></div><div><dt>相对核心增益</dt><dd class="${difference >= 0 ? "stat-positive" : "stat-negative"}">${difference >= 0 ? "+" : ""}${Math.round(difference * 100)}%</dd></div><div><dt>持有 / 已安装</dt><dd>${quantity} / ${installed}</dd></div><div><dt>可处理</dt><dd>${canRecycle ? disposable : 0}</dd></div></dl><div class="warehouse-actions"><button class="warehouse-sell" type="button" ${canRecycle ? "" : "disabled"}>出售 1 件 · +${item.sellCredits} 银币</button><button class="warehouse-salvage" type="button" ${canRecycle ? "" : "disabled"}>拆解 1 件 · +${item.salvageParts} 零件</button></div><small class="warehouse-protection">${canRecycle ? "只处理未安装的副本。" : installed ? "舰队预设中的副本已安装，无法处理。" : "最后一套基础组件受到保护。"}</small>`;
+    this.warehouseDetail.innerHTML = `<div class="detail-heading rarity-${item.rarity}"><i class="${CATEGORY_META[item.category].icon}"></i><div><b>${item.name}</b><small>${this.t(CATEGORY_META[item.category].label)} · ${item.origin}</small></div></div><p>${item.description}</p><dl>${equipmentDetailRows(item)}<div><dt>当前装备</dt><dd>${current?.name ?? this.t("无")}</dd></div><div><dt>相对核心增益</dt><dd class="${difference >= 0 ? "stat-positive" : "stat-negative"}">${difference >= 0 ? "+" : ""}${Math.round(difference * 100)}%</dd></div><div><dt>持有 / 已安装</dt><dd>${quantity} / ${installed}</dd></div><div><dt>可处理</dt><dd>${canRecycle ? disposable : 0}</dd></div></dl><div class="warehouse-actions"><button class="warehouse-sell" type="button" ${canRecycle ? "" : "disabled"}>${this.t("出售")} 1 ${this.t("件")} · +${item.sellCredits} ${this.t("银币")}</button><button class="warehouse-salvage" type="button" ${canRecycle ? "" : "disabled"}>${this.t("拆解")} 1 ${this.t("件")} · +${item.salvageParts} ${this.t("零件")}</button></div><small class="warehouse-protection">${this.t(canRecycle ? "只处理未安装的副本。" : installed ? "舰队预设中的副本已安装，无法处理。" : "最后一套基础组件受到保护。")}</small>`;
     this.decorateEquipmentDetail(this.warehouseDetail, item);
     const transact = (mode: "sell" | "salvage"): void => {
       const result = mode === "sell"
         ? sellComponent(this.profile, item.id)
         : salvageComponent(this.profile, item.id);
       this.warehouseNotice.textContent = result.success
-        ? mode === "sell" ? `已出售：${item.name}` : `已拆解：${item.name}`
-        : "无法处理已安装组件或最后一套基础组件。";
+        ? `${this.t(mode === "sell" ? "已出售" : "已拆解")}：${item.name}`
+        : this.t("无法处理已安装组件或最后一套基础组件。");
       if (result.success) { this.profile = result.profile; this.emitProfile(); }
     };
     this.warehouseDetail.querySelector<HTMLButtonElement>(".warehouse-sell")?.addEventListener("click", () => transact("sell"));
     this.warehouseDetail.querySelector<HTMLButtonElement>(".warehouse-salvage")?.addEventListener("click", () => transact("salvage"));
+    this.localizeNodes(this.warehouseGrid, this.warehouseDetail, this.warehouseNotice, count);
   }
 
   private renderDock(): void {
     const owned = EQUIPMENT_CATALOG.filter((item) => (this.profile.inventory[item.id] ?? 0) > 0 && (this.activeCategory === "all" || item.category === this.activeCategory));
     if (!this.selectedItemId || !owned.some((item) => item.id === this.selectedItemId)) this.selectedItemId = owned[0]?.id;
-    this.inventoryGrid.innerHTML = owned.map((item) => { const installed = this.profile.loadout[item.category] === item.id; return `<button class="inventory-item rarity-${item.rarity}${installed ? " installed" : ""}" data-item="${item.id}" type="button"><i class="${CATEGORY_META[item.category].icon}"></i><span>${item.name}</span><small>${CATEGORY_META[item.category].label} · ${item.origin} · ×${this.profile.inventory[item.id]}</small></button>`; }).join("") || '<p class="empty-inventory">该分类暂无组件</p>';
+    this.inventoryGrid.innerHTML = owned.map((item) => { const installed = this.profile.loadout[item.category] === item.id; return `<button class="inventory-item rarity-${item.rarity}${installed ? " installed" : ""}" data-item="${item.id}" type="button"><i class="${CATEGORY_META[item.category].icon}"></i><span>${item.name}</span><small>${this.t(CATEGORY_META[item.category].label)} · ${item.origin} · ×${this.profile.inventory[item.id]}</small></button>`; }).join("") || '<p class="empty-inventory">该分类暂无组件</p>';
     this.decorateEquipmentCards(this.inventoryGrid, "[data-item]", "item");
     for (const button of this.inventoryGrid.querySelectorAll<HTMLButtonElement>("[data-item]")) button.addEventListener("click", () => { this.selectedItemId = button.dataset.item; this.renderDock(); });
     const item = this.selectedItemId ? EQUIPMENT_BY_ID[this.selectedItemId] : undefined;
@@ -506,19 +515,20 @@ export class GameMenus {
     const previewStatus = this.startOverlay.querySelector<HTMLElement>(".dock-preview-status");
     if (!item && previewStatus) previewStatus.textContent = "\u9009\u62e9\u7ec4\u4ef6\u5373\u53ef\u4e34\u65f6\u9884\u89c8";
 
-    if (!item) { this.componentDetail.innerHTML = "<p>选择组件查看详情</p>"; return; }
+    if (!item) { this.componentDetail.innerHTML = "<p>选择组件查看详情</p>"; this.localizeNodes(this.inventoryGrid, this.componentDetail, previewStatus); return; }
     const compatible = isEquipmentCompatible(item, this.profile.shipClassId);
     const slots = this.profile.slotLoadoutsByShipClass[this.profile.shipClassId][item.category];
     const filled = slots.filter(Boolean).length;
     const installed = slots.includes(item.id);
     if (previewStatus) {
       const state = installed ? "\u5f53\u524d\u5df2\u5b89\u88c5" : compatible ? "\u5019\u9009\u88c5\u914d\u9884\u89c8" : "\u4e0d\u517c\u5bb9\u68c0\u89c6\u9884\u89c8";
-      previewStatus.textContent = `${state} \u00b7 ${item.name}`;
+      previewStatus.textContent = `${this.t(state)} \u00b7 ${item.name}`;
       previewStatus.dataset.state = compatible ? installed ? "installed" : "candidate" : "incompatible";
     }
-    this.componentDetail.innerHTML = `<div class="detail-heading rarity-${item.rarity}"><i class="${CATEGORY_META[item.category].icon}"></i><div><b>${item.name}</b><small>${CATEGORY_META[item.category].label} · ${item.origin}</small></div></div><p>${item.description}</p><dl>${equipmentDetailRows(item)}<div><dt>适配</dt><dd>${compatible ? SHIP_CLASSES[this.profile.shipClassId].name : "当前舰级不可用"}</dd></div><div><dt>槽位占用</dt><dd>${filled}/${slots.length}</dd></div></dl><button class="equip-selected" type="button" ${!compatible ? "disabled" : ""}>${compatible ? filled < slots.length ? "安装到空槽" : "替换首个槽位" : "该舰级不可安装"}</button>`;
+    this.componentDetail.innerHTML = `<div class="detail-heading rarity-${item.rarity}"><i class="${CATEGORY_META[item.category].icon}"></i><div><b>${item.name}</b><small>${this.t(CATEGORY_META[item.category].label)} · ${item.origin}</small></div></div><p>${item.description}</p><dl>${equipmentDetailRows(item)}<div><dt>适配</dt><dd>${compatible ? this.localizedShipClassName(this.profile.shipClassId) : this.t("当前舰级不可用")}</dd></div><div><dt>槽位占用</dt><dd>${filled}/${slots.length}</dd></div></dl><button class="equip-selected" type="button" ${!compatible ? "disabled" : ""}>${this.t(compatible ? filled < slots.length ? "安装到空槽" : "替换首个槽位" : "该舰级不可安装")}</button>`;
     this.decorateEquipmentDetail(this.componentDetail, item);
     this.componentDetail.querySelector<HTMLButtonElement>(".equip-selected")?.addEventListener("click", () => { this.profile = equipComponent(this.profile, item.id); this.emitProfile(); });
+    this.localizeNodes(this.inventoryGrid, this.componentDetail, previewStatus);
   }
 
   private autoEquipCurrentShip(): void {
@@ -526,19 +536,19 @@ export class GameMenus {
     const result = autoEquipBestOwnedComponents(this.profile);
     this.profile = result.profile;
     if (status) status.textContent = result.changedSlots > 0
-      ? "自动装配完成"
-      : "当前已是库存最优配置";
+      ? this.t("自动装配完成")
+      : this.t("当前已是库存最优配置");
     this.emitProfile();
   }
 
   private saveShipBuild(): void {
     const input = this.startOverlay.querySelector<HTMLInputElement>(".build-name");
     const status = this.startOverlay.querySelector<HTMLElement>(".dock-save-state");
-    const fallback = `${SHIP_CLASSES[this.profile.shipClassId].name} 配置 ${this.profile.savedShipBuilds.length + 1}`;
+    const fallback = `${this.localizedShipClassName(this.profile.shipClassId)} ${this.t("配置")} ${this.profile.savedShipBuilds.length + 1}`;
     const result = saveCurrentShipBuild(this.profile, input?.value || fallback);
-    if (status) status.textContent = result.success
+    if (status) status.textContent = this.t(result.success
       ? "方案已保存（本机）"
-      : result.reason === "limit" ? "最多保存 24 套方案" : "请输入方案名称";
+      : result.reason === "limit" ? "最多保存 24 套方案" : "请输入方案名称");
     if (!result.success) return;
     this.profile = result.profile;
     if (input) input.value = "";
@@ -552,8 +562,11 @@ export class GameMenus {
       ? this.profile.savedShipBuilds.map((build) => {
         const readiness = savedBuildReadiness(this.profile, build);
         const shipClass = SHIP_CLASSES[build.shipClassId];
-        const state = readiness.ready ? "可出击" : readiness.missingSlots.length ? "未达到最低出海配置" : "组件不足";
-        return `<article class="saved-build-card${this.profile.selectedBattleBuildId === build.id ? " selected" : ""}"><div><b>${build.name}</b><span>${shipClass.name} · ${shipClass.country} · ${state}</span></div><div><button data-build-select="${build.id}" type="button">设为出击舰</button><button data-build-overwrite="${build.id}" type="button">以当前配装覆盖</button><button data-build-delete="${build.id}" type="button">删除</button></div></article>`;
+        const state = this.t(readiness.ready ? "可出击" : readiness.missingSlots.length ? "未达到最低出海配置" : "组件不足");
+        const buildName = this.localizedBuildName(build);
+        const shipName = this.localizedShipClassName(build.shipClassId);
+        const country = this.t(shipClass.country);
+        return `<article class="saved-build-card${this.profile.selectedBattleBuildId === build.id ? " selected" : ""}"><div><b>${buildName}</b><span>${shipName} · ${country} · ${state}</span></div><div><button data-build-select="${build.id}" type="button">设为出击舰</button><button data-build-overwrite="${build.id}" type="button">以当前配装覆盖</button><button data-build-delete="${build.id}" type="button">删除</button></div></article>`;
       }).join("")
       : "<p class=\"empty-inventory\">尚未保存舰船方案。当前配装仍会保存在船坞中。</p>";
     for (const button of host.querySelectorAll<HTMLButtonElement>("[data-build-select]")) {
@@ -632,8 +645,8 @@ export class GameMenus {
     if (buildHost) {
       buildHost.innerHTML = this.profile.savedShipBuilds.map((entry) => {
         const readiness = savedBuildReadiness(this.profile, entry);
-        const state = readiness.ready ? "装备完整" : readiness.missingSlots.length ? "未达到最低出海配置" : "缺少库存组件";
-        return `<button type="button" data-battle-build="${entry.id}" class="${entry.id === this.profile.selectedBattleBuildId ? "active" : ""}" ${readiness.ready ? "" : "disabled"}><b>${entry.name}</b><span>${SHIP_CLASSES[entry.shipClassId].name}</span><small>${state}</small></button>`;
+        const state = this.t(readiness.ready ? "装备完整" : readiness.missingSlots.length ? "未达到最低出海配置" : "缺少库存组件");
+        return `<button type="button" data-battle-build="${entry.id}" class="${entry.id === this.profile.selectedBattleBuildId ? "active" : ""}" ${readiness.ready ? "" : "disabled"}><b>${this.localizedBuildName(entry)}</b><span>${this.localizedShipClassName(entry.shipClassId)}</span><small>${state}</small></button>`;
       }).join("") || "<p>请先到船坞保存一套舰船方案。</p>";
       for (const button of buildHost.querySelectorAll<HTMLButtonElement>("[data-battle-build]")) {
         button.addEventListener("click", () => {
@@ -646,8 +659,8 @@ export class GameMenus {
     const ready = Boolean(build && savedBuildReadiness(this.profile, build).ready);
     if (confirm) confirm.disabled = !ready;
     if (status) status.textContent = ready
-      ? `${build?.name} · ${this.selectedFleetSize}v${this.selectedFleetSize} · ${WEATHER_PRESETS[this.selectedWeatherId].name}`
-      : "请先选择一套装备完整的舰船方案";
+      ? `${this.localizedBuildName(build!)} · ${this.selectedFleetSize}v${this.selectedFleetSize} · ${this.t(WEATHER_PRESETS[this.selectedWeatherId].name)}`
+      : this.t("请先选择一套装备完整的舰船方案");
     this.applyLocale();
   }
 
@@ -685,6 +698,30 @@ export class GameMenus {
     if (!icon) return;
     icon.insertAdjacentHTML("afterend", equipmentArtworkMarkup(item, "detail"));
     icon.remove();
+  }
+
+  private t(source: string): string {
+    return translateGameText(source, this.settings.locale);
+  }
+
+  private localizedShipClassName(shipClassId: ShipClassId): string {
+    const shipClass = SHIP_CLASSES[shipClassId];
+    return this.settings.locale === "zh-CN" || this.settings.locale === "zh-TW"
+      ? shipClass.name
+      : shipClass.englishName;
+  }
+
+  private localizedBuildName(build: SavedShipBuild): string {
+    const suffix = build.id === "default-fletcher" || build.id.startsWith("standard-")
+      ? "标准配置"
+      : build.id === "legacy-current" ? "继承配置" : undefined;
+    return suffix
+      ? `${this.localizedShipClassName(build.shipClassId)} ${this.t(suffix)}`
+      : build.name;
+  }
+
+  private localizeNodes(...roots: (Element | null | undefined)[]): void {
+    for (const root of roots) if (root) localizeElement(root, this.settings.locale);
   }
 
   private applyLocale(): void {

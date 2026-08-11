@@ -78,6 +78,16 @@ button:active { transform: translate(1px,1px); box-shadow: none; }
 .armory-mode-tab.active { color: #06191f; border-color: #a6dcd0; background: #8fd0c2; box-shadow: inset 0 -4px 0 #4b8b88, 3px 3px 0 #02090c; }
 .armory-subview[hidden] { display: none; }
 .armory-subview { min-height: 0; }
+.command-center .store-panel { display: flex; flex-direction: column; min-height: 0; overflow: hidden; }
+.command-center .store-panel[hidden] { display: none; }
+.store-panel > .screen-heading, .store-panel > .armory-mode-tabs { flex: 0 0 auto; }
+.store-panel > .armory-subview { flex: 1 1 auto; min-height: 0; overflow: hidden; }
+.store-panel .store-layout, .store-panel .warehouse-layout { width: 100%; height: 100%; min-height: 0; grid-template-rows: minmax(0, 1fr); }
+.store-panel .armory-nav, .store-panel .armory-catalog, .store-panel .armory-side,
+.store-panel .warehouse-nav, .store-panel .warehouse-catalog, .store-panel .warehouse-detail { min-height: 0; }
+.store-panel .armory-grid, .store-panel .warehouse-grid {
+  flex: 1 1 auto; min-height: 0; overflow-x: hidden; overflow-y: auto; align-content: start; overscroll-behavior: contain; scrollbar-gutter: stable;
+}
 .auto-equip-ship { color: #07191e !important; border-color: #b7d9a6 !important; background: #91c9ab !important; }
 .store-layout { display: grid; grid-template-columns: 270px minmax(430px, 1fr) 310px; gap: 16px; min-height: 650px; }
 .supply-pool, .supply-terminal, .guarantee-panel, .hull-list, .dock-blueprint, .component-library { position: relative; border: 2px solid #37666a; background: rgba(5, 27, 34, .88); box-shadow: 4px 4px 0 rgba(0,0,0,.4); }
@@ -232,6 +242,7 @@ button:active { transform: translate(1px,1px); box-shadow: none; }
   .armory-side { grid-column: 1 / -1; }
   .warehouse-layout { grid-template-columns: 200px 1fr; }
   .warehouse-detail { grid-column: 1 / -1; }
+  .store-panel .store-layout, .store-panel .warehouse-layout { grid-template-rows: minmax(0, 1fr) minmax(145px, .45fr); }
   .dock-layout { grid-template-columns: 210px 1fr; }.component-library { grid-column: 1 / -1; }
   .inventory-grid { grid-template-columns: repeat(5, 1fr); }
 }
@@ -244,7 +255,7 @@ button:active { transform: translate(1px,1px); box-shadow: none; }
   .screen-heading { height: 50px; margin-bottom: 6px; }
   .screen-heading h2 { margin-bottom: 6px; }
   .dock-layout { height: calc(100% - 58px); min-height: 0; }
-  .store-layout, .warehouse-layout { height: calc(100% - 108px); min-height: 0; }
+  .store-panel .store-layout, .store-panel .warehouse-layout { height: 100%; min-height: 0; }
   .dock-preview { height: 100%; min-height: 0; }
   .hull-option { min-height: 50px; padding: 7px 9px; }
   .slot-list { gap: 2px; margin-top: 8px; }
