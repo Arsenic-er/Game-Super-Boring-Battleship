@@ -15,6 +15,7 @@ describe("game settings", () => {
       aimSensitivity: 0.5,
       masterVolume: 0.7,
       muted: false,
+      uiSoundStyle: "bridge",
       locale: "zh-CN",
     });
   });
@@ -29,6 +30,7 @@ describe("game settings", () => {
       masterVolume: 0.7,
       muted: false,
       locale: "zh-CN",
+      uiSoundStyle: "bridge",
     });
     expect(normalizeGameSettings({ masterVolume: 4, muted: true })).toEqual({
       steeringSensitivity: 1,
@@ -36,10 +38,18 @@ describe("game settings", () => {
       masterVolume: 1,
       muted: true,
       locale: "zh-CN",
+      uiSoundStyle: "bridge",
     });
     expect(normalizeGameSettings({ masterVolume: Number.NaN, muted: "yes" })).toEqual(
       DEFAULT_GAME_SETTINGS,
     );
+  });
+
+  it("migrates and validates interface sound styles", () => {
+    expect(normalizeGameSettings({}).uiSoundStyle).toBe("bridge");
+    expect(normalizeGameSettings({ uiSoundStyle: "lever" }).uiSoundStyle).toBe("lever");
+    expect(normalizeGameSettings({ uiSoundStyle: "pixel" }).uiSoundStyle).toBe("pixel");
+    expect(normalizeGameSettings({ uiSoundStyle: "unknown" }).uiSoundStyle).toBe("bridge");
   });
 
   it("persists supported locales and rejects unknown locale values", () => {

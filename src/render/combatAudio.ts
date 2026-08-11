@@ -1,4 +1,5 @@
 import type { ImpactEvent, ShipState, ShotEvent } from "../sim/types";
+import type { UiSoundStyle } from "../settings/gameSettings";
 
 const AUDIO = {
   masterVolume: 0.72,
@@ -27,6 +28,38 @@ export function mainGunLayerGains(volume: number): MainGunLayerGains {
     sub: level * 0.38,
     echo: level * 0.3,
   };
+}
+
+export interface UiCueTone {
+  wave: OscillatorType;
+  startHz: number;
+  endHz: number;
+  delay: number;
+  duration: number;
+  gain: number;
+}
+
+export interface UiCueNoise {
+  volume: number;
+  duration: number;
+  filterType: BiquadFilterType;
+  frequency: number;
+  delay: number;
+}
+
+export interface UiCueRecipe {
+  tones: readonly UiCueTone[];
+  noise?: UiCueNoise;
+}
+
+const UI_CUE_RECIPES: Record<UiSoundStyle, UiCueRecipe> = {
+  bridge: { tones: [{ wave: "triangle", startHz: 1_240, endHz: 980, delay: 0, duration: 0.055, gain: 0.038 }, { wave: "sine", startHz: 1_960, endHz: 1_480, delay: 0.012, duration: 0.05, gain: 0.018 }], noise: { volume: 0.022, duration: 0.045, filterType: "highpass", frequency: 2_200, delay: 0 } },
+  lever: { tones: [{ wave: "sine", startHz: 190, endHz: 120, delay: 0, duration: 0.12, gain: 0.055 }, { wave: "triangle", startHz: 420, endHz: 270, delay: 0.055, duration: 0.08, gain: 0.03 }], noise: { volume: 0.04, duration: 0.11, filterType: "bandpass", frequency: 850, delay: 0 } },
+  pixel: { tones: [{ wave: "square", startHz: 780, endHz: 1_040, delay: 0, duration: 0.045, gain: 0.025 }, { wave: "square", startHz: 1_040, endHz: 1_560, delay: 0.055, duration: 0.04, gain: 0.021 }] },
+};
+
+export function uiCueRecipe(style: UiSoundStyle): UiCueRecipe {
+  return UI_CUE_RECIPES[style];
 }
 
 const wrapAngle = (angle: number): number => {
@@ -79,6 +112,7 @@ export class CombatAudio {
   private battleActive = false;
   private volume: number = AUDIO.masterVolume;
   private muted = false;
+  private uiSoundStyle: UiSoundStyle = "bridge";
   private previousThrottle?: number;
   private previousTurretRelative?: number;
   private previousLauncherRelative?: number;
@@ -115,12 +149,38 @@ export class CombatAudio {
     });
   }
 
-  configure(masterVolume: number, muted: boolean): void {
+  configure(masterVolume: number, muted: boolean, uiSoundStyle: UiSoundStyle = this.uiSoundStyle): void {
     this.volume = Math.min(1, Math.max(0, Number.isFinite(masterVolume) ? masterVolume : 0.7));
     this.muted = muted;
+    this.uiSoundStyle = uiSoundStyle;
     const context = this.context;
     if (!context || !this.master) return;
     this.master.gain.setTargetAtTime(muted ? 0 : this.volume, context.currentTime, 0.035);
+  }
+
+  playUiCue(style: UiSoundStyle = this.uiSoundStyle): void {
+    const context = this.context;
+    const output = this.output();
+    if (!context || !output) return;
+    const recipe = uiCueRecipe(style);
+    const now = context.currentTime;
+    for (const tone of recipe.tones) {
+      const startAt = now + tone.delay;
+      const oscillator = context.createOscillator();
+      const gain = context.createGain();
+      oscillator.type = tone.wave;
+      oscillator.frequency.setValueAtTime(tone.startHz, startAt);
+      oscillator.frequency.exponentialRampToValueAtTime(tone.endHz, startAt + tone.duration);
+      gain.gain.setValueAtTime(0.000_1, startAt);
+      gain.gain.exponentialRampToValueAtTime(tone.gain, startAt + Math.min(0.006, tone.duration * 0.25));
+      gain.gain.exponentialRampToValueAtTime(0.000_1, startAt + tone.duration);
+      oscillator.connect(gain).connect(output);
+      oscillator.start(startAt);
+      oscillator.stop(startAt + tone.duration + 0.01);
+    }
+    if (!recipe.noise) return;
+    const noise = recipe.noise;
+    this.filteredNoiseBurst(noise.volume, noise.duration, noise.filterType, noise.frequency, 0.9, noise.delay, 0.001);
   }
 
   sync(player: ShipState | undefined, active: boolean): void {

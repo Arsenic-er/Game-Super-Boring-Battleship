@@ -45,7 +45,7 @@ import { SHIP_CLASSES, SHIP_CLASS_IDS } from "../ships/classes";
 import type { ShipClassId } from "../ships/classes";
 import { getMainBattery } from "../ships/mainBatteries";
 import { getTorpedo } from "../ships/torpedoes";
-import type { GameSettings } from "../settings/gameSettings";
+import type { GameSettings, UiSoundStyle } from "../settings/gameSettings";
 import {
   FLEET_SIZES,
   fleetCompositionForSize,
@@ -118,6 +118,7 @@ export class GameMenus {
   private readonly aimValue: HTMLOutputElement;
   private readonly masterVolumeValue: HTMLOutputElement;
   private readonly qualityButtons: HTMLButtonElement[];
+  private readonly uiSoundButtons: HTMLButtonElement[];
   private readonly languageSelectors: HTMLSelectElement[];
   private readonly tabButtons: HTMLButtonElement[];
   private readonly panels: Record<StartTab, HTMLElement>;
@@ -251,7 +252,7 @@ export class GameMenus {
 
     const audioSettings = document.createElement("div");
     audioSettings.className = "settings-group audio-settings";
-    audioSettings.innerHTML = `<label>声音</label><div class="sensitivity-row"><span>主音量</span><input class="menu-master-volume" type="range" min="0" max="100" step="5" aria-label="主音量" /><output class="menu-master-volume-value">70%</output></div><div class="quality-options"><button class="quality-option menu-mute-audio" type="button" aria-pressed="false">静音：关</button></div>`;
+    audioSettings.innerHTML = `<label>声音</label><div class="sensitivity-row"><span>主音量</span><input class="menu-master-volume" type="range" min="0" max="100" step="5" aria-label="主音量" /><output class="menu-master-volume-value">70%</output></div><div class="quality-options"><button class="quality-option menu-mute-audio" type="button" aria-pressed="false">静音：关</button></div><label>界面音效</label><div class="quality-options ui-sound-options"><button class="quality-option" data-ui-sound-style="bridge" type="button"><span>舰桥继电器</span><small>试听</small></button><button class="quality-option" data-ui-sound-style="lever" type="button"><span>机械拨杆</span><small>试听</small></button><button class="quality-option" data-ui-sound-style="pixel" type="button"><span>像素电报码</span><small>试听</small></button></div>`;
     parent.querySelector(".settings-menu .menu-buttons")?.before(audioSettings);
 
     const find = <T extends Element>(selector: string): T => {
@@ -262,6 +263,7 @@ export class GameMenus {
     this.startOverlay = find(".start-menu"); this.pauseOverlay = find(".pause-menu"); this.settingsOverlay = find(".settings-menu");
     this.steering = find(".menu-steering"); this.aim = find(".menu-aim"); this.masterVolume = find(".menu-master-volume"); this.muteAudio = find(".menu-mute-audio"); this.steeringValue = find(".menu-steering-value"); this.aimValue = find(".menu-aim-value"); this.masterVolumeValue = find(".menu-master-volume-value");
     this.qualityButtons = Array.from(parent.querySelectorAll("[data-quality]")); this.tabButtons = Array.from(parent.querySelectorAll("[data-menu-tab]"));
+    this.uiSoundButtons = Array.from(parent.querySelectorAll("[data-ui-sound-style]"));
     this.languageSelectors = Array.from(parent.querySelectorAll(".menu-language"));
     this.panels = { mission: find(".mission-panel"), store: find(".store-panel"), dock: find(".dock-panel"), codex: find(".codex-panel") };
     this.commanderName = find(".commander-name"); this.credits = find(".profile-credits"); this.researchPoints = find(".profile-research"); this.supplyTokens = find(".profile-tokens"); this.materialSummary = find(".material-summary");
@@ -300,6 +302,11 @@ export class GameMenus {
     this.aim.addEventListener("input", () => { this.settings = { ...this.settings, aimSensitivity: Number(this.aim.value) / 100 }; this.emitSettings(); });
     this.masterVolume.addEventListener("input", () => { this.settings = { ...this.settings, masterVolume: Number(this.masterVolume.value) / 100 }; this.emitSettings(); });
     this.muteAudio.addEventListener("click", () => { this.settings = { ...this.settings, muted: !this.settings.muted }; this.emitSettings(); });
+    for (const button of this.uiSoundButtons) button.addEventListener("click", () => {
+      const style = button.dataset.uiSoundStyle as UiSoundStyle;
+      this.settings = { ...this.settings, uiSoundStyle: style };
+      this.emitSettings();
+    });
     for (const selector of this.languageSelectors) selector.addEventListener("change", () => {
       if (!isGameLocale(selector.value)) return;
       this.settings = { ...this.settings, locale: selector.value };
@@ -759,5 +766,5 @@ export class GameMenus {
   showStart(): void { this.pauseOverlay.hidden = true; this.settingsOverlay.hidden = true; this.startOverlay.hidden = false; this.pauseOpen = false; this.settingsOpen = false; this.closeBattleSetup(); this.setStartTab("mission"); }
   setQuality(quality: "low" | "medium"): void { for (const button of this.qualityButtons) button.classList.toggle("active", button.dataset.quality === quality); }
   private emitSettings(): void { this.updateSensitivityLabels(); this.applyLocale(); this.callbacks.onSettingsChange({ ...this.settings }); }
-  private updateSensitivityLabels(): void { this.steeringValue.textContent = `${Math.round(this.settings.steeringSensitivity * 100)}%`; this.aimValue.textContent = `${Math.round(this.settings.aimSensitivity * 100)}%`; this.masterVolumeValue.textContent = `${Math.round(this.settings.masterVolume * 100)}%`; this.muteAudio.textContent = this.settings.muted ? "静音：开" : "静音：关"; this.muteAudio.setAttribute("aria-pressed", String(this.settings.muted)); this.muteAudio.classList.toggle("active", this.settings.muted); }
+  private updateSensitivityLabels(): void { this.steeringValue.textContent = `${Math.round(this.settings.steeringSensitivity * 100)}%`; this.aimValue.textContent = `${Math.round(this.settings.aimSensitivity * 100)}%`; this.masterVolumeValue.textContent = `${Math.round(this.settings.masterVolume * 100)}%`; this.muteAudio.textContent = this.settings.muted ? "静音：开" : "静音：关"; this.muteAudio.setAttribute("aria-pressed", String(this.settings.muted)); this.muteAudio.classList.toggle("active", this.settings.muted); for (const button of this.uiSoundButtons) { const active = button.dataset.uiSoundStyle === this.settings.uiSoundStyle; button.classList.toggle("active", active); button.setAttribute("aria-pressed", String(active)); } }
 }

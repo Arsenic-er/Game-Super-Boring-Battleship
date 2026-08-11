@@ -1463,6 +1463,10 @@ body[data-locale="ru-RU"] .menu-tabs button { font-size: 11px; }
   cursor: pointer;
 }
 .quality-option.active { color: #e9f3ee; border-color: #8fc4ad; background: rgba(80, 139, 113, .24); }
+.ui-sound-options { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+.ui-sound-options .quality-option { display: grid; gap: 3px; place-content: center; padding: 7px 5px; }
+.ui-sound-options small { color: #789a9c; font-size: 8px; }
+.ui-sound-options .active small { color: #aed7c3; }
 
 .settings-heading {
   display: flex;

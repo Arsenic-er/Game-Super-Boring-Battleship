@@ -1,12 +1,18 @@
 import { DEFAULT_GAME_LOCALE, isGameLocale } from "../i18n/gameLocale";
 import type { GameLocale } from "../i18n/gameLocale";
 
+export const UI_SOUND_STYLES = ["bridge", "lever", "pixel"] as const;
+export type UiSoundStyle = typeof UI_SOUND_STYLES[number];
+export const isUiSoundStyle = (value: unknown): value is UiSoundStyle =>
+  typeof value === "string" && UI_SOUND_STYLES.includes(value as UiSoundStyle);
+
 export interface GameSettings {
   steeringSensitivity: number;
   aimSensitivity: number;
   masterVolume: number;
   muted: boolean;
   locale: GameLocale;
+  uiSoundStyle: UiSoundStyle;
 }
 
 export const DEFAULT_GAME_SETTINGS: GameSettings = {
@@ -15,6 +21,7 @@ export const DEFAULT_GAME_SETTINGS: GameSettings = {
   masterVolume: 0.7,
   muted: false,
   locale: DEFAULT_GAME_LOCALE,
+  uiSoundStyle: "bridge",
 };
 
 const STORAGE_KEY = "grey-sea-game-settings-v1";
@@ -41,12 +48,16 @@ export function normalizeGameSettings(value: unknown): GameSettings {
   const muted = typeof candidate.muted === "boolean"
     ? candidate.muted
     : DEFAULT_GAME_SETTINGS.muted;
+  const uiSoundStyle = isUiSoundStyle(candidate.uiSoundStyle)
+    ? candidate.uiSoundStyle
+    : DEFAULT_GAME_SETTINGS.uiSoundStyle;
   const locale = isGameLocale(candidate.locale)
     ? candidate.locale
     : DEFAULT_GAME_SETTINGS.locale;
   return {
     steeringSensitivity: clamp(steering, 0.35, 1),
     aimSensitivity: clamp(aim, 0.5, 2),
+    uiSoundStyle,
     masterVolume: clamp(masterVolume, 0, 1),
     muted,
     locale,

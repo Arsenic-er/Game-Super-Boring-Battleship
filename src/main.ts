@@ -165,7 +165,7 @@ const settings = loadGameSettings();
 function applyControlSettings(next: GameSettings): void {
   input.setSteeringSensitivity(next.steeringSensitivity);
   view.setAimSensitivity(next.aimSensitivity);
-  audio.configure(next.masterVolume, next.muted);
+  audio.configure(next.masterVolume, next.muted, next.uiSoundStyle);
   tacticalMap?.setLocale(next.locale);
   saveGameSettings(next);
 }
@@ -173,6 +173,14 @@ function applyControlSettings(next: GameSettings): void {
 applyControlSettings(settings);
 const gameShell = root.querySelector<HTMLElement>(".game-shell");
 if (!gameShell) throw new Error("Missing game shell");
+gameShell.addEventListener("click", (event) => {
+  const target = event.target;
+  if (!(target instanceof Element)) return;
+  const button = target.closest<HTMLButtonElement>("button");
+  if (!button || !gameShell.contains(button) || button.disabled) return;
+  audio.unlock();
+  audio.playUiCue();
+});
 const developerObserverHud = document.createElement("aside");
 developerObserverHud.className = "developer-observer-hud";
 developerObserverHud.hidden = true;

@@ -3,6 +3,7 @@ import {
   audioAngularDelta,
   combatShotSoundKind,
   mainGunLayerGains,
+  uiCueRecipe,
   mountTraversed,
   throttleOrderChanged,
 } from "../src/render/combatAudio";
@@ -77,5 +78,18 @@ describe("combat audio telemetry", () => {
     expect(mainGunLayerGains(Number.NaN).crack).toBe(0);
     expect(mainGunLayerGains(-1).pressure).toBe(0);
     expect(mainGunLayerGains(2).crack).toBeCloseTo(1.28);
+  });
+
+  it("keeps all three UI sound candidates distinct and safely bounded", () => {
+    const recipes = [uiCueRecipe("bridge"), uiCueRecipe("lever"), uiCueRecipe("pixel")];
+    expect(new Set(recipes.map((recipe) => JSON.stringify(recipe))).size).toBe(3);
+    expect(recipes[0].noise?.filterType).toBe("highpass");
+    expect(recipes[1].noise?.filterType).toBe("bandpass");
+    expect(recipes[2].noise).toBeUndefined();
+    for (const recipe of recipes) for (const tone of recipe.tones) {
+      expect(tone.startHz).toBeGreaterThan(0);
+      expect(tone.endHz).toBeGreaterThan(0);
+      expect(tone.duration).toBeGreaterThan(0);
+    }
   });
 });
