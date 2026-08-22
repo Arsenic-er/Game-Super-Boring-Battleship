@@ -1,106 +1,90 @@
 # Condensed Development Status
 
-Last updated: 2026-08-06
+Last updated: 2026-08-22
 
-This is the single condensed handoff record. Do not store sub-agent transcripts,
-temporary patches, or duplicate source trees in the project workspace.
+This is the current operational handoff. Product decisions are preserved in
+`CONVERSATION_SUMMARY.md`; milestone history is preserved in `DEVELOPMENT_LOG.md`.
+Do not store raw sub-agent transcripts, temporary patches, duplicate source trees,
+credentials, caches or generated builds in the repositories.
 
 ## Source of truth
 
 - Server: `ubuntu@150.65.181.202`
-- Project: `/home/ubuntu/battleship`
+- Game project: `/home/ubuntu/battleship`
+- Asset project: `/home/ubuntu/battleship-assets`
 - Branch: `main`
 - Game repository: `Arsenic-er/Game-Super-Boring-Battleship`
 - Asset repository: `Arsenic-er/Game-Super-Boring-Battleship-Assets`
-- Stack: TypeScript, Vite, Babylon.js, Vitest
+- Stack: TypeScript 7, Babylon.js 9, Vite 8, Vitest 4, Electron
 - Test URL: `http://127.0.0.1:4174/`
 - Tunnel: `ssh -N -L 4174:127.0.0.1:4174 ubuntu@150.65.181.202`
 
-The local Windows folder is not a canonical development copy. Use it only for
-server access, browser testing, and short-lived transfer staging.
+The Windows workspace is not a canonical development copy. Use it only for browser
+testing, server access and short-lived transfer staging.
 
 ## Product direction
 
-- World War II 3D naval combat with realism tempered for playable pacing.
-- Finish single-player human-versus-AI gameplay before LAN, multiplayer, or RL AI.
-- Follow World of Warships-style combat logic without monetized progression.
+- Lightweight World War II 3D naval combat with realistic foundations and compressed pacing.
+- Complete single-player human-versus-AI gameplay before LAN, multiplayer, submarines or RL AI.
+- World of Warships-style combat logic without paid monetization.
 - Players command aircraft groups but do not directly pilot aircraft.
-- Prefer low GPU cost. A Windows desktop build remains the release target.
-- Bold pixel UI. Supported locales: zh-Hans, zh-Hant, en, ja, es, de, ru.
+- Bold pixel UI; supported locales: zh-Hans, zh-Hant, en, ja, es, de and ru.
+- Portable Windows x64 build remains the release target.
 
-## Implemented baseline
+## Current archived baseline
 
-- Fifteen historical classes: five destroyers, five light cruisers, five battleships.
-- Main guns, torpedoes, secondaries, AA, depth charges, magazines, engines, steering.
-- Dockyard, armory, inventory, non-paid supply acquisition, and local profile saves.
-- Unique equipment cards and live 3D dock preview for selected equipment.
-- Exact identities for all eight equipment categories survive into battle state.
-- Combat models render per-model secondaries, AA, depth charges, and torpedo launchers.
-- HE/AP, citadels, saturation, reload, traverse, dispersion, armor zones, and modules.
-- Historical per-class torpedo tube and broadside counts drive physical salvo sizes.
-- Collision, percentage-based flooding/fire/repair, manpower, and recoverable-health bars.
-- Smoke, hydro, depth charges, torpedo aiming, and underwater torpedo wakes.
-- Dawn Atoll now hosts a declarative 3v3 mixed-fleet mission with zero-speed,
-  deep-water spawns separated by at least five kilometres.
-- Fleet AI uses role-specific engagement bands, formation anchors, visible-contact
-  target priority, low-health withdrawal, spotting, and lost-contact silhouettes.
-- Zoomable tactical map and RTS-style air guard, intercept, patrol, and strike orders.
-- Developer mode: free equipment, entity spawning, speed controls, module debug,
-  ship control transfer, aircraft spectating, omniscient views, and 16-ship /
-  24-squadron default performance guardrails.
-- Reduced combat HUD, hold-Tab details, naval instruments, and dedicated scope view.
-- Ocean, sky, volumetric smoke, fire, splashes, shell trails, and naval audio.
-- Living friendly ships render as distinct cyan markers on both tactical-map scales.
-- Clear-day battlefield rendering uses a seamless sunny sky, long-range atmospheric
-  perspective, brighter water and materials, and hull-length-aware camera distance
-  without adding GPU-heavy shadows or post-processing effects.
+- Version: `0.6.12`
+- Game commit before this documentation update: `96fcd51`
+- Asset baseline before this synchronization: `2d46fe1`, based on game commit `e4f51ab`.
+- Fifteen historical ship classes: five destroyers, five light cruisers, five battleships.
+- Main guns, torpedoes, automatic secondaries, AA, depth charges, magazines, engines and steering.
+- HE/AP, citadels, saturation, reload, traverse, dispersion, armour zones and module damage.
+- Collision, percentage fire/flood/repair, manpower and recoverable-health bars.
+- Smoke, hydro, depth charges, torpedo aiming and underwater wakes.
+- Dawn Atoll mixed-fleet scenarios with zero-speed, kilometre-scale deep-water spawns.
+- Role-aware two-sided fleet AI, sampled optical contacts and fading last-known silhouettes.
+- Zoomable tactical map and RTS air guard/intercept/patrol/strike orders.
+- Developer sandbox with free equipment, entity creation/removal, speed/module controls,
+  ship-control transfer, aircraft spectating and performance guardrails.
+- Armory/warehouse internal views, bounded inventory scrolling, automatic fitting,
+  minimum starter loadouts and locally saved ship builds.
+- Battle-preparation screen with fleet setup, saved player build and compact weather dropdown.
+- Clear/cloud/rain/fog/storm weather profiles and bright clear-day visual reference.
+- Seven-language interface and repository guides.
+- Three selectable synthesized UI sound styles plus naval combat/ambient audio.
 
 ## Quality baseline
 
-- Version: `0.6.8`
-- Tests: 371 passing; two offline balance reports intentionally skipped.
-- Production build: passing.
-- Worst auxiliary-equipment test fixture: no more than 70 meshes.
-- Fifty loadout rebuilds return mesh, node, and material counts to baseline.
-- Projectile reset and ordinary removal share one tested trail-disposal path,
-  including all torpedo wake planes.
-- The balance lab supports class-specific standard loadouts, paired mirrored spawns,
-  batch matrices, citadel telemetry, tracking telemetry, and repeatable CLI reports.
-- Latest feature set: 3v3 mission, role-aware fleet AI, lifecycle guardrails,
-  friendly tactical-map markers, and layered transient/pressure/echo main-gun audio.
+- Most recent complete verification before this archive: 386 tests passed and two offline
+  balance reports were intentionally skipped.
+- TypeScript/Vite production build passed.
+- Worst auxiliary-equipment fixture remains under the established 70-mesh guardrail.
+- Repeated loadout rebuild and projectile/torpedo-trail disposal paths have lifecycle tests.
+- Balance lab supports class loadouts, paired mirrors, batch matrices, citadel/contact telemetry
+  and repeatable CLI reports.
 
-## Balance calibration snapshot
+## Known limitations
 
-- First post-rebase matrix: 32 battles, four matchups, paired physical spawn mirrors.
-- Generic five-mount destroyer gun DPM is now about 3,000-3,663 instead of 14,595-21,774.
-- Secondary ranges are 2.4-2.95 km and remain below compatible main-battery ranges.
-- Native torpedo warning windows are roughly 10-12 seconds; hydro extends them to about 31-35 seconds.
-- Fletcher mirror gun hit rates were about 18-20%; torpedo damage share was about 13% combined.
-- Open findings: Kagero standard equipment is too weak against Fletcher, and larger paired samples
-  are required to separate controller-seed/team bias from map-spawn bias on heavy ships.
+- Procedural ship geometry is still visibly simplified; no external ship model has passed
+  the licence/provenance gate.
+- Dockyard preview does not yet show the complete installed external-quality loadout.
+- Terrain-cover behaviour, shared spotting delay and multi-objective fleet tactics need depth.
+- Kagero standard equipment is weak against Fletcher in the current balance snapshot.
+- Heavy-ship and mixed-fleet matrices need larger paired samples to separate seed/team/spawn bias.
+- A current Windows portable build has not yet been archived for `0.6.12`.
 
+## Resume priorities
 
-## Next priorities
-
-1. Capture 0.6.8 visual-regression baselines for menu, dock, combat, scope,
-   tactical map, and developer mode at 1440x900 and 1280x720.
-2. Establish external-model, hardpoint, material, and LOD pipelines with Fletcher,
-   Cleveland, and Yamato as the three benchmark ships.
-3. Run at least 100 paired seeds per mirror matchup; rebase Kagero versus Fletcher
-   and heavy-ship hit rates without hiding real mission timeouts.
-4. Calibrate the 3v3 mission toward a 6-9 minute median and at least 70% non-timeout endings.
-5. Show the complete installed external loadout in the dock, not only one candidate.
-6. Add terrain cover use, delayed shared spotting, and two-to-three objective scenarios.
-7. Package the Windows EXE only after the single-player gameplay loop is stable.
-
-## Key recent commits
-
-- `b606efb`: installed equipment rendered in combat.
-- `93f9941`: unique equipment art and live dock previews.
-- `0dd4742`: free developer equipment loadouts.
-- `a6b6f86`: developer spectating and two-sided fleet AI.
-- `de4614d`: playable Dawn Atoll battle map.
-- `8ae5a2e`: reduced combat HUD and hold-Tab details.
+1. Capture visual-regression baselines for menu, dock, setup, combat, scope, tactical map
+   and developer mode at 1440x900 and 1280x720.
+2. Establish external-model, hardpoint, material and LOD pipelines using Fletcher,
+   Cleveland and Yamato as benchmark ships.
+3. Run at least 100 paired seeds per important matchup and rebase Kagero/Fletcher plus
+   heavy-ship hit/timeout behaviour.
+4. Calibrate mixed-fleet missions toward a 6–9 minute median and at least 70% non-timeout endings.
+5. Show the complete installed loadout in dockyard preview.
+6. Add terrain-cover use, delayed shared spotting and two-to-three objective scenarios.
+7. Package Windows only after the gameplay loop and visual baseline stabilize.
 
 ## Delivery gate
 
@@ -109,4 +93,4 @@ server access, browser testing, and short-lived transfer staging.
 3. `npm run build`
 4. Confirm HTTP 200 from `http://127.0.0.1:4174/`.
 5. Commit as `Arsenic-er <302726993@qq.com>`.
-6. Push to GitHub only when the user explicitly requests it.
+6. Push only when the user explicitly requests it.

@@ -31,6 +31,14 @@ Future imported art must record its author, original URL, license and modificati
 - Purpose: nearest-sampled overcast sky-dome texture and layered horizon backdrop.
 - Prompt summary: a seamless cool maritime pixel sky with broad cloud layers and a pale cyan-gray horizon, without land, aircraft, text or third-party artwork.
 
+## `public/assets/textures/pixel-sky-clear-v1.png`
+
+- Origin: generated specifically for Grey Sea Action with OpenAI image generation.
+- Added: 2026-08-06.
+- Purpose: lightweight clear-day sky dome and maximum-visibility weather reference.
+- Prompt summary: a seamless bright maritime pixel sky with a blue upper atmosphere and pale horizon, without land, aircraft, text, logos or third-party artwork.
+- Third-party source files: none.
+
 ## `public/assets/textures/torpedo-wake-pixel.png`
 
 - Origin: generated specifically for Grey Sea Action with OpenAI image generation, then converted from a flat green chroma-key background to an alpha PNG and resized to 128 × 192 with nearest-neighbour sampling.
