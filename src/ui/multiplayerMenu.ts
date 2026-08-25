@@ -86,6 +86,11 @@ export const MULTIPLAYER_MENU_SOURCE_STRINGS = [
   "房主已断开 · 已返回主菜单。",
   "房间已关闭 · 已返回主菜单。",
   "多人联机已禁用开发者改动。",
+  "主机地址",
+  "复制地址",
+  "主机地址已复制。",
+  "无法复制主机地址。",
+  "返回联机大厅",
 ] as const;
 
 const GAME_PORT_SET = new Set<number>(LAN_GAME_PORTS);
@@ -225,6 +230,8 @@ export interface MultiplayerActionResult {
   errorSource?: string;
   lobby?: LobbySnapshot;
   localPeerId?: string;
+  hostAddress?: string;
+  port?: LanGamePort;
 }
 
 export interface MultiplayerSearchResult extends MultiplayerActionResult {
@@ -239,6 +246,7 @@ export interface MultiplayerMenuCallbacks {
   leaveRoom(): Promise<MultiplayerActionResult>;
   readyLobby(request: { ready: boolean; buildId: string }): Promise<MultiplayerActionResult>;
   startLobby(): Promise<MultiplayerActionResult>;
+  returnToLobby?(): Promise<MultiplayerActionResult>;
 }
 
 export class MultiplayerMenuController {
@@ -373,6 +381,8 @@ export class MultiplayerMenu {
 
   private manualPort = String(LAN_GAME_PORTS[0]);
 
+  private hostEndpoint?: { address: string; port: LanGamePort };
+
   constructor(
     private readonly root: HTMLElement,
     private readonly options: MultiplayerMenuOptions,
@@ -506,6 +516,12 @@ export class MultiplayerMenu {
         <div><p class="eyebrow">多人联机</p><h2>联机大厅</h2></div>
         <button class="text-button multiplayer-leave" type="button">离开房间</button>
       </div>
+      ${controls.localRole === "host" && this.hostEndpoint ? `
+        <div class="multiplayer-host-endpoint">
+          <span>主机地址</span>
+          <code>${escapeMarkup(this.hostEndpoint.address)}:${this.hostEndpoint.port}</code>
+          <button class="text-button multiplayer-copy-endpoint" type="button">复制地址</button>
+        </div>` : ""}
       <div class="multiplayer-lobby-grid">
         ${this.seatMarkup("房主席位", host, localBuildName)}
         ${this.seatMarkup("客席位", guest, localBuildName)}
@@ -596,6 +612,20 @@ export class MultiplayerMenu {
       void this.handleReadyChange((event.currentTarget as HTMLInputElement).checked);
     });
     this.root.querySelector<HTMLButtonElement>(".multiplayer-start")?.addEventListener("click", () => void this.handleStartLobby());
+    this.root.querySelector<HTMLButtonElement>(".multiplayer-copy-endpoint")?.addEventListener("click", () => {
+      void this.copyHostEndpoint();
+    });
+  }
+
+  private async copyHostEndpoint(): Promise<void> {
+    if (!this.hostEndpoint) return;
+    try {
+      await navigator.clipboard.writeText(`${this.hostEndpoint.address}:${this.hostEndpoint.port}`);
+      this.statusSource = "主机地址已复制。";
+    } catch {
+      this.statusSource = "无法复制主机地址。";
+    }
+    this.render();
   }
 
   private async handleCreateRoom(): Promise<void> {
@@ -605,6 +635,9 @@ export class MultiplayerMenu {
       ? this.statusSource
       : result.errorSource ?? "创建房间失败。";
     if (result.lobby && result.localPeerId) {
+      if (result.hostAddress && result.port) {
+        this.hostEndpoint = { address: result.hostAddress, port: result.port };
+      }
       this.controller.setLobby(result.lobby, result.localPeerId);
       this.screen = "lobby";
     }

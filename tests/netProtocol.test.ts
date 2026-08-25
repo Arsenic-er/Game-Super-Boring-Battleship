@@ -4,6 +4,7 @@ import {
   LAN_CONTENT_HASH,
   LAN_FINGERPRINT_SOURCE,
   LAN_GAME_VERSION,
+  computeLanContentHash,
 } from "../src/net/networkFingerprint";
 import {
   LAN_DISCOVERY_PORT,
@@ -441,5 +442,22 @@ describe("network fingerprint", () => {
     expect(LAN_FINGERPRINT_SOURCE).toContain("\"mainGun\":5");
     expect(LAN_FINGERPRINT_SOURCE).toContain("\"starterSlots\"");
     expect(LAN_FINGERPRINT_SOURCE).toContain("\"minimumSeaReadySlotCounts\"");
+    expect(LAN_FINGERPRINT_SOURCE).toContain("\"torpedoDefinitions\"");
+    expect(LAN_FINGERPRINT_SOURCE).toContain("\"mainGuns\"");
+    expect(LAN_FINGERPRINT_SOURCE).toContain("\"hulls\"");
+    expect(LAN_FINGERPRINT_SOURCE).toContain("\"shipArmorProfiles\"");
+    expect(LAN_FINGERPRINT_SOURCE).toContain("\"weatherPresets\"");
+    expect(LAN_FINGERPRINT_SOURCE).toContain("\"simulationConfig\"");
+    expect(LAN_FINGERPRINT_SOURCE).toContain("\"airOperationRules\"");
+    expect(LAN_FINGERPRINT_SOURCE).toContain("\"airFlightProfile\"");
+  });
+
+  it("changes when a single client-reconstructed combat catalog field changes", () => {
+    const catalog = JSON.parse(LAN_FINGERPRINT_SOURCE) as {
+      torpedoDefinitions: Array<{ damage: number }>;
+    };
+    catalog.torpedoDefinitions[0]!.damage += 1;
+
+    expect(computeLanContentHash(catalog)).not.toBe(LAN_CONTENT_HASH);
   });
 });

@@ -771,6 +771,12 @@ export class GameMenus {
     this.multiplayerMenu.setLobby(snapshot, localPeerId);
   }
 
+  showMultiplayerLobby(snapshot: import("../net/lobbyState").LobbySnapshot, localPeerId: string): void {
+    this.showStart();
+    this.multiplayerMenu.setLobby(snapshot, localPeerId);
+    this.openMultiplayerMenu();
+  }
+
   private setArmoryView(view: "catalog" | "inventory"): void {
     this.armoryView = view;
     for (const panel of this.startOverlay.querySelectorAll<HTMLElement>("[data-armory-view]")) {
@@ -801,6 +807,3 @@ export class GameMenus {
   private emitSettings(): void { this.updateSensitivityLabels(); this.applyLocale(); this.callbacks.onSettingsChange({ ...this.settings }); }
   private updateSensitivityLabels(): void { this.steeringValue.textContent = `${Math.round(this.settings.steeringSensitivity * 100)}%`; this.aimValue.textContent = `${Math.round(this.settings.aimSensitivity * 100)}%`; this.masterVolumeValue.textContent = `${Math.round(this.settings.masterVolume * 100)}%`; this.muteAudio.textContent = this.settings.muted ? "静音：开" : "静音：关"; this.muteAudio.setAttribute("aria-pressed", String(this.settings.muted)); this.muteAudio.classList.toggle("active", this.settings.muted); for (const button of this.uiSoundButtons) { const active = button.dataset.uiSoundStyle === this.settings.uiSoundStyle; button.classList.toggle("active", active); button.setAttribute("aria-pressed", String(active)); } }
 }
-
-
-

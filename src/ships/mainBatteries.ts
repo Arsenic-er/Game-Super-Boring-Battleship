@@ -98,7 +98,7 @@ interface HistoricalMainBatteryDefinition extends Omit<EffectiveMainBatteryDefin
   mounts: readonly MainBatteryMountDefinition[];
 }
 
-const HISTORICAL_MAIN_BATTERIES: Partial<Record<ShipClassId, HistoricalMainBatteryDefinition>> = {
+export const HISTORICAL_MAIN_BATTERIES: Partial<Record<ShipClassId, HistoricalMainBatteryDefinition>> = {
   cleveland: {
     id: "6in-47-mk16", name: "6-inch/47 Mk 16 三联装主炮", shortLabel: "4×3 152 mm Mk 16", caliberMm: 152,
     damagePerShell: 38.75, reloadSeconds: 6.8, traverseDegreesPerSecond: 10, dispersionMultiplier: 0.94,

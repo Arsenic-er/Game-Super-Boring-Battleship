@@ -15,7 +15,7 @@ class FakeLanBridge implements BattleshipLanApi {
   private listener?: (event: LanBridgeEvent) => void;
   readonly sent: Array<{ message: LanMessage; target?: LanSendTarget }> = [];
   capabilities = vi.fn(async () => ({ desktop: true as const, canHost: true as const, canDiscover: true as const }));
-  createRoom = vi.fn(async () => ({ port: 47778 }));
+  createRoom = vi.fn(async () => ({ port: 47779, address: "192.168.1.88" }));
   updateAnnouncement = vi.fn(async (_announcementJson: string) => {});
   closeRoom = vi.fn(async () => {});
   startDiscovery = vi.fn(async () => {});
@@ -77,7 +77,111 @@ afterEach(() => {
   vi.unstubAllGlobals();
 });
 
+async function createPostMatchHostFixture(): Promise<{
+  bridge: FakeLanBridge;
+  runtime: LanMultiplayerRuntime;
+  roomId: string;
+  lobbyUpdates: ReturnType<typeof vi.fn>;
+  lobbyReturned: ReturnType<typeof vi.fn>;
+}> {
+  const profile = createDefaultLocalProfile();
+  const build = profile.savedShipBuilds[0]!;
+  const buildPayload = {
+    buildId: build.id, buildName: build.name, shipClassId: build.shipClassId, slots: structuredClone(build.slots),
+  };
+  const bridge = new FakeLanBridge();
+  const lobbyUpdates = vi.fn();
+  const lobbyReturned = vi.fn();
+  const runtime = new LanMultiplayerRuntime(bridge, profile, {
+    onHostMatchStarted: vi.fn(), onClientMatchStarted: vi.fn(), onLobbyUpdated: lobbyUpdates,
+    onLobbyReturned: lobbyReturned,
+    onReturnToMenu: vi.fn(), onNotice: vi.fn(), now: () => 1_000,
+  });
+  await runtime.callbacks.createRoom({ roomName: "Post-match fixture", buildId: build.id });
+  const roomId = parseLanMessage(JSON.parse(String(bridge.updateAnnouncement.mock.calls.at(-1)?.[0])))!.roomId;
+  bridge.emit({ type: "connected", role: "host", connectionId: "connection-post-match" });
+  bridge.emit({
+    type: "message", role: "host", connectionId: "connection-post-match",
+    messageJson: encodeLanMessage(envelope("join-request", {
+      peerId: "peer-post-match", commanderName: "Post-match guest",
+      expectedGameVersion: LAN_GAME_VERSION, expectedContentHash: LAN_CONTENT_HASH, build: buildPayload,
+    }, { roomId, sequence: 1 })),
+  });
+  await vi.waitFor(() => expect(runtime.currentGuestConnectionId()).toBe("connection-post-match"));
+  await runtime.callbacks.readyLobby({ ready: true, buildId: build.id });
+  bridge.emit({
+    type: "message", role: "host", connectionId: "connection-post-match",
+    messageJson: encodeLanMessage(envelope("ready-request", {
+      peerId: "peer-post-match", ready: true, build: buildPayload,
+    }, { roomId, sequence: 2 })),
+  });
+  await vi.waitFor(() => expect(
+    (lobbyUpdates.mock.calls.at(-1)?.[0] as LobbySnapshotPayload).players.every(({ ready }) => ready),
+  ).toBe(true));
+  await runtime.callbacks.startLobby();
+  for (const enemy of runtime.hostSession!.state.ships.filter(({ team }) => team === "enemy")) enemy.hull = 0;
+  const output = runtime.hostSession!.step({
+    throttle: 0, rudder: 0, aimPoint: { x: 0, y: 0, z: 1_000 }, fire: false,
+  });
+  await runtime.publishHostStep(output);
+  expect((lobbyUpdates.mock.calls.at(-1)?.[0] as LobbySnapshotPayload).phase).toBe("post-match");
+  return { bridge, runtime, roomId, lobbyUpdates, lobbyReturned };
+}
+
 describe("LanMultiplayerRuntime receive validation", () => {
+  it("returns the bridge-selected host address and fallback port to the lobby UI", async () => {
+    const profile = createDefaultLocalProfile();
+    const bridge = new FakeLanBridge();
+    const runtime = new LanMultiplayerRuntime(bridge, profile, {
+      onHostMatchStarted: vi.fn(), onClientMatchStarted: vi.fn(), onLobbyUpdated: vi.fn(),
+      onReturnToMenu: vi.fn(), onNotice: vi.fn(), now: () => 1_000,
+    });
+
+    await expect(runtime.callbacks.createRoom({
+      roomName: "Addressed room",
+      buildId: profile.savedShipBuilds[0]!.id,
+    })).resolves.toMatchObject({
+      ok: true,
+      hostAddress: "192.168.1.88",
+      port: 47779,
+    });
+    await runtime.dispose();
+  });
+
+  it.each([
+    { reason: "version-mismatch" as const, gameVersion: "0.6.0", contentHash: LAN_CONTENT_HASH },
+    { reason: "content-mismatch" as const, gameVersion: LAN_GAME_VERSION, contentHash: "lan-1-stale" },
+  ])("sends an exact $reason rejection to a pending join before closing it", async ({ reason, gameVersion, contentHash }) => {
+    const profile = createDefaultLocalProfile();
+    const build = profile.savedShipBuilds[0]!;
+    const bridge = new FakeLanBridge();
+    const runtime = new LanMultiplayerRuntime(bridge, profile, {
+      onHostMatchStarted: vi.fn(), onClientMatchStarted: vi.fn(), onLobbyUpdated: vi.fn(),
+      onReturnToMenu: vi.fn(), onNotice: vi.fn(), now: () => 1_000,
+    });
+    await runtime.callbacks.createRoom({ roomName: "Mismatch room", buildId: build.id });
+    const roomId = parseLanMessage(JSON.parse(String(bridge.updateAnnouncement.mock.calls.at(-1)?.[0])))!.roomId;
+    bridge.emit({ type: "connected", role: "host", connectionId: `connection-${reason}` });
+    bridge.emit({
+      type: "message", role: "host", connectionId: `connection-${reason}`,
+      messageJson: encodeLanMessage(envelope("join-request", {
+        peerId: `peer-${reason}`,
+        commanderName: "Mismatched guest",
+        expectedGameVersion: gameVersion,
+        expectedContentHash: contentHash,
+        build: { buildId: build.id, buildName: build.name, shipClassId: build.shipClassId, slots: structuredClone(build.slots) },
+      }, { roomId, sequence: 1, gameVersion, contentHash })),
+    });
+
+    await vi.waitFor(() => expect(bridge.sent.some(({ message, target }) => (
+      message.type === "join-rejected"
+      && message.payload.reason === reason
+      && target?.connectionId === `connection-${reason}`
+    ))).toBe(true));
+    await vi.waitFor(() => expect(bridge.closeConnection).toHaveBeenCalledWith(`connection-${reason}`, reason));
+    await runtime.dispose();
+  });
+
   it("rolls back an occupied guest seat when the socket disconnects before join acceptance is sent", async () => {
     const profile = createDefaultLocalProfile();
     const build = profile.savedShipBuilds[0]!;
@@ -507,6 +611,126 @@ describe("LanMultiplayerRuntime receive validation", () => {
     await flush();
     expect(runtime.currentGuestPeerId()).toBeUndefined();
     expect(bridge.closeConnection).toHaveBeenCalledTimes(1);
+    await runtime.dispose();
+  });
+
+  it("sends the terminal snapshot before post-match and returns both connected peers to a fresh lobby", async () => {
+    const profile = createDefaultLocalProfile();
+    const build = profile.savedShipBuilds[0]!;
+    const buildPayload = {
+      buildId: build.id, buildName: build.name, shipClassId: build.shipClassId, slots: structuredClone(build.slots),
+    };
+    const bridge = new FakeLanBridge();
+    const lobbyUpdates = vi.fn();
+    const lobbyReturned = vi.fn();
+    const runtime = new LanMultiplayerRuntime(bridge, profile, {
+      onHostMatchStarted: vi.fn(), onClientMatchStarted: vi.fn(), onLobbyUpdated: lobbyUpdates,
+      onLobbyReturned: lobbyReturned,
+      onReturnToMenu: vi.fn(), onNotice: vi.fn(), now: () => 1_000,
+    });
+    await runtime.callbacks.createRoom({ roomName: "Persistent room", buildId: build.id });
+    const roomId = parseLanMessage(JSON.parse(String(bridge.updateAnnouncement.mock.calls.at(-1)?.[0])))!.roomId;
+    bridge.emit({ type: "connected", role: "host", connectionId: "connection-persistent" });
+    bridge.emit({
+      type: "message", role: "host", connectionId: "connection-persistent",
+      messageJson: encodeLanMessage(envelope("join-request", {
+        peerId: "peer-persistent", commanderName: "Persistent guest",
+        expectedGameVersion: LAN_GAME_VERSION, expectedContentHash: LAN_CONTENT_HASH, build: buildPayload,
+      }, { roomId, sequence: 1 })),
+    });
+    await vi.waitFor(() => expect(runtime.currentGuestConnectionId()).toBe("connection-persistent"));
+    await runtime.callbacks.readyLobby({ ready: true, buildId: build.id });
+    bridge.emit({
+      type: "message", role: "host", connectionId: "connection-persistent",
+      messageJson: encodeLanMessage(envelope("ready-request", {
+        peerId: "peer-persistent", ready: true, build: buildPayload,
+      }, { roomId, sequence: 2 })),
+    });
+    await vi.waitFor(() => expect(
+      (lobbyUpdates.mock.calls.at(-1)?.[0] as LobbySnapshotPayload).players.every(({ ready }) => ready),
+    ).toBe(true));
+    await expect(runtime.callbacks.startLobby()).resolves.toMatchObject({ ok: true });
+    const session = runtime.hostSession!;
+    for (const enemy of session.state.ships.filter(({ team }) => team === "enemy")) enemy.hull = 0;
+    const output = session.step({ throttle: 0, rudder: 0, aimPoint: { x: 0, y: 0, z: 1_000 }, fire: false });
+
+    await runtime.publishHostStep(output);
+
+    const terminalIndex = bridge.sent.findIndex(({ message }) => (
+      message.type === "player-snapshot" && message.payload.status === "player-won"
+    ));
+    const postMatchIndex = bridge.sent.findIndex(({ message }) => (
+      message.type === "lobby-update" && message.payload.lobby.phase === "post-match"
+    ));
+    expect(terminalIndex).toBeGreaterThanOrEqual(0);
+    expect(postMatchIndex).toBeGreaterThan(terminalIndex);
+    expect(runtime.currentGuestConnectionId()).toBe("connection-persistent");
+    expect(bridge.closeConnection).not.toHaveBeenCalled();
+
+    await expect(runtime.callbacks.returnToLobby!()).resolves.toMatchObject({
+      ok: true,
+      lobby: { phase: "lobby" },
+    });
+    expect(runtime.role).toBe("none");
+    expect(runtime.hostSession).toBeUndefined();
+    expect(runtime.currentGuestConnectionId()).toBe("connection-persistent");
+    expect(bridge.disconnect).not.toHaveBeenCalled();
+    expect(bridge.closeRoom).not.toHaveBeenCalled();
+    expect(lobbyReturned).toHaveBeenCalledWith(expect.objectContaining({ phase: "lobby" }), runtime.localPeerId);
+    expect((lobbyUpdates.mock.calls.at(-1)?.[0] as LobbySnapshotPayload).players.every(({ ready }) => !ready)).toBe(true);
+
+    const returnedMessagesBeforeLateGuest = bridge.sent.filter(({ message }) => message.type === "return-to-lobby").length;
+    bridge.emit({
+      type: "message", role: "host", connectionId: "connection-persistent",
+      messageJson: encodeLanMessage(envelope("return-to-lobby", {
+        reason: "match-ended",
+      }, { roomId, sequence: 3 })),
+    });
+    await vi.waitFor(() => expect(
+      bridge.sent.filter(({ message }) => message.type === "return-to-lobby").length,
+    ).toBeGreaterThan(returnedMessagesBeforeLateGuest));
+    expect(runtime.currentGuestConnectionId()).toBe("connection-persistent");
+    expect(bridge.closeConnection).not.toHaveBeenCalled();
+    await runtime.dispose();
+  });
+
+  it("commits a guest-first post-match return even when the reply send fails", async () => {
+    const { bridge, runtime, roomId, lobbyReturned } = await createPostMatchHostFixture();
+    bridge.send.mockRejectedValueOnce(new Error("guest-disappeared-during-reply"));
+
+    bridge.emit({
+      type: "message", role: "host", connectionId: "connection-post-match",
+      messageJson: encodeLanMessage(envelope("return-to-lobby", { reason: "match-ended" }, {
+        roomId, sequence: 3,
+      })),
+    });
+
+    await vi.waitFor(() => expect(lobbyReturned).toHaveBeenCalledWith(
+      expect.objectContaining({ phase: "lobby" }), runtime.localPeerId,
+    ));
+    expect(runtime.role).toBe("none");
+    expect(runtime.hostSession).toBeUndefined();
+    expect(runtime.currentGuestConnectionId()).toBe("connection-post-match");
+    expect(bridge.closeConnection).not.toHaveBeenCalled();
+    expect(bridge.closeRoom).not.toHaveBeenCalled();
+    await runtime.dispose();
+  });
+
+  it("removes a post-match disconnected guest and returns the host to a single-seat lobby", async () => {
+    const { bridge, runtime, lobbyUpdates, lobbyReturned } = await createPostMatchHostFixture();
+
+    bridge.emit({ type: "disconnected", role: "host", connectionId: "connection-post-match", hadError: false });
+
+    await vi.waitFor(() => expect(lobbyReturned).toHaveBeenCalledWith(
+      expect.objectContaining({ phase: "lobby", players: [expect.objectContaining({ role: "host" })] }),
+      runtime.localPeerId,
+    ));
+    const finalLobby = lobbyUpdates.mock.calls.at(-1)?.[0] as LobbySnapshotPayload;
+    expect(finalLobby.players).toHaveLength(1);
+    expect(runtime.currentGuestPeerId()).toBeUndefined();
+    expect(runtime.currentGuestConnectionId()).toBeUndefined();
+    expect(runtime.role).toBe("none");
+    expect(bridge.closeRoom).not.toHaveBeenCalled();
     await runtime.dispose();
   });
 

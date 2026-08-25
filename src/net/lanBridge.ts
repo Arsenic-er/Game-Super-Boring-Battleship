@@ -27,7 +27,7 @@ export type LanBridgeEvent =
 
 export interface BattleshipLanApi {
   capabilities(): Promise<LanCapabilities>;
-  createRoom(request: { announcementJson: string }): Promise<{ port: number }>;
+  createRoom(request: { announcementJson: string }): Promise<{ port: number; address: string }>;
   updateAnnouncement(announcementJson: string): Promise<void>;
   closeRoom(): Promise<void>;
   startDiscovery(): Promise<void>;
@@ -73,6 +73,6 @@ export function createLanBridgeClient(): BattleshipLanApi {
     acceptConnection: async (connectionId) => requireNativeLanBridge().acceptConnection(connectionId),
     closeConnection: async (connectionId, reason) => requireNativeLanBridge().closeConnection(connectionId, reason),
     send: async (messageJson, target) => requireNativeLanBridge().send(messageJson, target),
-    subscribe: (listener) => requireNativeLanBridge().subscribe(listener),
+    subscribe: (listener) => getNativeLanBridge()?.subscribe(listener) ?? (() => undefined),
   };
 }

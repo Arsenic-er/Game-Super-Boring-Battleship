@@ -1,5 +1,6 @@
 const dgram = require("node:dgram");
 const { EventEmitter } = require("node:events");
+const os = require("node:os");
 const { WebSocket, WebSocketServer } = require("ws");
 
 const LAN_PROTOCOL_VERSION = 1;
@@ -66,6 +67,17 @@ const STATEFUL_CHANNELS = Object.freeze([
   CHANNELS.closeConnection,
   CHANNELS.send,
 ]);
+
+function selectLanHostAddress(networkInterfaces = os.networkInterfaces()) {
+  const candidates = Object.values(networkInterfaces).flatMap((entries) => entries ?? [])
+    .filter((entry) => (entry.family === "IPv4" || entry.family === 4) && !entry.internal);
+  const privateAddress = candidates.find(({ address }) => (
+    /^10\./.test(address)
+    || /^192\.168\./.test(address)
+    || /^172\.(?:1[6-9]|2\d|3[01])\./.test(address)
+  ));
+  return privateAddress?.address ?? candidates[0]?.address ?? "127.0.0.1";
+}
 
 function isRecord(value) {
   return typeof value === "object" && value !== null && !Array.isArray(value);
@@ -321,6 +333,7 @@ class LanBridge {
     this.WebSocketClass = options.WebSocketClass ?? WebSocket;
     this.setIntervalFn = options.setInterval ?? setInterval;
     this.clearIntervalFn = options.clearInterval ?? clearInterval;
+    this.getHostAddress = options.getHostAddress ?? selectLanHostAddress;
 
     this.roomServer = undefined;
     this.roomPort = undefined;
@@ -368,7 +381,7 @@ class LanBridge {
 
     if (this.roomServer && this.roomPort) {
       if (this.roomAnnouncementJson !== announcementJson) await this.updateAnnouncement(announcementJson);
-      return { port: this.roomPort };
+      return { port: this.roomPort, address: this.getHostAddress() };
     }
 
     await this.ensureHostDiscoverySocket();
@@ -382,7 +395,7 @@ class LanBridge {
         this.roomAnnouncementJson = normalizeDiscoveryAnnouncementJson(announcementJson, port);
         this.startAnnouncementTimer();
         await this.broadcastAnnouncement();
-        return { port };
+        return { port, address: this.getHostAddress() };
       } catch (error) {
         if (error && error.code === "EADDRINUSE") {
           lastError = error;
@@ -876,5 +889,6 @@ module.exports = {
   createLanIpcController,
   normalizeDiscoveryAnnouncementJson,
   parseDiscoveryAnnouncementJson,
+  selectLanHostAddress,
   validateLanWebSocketUrl,
 };

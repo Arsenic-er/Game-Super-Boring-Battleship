@@ -457,6 +457,11 @@ export class Hud {
     this.salvoRibbonVisuals.clear();
   }
 
+  setResultReturnLabel(label: string): void {
+    const button = this.result.querySelector<HTMLButtonElement>("#return-main-menu");
+    if (button) button.textContent = label;
+  }
+
   setWeaponSelectHandler(handler: (slot: WeaponSlot) => void): void {
     this.weaponSelectHandler = handler;
   }

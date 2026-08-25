@@ -4,7 +4,7 @@ import { savedBuildReadiness } from "../profile/savedBuilds";
 import type { MultiplayerActionResult, MultiplayerMenuCallbacks, MultiplayerSearchResult } from "../ui/multiplayerMenu";
 import type { BattleshipLanApi, LanBridgeEvent, LanSendTarget } from "./lanBridge";
 import { ClientBattleSession } from "./clientBattleSession";
-import { HostBattleSession } from "./hostBattleSession";
+import { HostBattleSession, type HostStepOutput } from "./hostBattleSession";
 import { HostLobby, type LobbySnapshot } from "./lobbyState";
 import { LAN_CONTENT_HASH, LAN_GAME_VERSION } from "./networkFingerprint";
 import {
@@ -44,13 +44,20 @@ export interface LanMultiplayerRuntimeHooks {
   onReturnToMenu: (notice: string) => void;
   onNotice: (notice: string) => void;
   onLobbyUpdated?: (snapshot: LobbySnapshot, localPeerId: string) => void;
+  onLobbyReturned?: (snapshot: LobbySnapshot, localPeerId: string) => void;
   now?: () => number;
 }
 
 function cloneLobby(snapshot: ReturnType<HostLobby["snapshot"]> | LobbySnapshotPayload): LobbySnapshot {
   const cloned = structuredClone(snapshot) as LobbySnapshotPayload;
   return {
-    phase: cloned.phase === "in-match" ? "in-match" : cloned.phase === "closing" ? "closing" : "lobby",
+    phase: cloned.phase === "in-match"
+      ? "in-match"
+      : cloned.phase === "post-match"
+        ? "post-match"
+        : cloned.phase === "closing"
+          ? "closing"
+          : "lobby",
     roomName: cloned.roomName,
     hostPeerId: cloned.hostPeerId,
     players: cloned.players.map((player) => ({ ...player })),
@@ -154,6 +161,7 @@ export class LanMultiplayerRuntime {
       leaveRoom: async () => await this.leaveRoom(),
       readyLobby: async ({ ready, buildId }) => await this.readyLobby(ready, buildId),
       startLobby: async () => await this.startLobby(),
+      returnToLobby: async () => await this.returnToLobby(),
     };
   }
 
@@ -202,6 +210,33 @@ export class LanMultiplayerRuntime {
     return this.guestConnectionId;
   }
 
+  async publishHostStep(output: HostStepOutput): Promise<void> {
+    if (!this.hostSessionValue || this.roleValue !== "host") return;
+    const guestPeerId = this.currentGuestPeerId();
+    const guestSnapshot = guestPeerId ? output.snapshots.get(guestPeerId) : undefined;
+    if (guestSnapshot && this.guestConnectionId) {
+      try {
+        await this.send(
+          this.nextEnvelope("player-snapshot", guestSnapshot),
+          { connectionId: this.guestConnectionId },
+        );
+      } catch {
+        // Transport errors are reported by the bridge; local result progression must continue.
+      }
+    }
+    if (this.hostSessionValue.state.status === "running" || this.lobby?.phase !== "in-match") return;
+    const finished = this.hostLobby?.finishMatch();
+    if (!finished?.ok) return;
+    this.lobby = cloneLobby(finished.lobby);
+    this.publishLobby();
+    try {
+      await this.refreshAnnouncement();
+    } catch {
+      // The room state remains authoritative even if the next discovery refresh fails.
+    }
+    await this.broadcastLobbyUpdate();
+  }
+
   private readyBuild(buildId: string | null): SavedShipBuild | undefined {
     if (!buildId) return undefined;
     const build = this.profile.savedShipBuilds.find((entry) => entry.id === buildId);
@@ -236,7 +271,7 @@ export class LanMultiplayerRuntime {
       port: this.roomPort,
       playerCount: snapshot.players.length === 2 ? 2 : 1,
       capacity: 2,
-      phase: this.hostSessionValue ? "in-match" : snapshot.phase,
+      phase: snapshot.phase,
     }, this.roomId);
   }
 
@@ -328,7 +363,13 @@ export class LanMultiplayerRuntime {
       this.roomPort = created.port as LanGamePort;
       await this.refreshAnnouncement();
       this.publishLobby();
-      return { ok: true, lobby: this.lobby, localPeerId: this.peerId };
+      return {
+        ok: true,
+        lobby: this.lobby,
+        localPeerId: this.peerId,
+        hostAddress: created.address,
+        port: this.roomPort,
+      };
     } catch (error) {
       await this.cleanupTransport();
       return { ok: false, errorSource: operationErrorSource(error) };
@@ -406,6 +447,50 @@ export class LanMultiplayerRuntime {
     }
     await this.cleanupTransport();
     return { ok: true };
+  }
+
+  private async returnToLobby(): Promise<MultiplayerActionResult> {
+    if (this.hostLobby) {
+      if (this.lobby?.phase === "lobby" && !this.hostSessionValue) {
+        this.hooks.onLobbyReturned?.(cloneLobby(this.lobby), this.peerId);
+        return { ok: true, lobby: this.lobby, localPeerId: this.peerId };
+      }
+      const returned = this.hostLobby.returnToLobby();
+      if (!returned.ok) return { ok: false, errorSource: "战斗尚未结束。" };
+      this.lobby = cloneLobby(returned.lobby);
+      this.hostSessionValue = undefined;
+      this.clientSessionValue = undefined;
+      this.roleValue = "none";
+      const guestTarget = this.guestConnectionId ? { connectionId: this.guestConnectionId } : undefined;
+      if (this.guestConnectionId) {
+        try {
+          await this.send(this.nextEnvelope("return-to-lobby", {
+            reason: "match-ended",
+            lobby: lobbyPayload(this.lobby),
+          }), guestTarget);
+        } catch {
+          // A lost guest cannot prevent the host from returning to its local lobby.
+        }
+      }
+      this.publishLobby();
+      try {
+        await this.refreshAnnouncement();
+      } catch {
+        // The lobby remains usable locally; the next update can refresh discovery.
+      }
+      await this.broadcastLobbyUpdate();
+      this.hooks.onLobbyReturned?.(cloneLobby(this.lobby), this.peerId);
+      return { ok: true, lobby: this.lobby, localPeerId: this.peerId };
+    }
+    if (this.clientSessionValue && this.lobby?.phase === "post-match") {
+      try {
+        await this.send(this.nextEnvelope("return-to-lobby", { reason: "match-ended" }));
+        return { ok: true, lobby: this.lobby, localPeerId: this.peerId };
+      } catch (error) {
+        return { ok: false, errorSource: operationErrorSource(error) };
+      }
+    }
+    return { ok: false, errorSource: "战斗尚未结束。" };
   }
 
   private async readyLobby(ready: boolean, buildId: string): Promise<MultiplayerActionResult> {
@@ -555,9 +640,26 @@ export class LanMultiplayerRuntime {
       }
       if (event.role === "host" && event.connectionId && disconnectedActiveGuest) {
         this.guestConnectionId = undefined;
-        if (this.hostSessionValue) {
+        if (this.hostSessionValue && this.hostSessionValue.state.status === "running"
+          && this.lobby?.phase === "in-match") {
           this.hostSessionValue.disconnectGuest(this.now());
           this.hooks.onNotice("客席已断开 · AI 已接管。");
+          return;
+        }
+        if (this.hostSessionValue && this.hostLobby && disconnectedGuestPeerId) {
+          if (this.lobby?.phase === "in-match") this.hostLobby.finishMatch();
+          this.hostLobby.leave(disconnectedGuestPeerId);
+          this.lobby = cloneLobby(this.hostLobby.snapshot());
+          this.hostSessionValue = undefined;
+          this.clientSessionValue = undefined;
+          this.roleValue = "none";
+          this.publishLobby();
+          try {
+            await this.refreshAnnouncement();
+          } catch {
+            // The host can still use the local lobby if discovery refresh fails.
+          }
+          this.hooks.onLobbyReturned?.(cloneLobby(this.lobby), this.peerId);
           return;
         }
         if (this.hostLobby && disconnectedGuestPeerId) {
@@ -599,6 +701,27 @@ export class LanMultiplayerRuntime {
     message: LanMessage,
     event: Extract<LanBridgeEvent, { type: "message" }>,
   ): Promise<boolean> {
+    if (event.role === "host" && event.connectionId
+      && this.pendingHostConnections.has(event.connectionId)
+      && message.type === "join-request") {
+      const mismatchReason = message.gameVersion !== LAN_GAME_VERSION
+        || message.payload.expectedGameVersion !== LAN_GAME_VERSION
+        ? "version-mismatch"
+        : message.contentHash !== LAN_CONTENT_HASH
+          || message.payload.expectedContentHash !== LAN_CONTENT_HASH
+          ? "content-mismatch"
+          : undefined;
+      if (mismatchReason) {
+        try {
+          await this.send(this.nextEnvelope("join-rejected", { reason: mismatchReason }), {
+            connectionId: event.connectionId,
+          });
+        } finally {
+          await this.closeHostConnection(event.connectionId, mismatchReason);
+        }
+        return false;
+      }
+    }
     if (message.protocolVersion !== LAN_PROTOCOL_VERSION
       || message.gameVersion !== LAN_GAME_VERSION
       || message.contentHash !== LAN_CONTENT_HASH) {
@@ -780,6 +903,43 @@ export class LanMultiplayerRuntime {
       }
       case "return-to-lobby": {
         if (!guestPeerId || !connectionId) return false;
+        if (message.payload.reason === "match-ended" && this.lobby?.phase === "lobby"
+          && !this.hostSessionValue) {
+          try {
+            await this.send(this.nextEnvelope("return-to-lobby", {
+              reason: "match-ended",
+              lobby: lobbyPayload(this.lobby),
+            }), { connectionId });
+          } catch {
+            // The connection event will clean up a guest that disappeared during the reply.
+          }
+          return true;
+        }
+        if (message.payload.reason === "match-ended" && this.lobby?.phase === "post-match") {
+          const returned = this.hostLobby?.returnToLobby();
+          if (!returned?.ok) return false;
+          this.lobby = cloneLobby(returned.lobby);
+          this.hostSessionValue = undefined;
+          this.clientSessionValue = undefined;
+          this.roleValue = "none";
+          try {
+            await this.send(this.nextEnvelope("return-to-lobby", {
+              reason: "match-ended",
+              lobby: lobbyPayload(this.lobby),
+            }), { connectionId });
+          } catch {
+            // The host still returns locally if the guest vanishes during the reply.
+          }
+          this.publishLobby();
+          try {
+            await this.refreshAnnouncement();
+          } catch {
+            // Discovery refresh is best-effort after the local state is committed.
+          }
+          await this.broadcastLobbyUpdate();
+          this.hooks.onLobbyReturned?.(cloneLobby(this.lobby), this.peerId);
+          return true;
+        }
         this.guestConnectionId = undefined;
         await this.closeHostConnection(connectionId, "guest-left");
         if (this.hostSessionValue) {
@@ -819,7 +979,7 @@ export class LanMultiplayerRuntime {
         return;
       }
       case "lobby-update": {
-        if (!this.guestJoinAccepted || this.clientSessionValue
+        if (!this.guestJoinAccepted || (this.clientSessionValue && message.payload.lobby.phase !== "post-match")
           || message.payload.lobby.hostPeerId !== this.lobby?.hostPeerId
           || !message.payload.lobby.players.some((player) => player.peerId === this.peerId && player.role === "guest")) return;
         this.lobby = cloneLobby(message.payload.lobby);
@@ -853,6 +1013,14 @@ export class LanMultiplayerRuntime {
       }
       case "return-to-lobby": {
         this.lobby = message.payload.lobby ? cloneLobby(message.payload.lobby) : this.lobby;
+        if (message.payload.reason === "match-ended" && this.lobby?.phase === "lobby") {
+          this.hostSessionValue = undefined;
+          this.clientSessionValue = undefined;
+          this.roleValue = "none";
+          this.publishLobby();
+          this.hooks.onLobbyReturned?.(cloneLobby(this.lobby), this.peerId);
+          return;
+        }
         await this.cleanupTransport();
         this.hooks.onReturnToMenu("房间已关闭 · 已返回主菜单。");
         return;

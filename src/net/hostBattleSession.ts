@@ -7,7 +7,7 @@ import { LocalBattleSession } from "../session/localBattleSession";
 import type { FleetSize } from "../sim/battleSetup";
 import { getShipClass } from "../ships/classes";
 import { battleLoadoutFromSlots } from "../profile/localProfile";
-import { normalizeLanBuildDescriptor } from "./lobbyState";
+import { isLanBuildSeaReady, normalizeLanBuildDescriptor } from "./lobbyState";
 import type { InputFramePayload, LanBuildDescriptor, PlayerSnapshotPayload } from "./protocol";
 import { validateRemoteCommand } from "./protocol";
 import { replicationViewFor } from "./replicationView";
@@ -103,7 +103,9 @@ function normalizeConfig(config: HostBattleSessionConfig): NormalizedHostConfig 
   if (hostPeerId === guestPeerId) throw new Error("duplicate-peer-id");
   const hostBuild = normalizeLanBuildDescriptor(config.hostBuild);
   const guestBuild = normalizeLanBuildDescriptor(config.guestBuild);
-  if (!hostBuild || !guestBuild) throw new Error("invalid-build");
+  if (!hostBuild || !guestBuild || !isLanBuildSeaReady(hostBuild) || !isLanBuildSeaReady(guestBuild)) {
+    throw new Error("invalid-build");
+  }
   return {
     hostPeerId,
     guestPeerId,
@@ -290,6 +292,7 @@ export class HostBattleSession implements AuthoritativeBattleSession {
       ? this.commandsFromAuthoritativeMap(hostCommandOrCommands)
       : this.commandsForStep(hostCommandOrCommands as ControlCommand);
     const previousTick = this.serverTickValue;
+    const previousStatus = this.state.status;
     const consumedGuestInput = this.guestInput;
     const output = this.localSession.step(commands, dt, options);
     const completedTicks = this.consumeTicks(dt);
@@ -301,10 +304,13 @@ export class HostBattleSession implements AuthoritativeBattleSession {
       this.guestCommand = consumedGuestInput.command;
       this.guestInput = undefined;
     }
+    const enteredTerminalState = previousStatus === "running" && this.state.status !== "running";
     return {
       ...output,
       serverTick: this.serverTickValue,
-      snapshots: completedTicks > 0 && crossedSnapshotBoundary ? this.publishSnapshots() : new Map(),
+      snapshots: completedTicks > 0 && (crossedSnapshotBoundary || enteredTerminalState)
+        ? this.publishSnapshots()
+        : new Map(),
     };
   }
 

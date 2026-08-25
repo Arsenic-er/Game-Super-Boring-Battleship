@@ -29,6 +29,11 @@ interface LocaleMessageRow {
 // Source text remains Simplified Chinese while stable game data continues to use IDs.
 // Longest phrases are translated first so short naval terms can also localize dynamic text.
 export const GAME_LOCALE_MESSAGES: readonly LocaleMessageRow[] = [
+  { source: "主机地址已复制。", "zh-TW": "主機位址已複製。", "en-US": "Host address copied.", "ja-JP": "ホストアドレスをコピーしました。", "es-ES": "Dirección del anfitrión copiada.", "de-DE": "Host-Adresse kopiert.", "ru-RU": "Адрес хоста скопирован." },
+  { source: "无法复制主机地址。", "zh-TW": "無法複製主機位址。", "en-US": "Could not copy the host address.", "ja-JP": "ホストアドレスをコピーできませんでした。", "es-ES": "No se pudo copiar la dirección del anfitrión.", "de-DE": "Host-Adresse konnte nicht kopiert werden.", "ru-RU": "Не удалось скопировать адрес хоста." },
+  { source: "返回联机大厅", "zh-TW": "返回連線大廳", "en-US": "Return to Lobby", "ja-JP": "ロビーに戻る", "es-ES": "Volver a la sala", "de-DE": "Zurück zur Lobby", "ru-RU": "Вернуться в лобби" },
+  { source: "主机地址", "zh-TW": "主機位址", "en-US": "Host Address", "ja-JP": "ホストアドレス", "es-ES": "Dirección del anfitrión", "de-DE": "Host-Adresse", "ru-RU": "Адрес хоста" },
+  { source: "复制地址", "zh-TW": "複製位址", "en-US": "Copy Address", "ja-JP": "アドレスをコピー", "es-ES": "Copiar dirección", "de-DE": "Adresse kopieren", "ru-RU": "Копировать адрес" },
   { source: "客席已断开 · AI 已接管。", "zh-TW": "客席已斷線 · AI 已接管。", "en-US": "Guest disconnected · AI has taken over.", "ja-JP": "ゲスト切断 · AI が引き継ぎました。", "es-ES": "Invitado desconectado · La IA tomó el control.", "de-DE": "Gast getrennt · KI hat übernommen.", "ru-RU": "Гость отключился · управление принял ИИ." },
   { source: "客席已离开 · AI 已接管。", "zh-TW": "客席已離開 · AI 已接管。", "en-US": "Guest left · AI has taken over.", "ja-JP": "ゲスト退出 · AI が引き継ぎました。", "es-ES": "El invitado salió · La IA tomó el control.", "de-DE": "Gast hat verlassen · KI hat übernommen.", "ru-RU": "Гость вышел · управление принял ИИ." },
   { source: "房主已断开 · 已返回主菜单。", "zh-TW": "房主已斷線 · 已返回主選單。", "en-US": "Host disconnected · Returned to the main menu.", "ja-JP": "ホスト切断 · メインメニューに戻りました。", "es-ES": "Anfitrión desconectado · Se volvió al menú principal.", "de-DE": "Host getrennt · Zum Hauptmenü zurückgekehrt.", "ru-RU": "Хост отключился · выполнен возврат в главное меню." },

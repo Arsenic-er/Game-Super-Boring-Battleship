@@ -12,7 +12,7 @@ function build(overrides: Partial<LanBuildDescriptor> = {}): LanBuildDescriptor 
     buildName: "Fletcher Standard",
     shipClassId: "fletcher",
     slots: {
-      mainGun: ["mainGun-common", "mainGun-common", null, null, null],
+      mainGun: ["mainGun-common", "mainGun-common", "mainGun-common", "mainGun-common", "mainGun-common"],
       torpedo: ["torpedo-common", null],
       antiAir: ["antiAir-common", null, null, null],
       sideGun: [],
@@ -55,7 +55,7 @@ function createSession(
       slots: {
         mainGun: ["mainGun-common", "mainGun-common", "mainGun-common", "mainGun-common"],
         torpedo: [],
-        antiAir: ["antiAir-common", null, null, null, null],
+        antiAir: ["antiAir-common", "antiAir-common", null, null, null],
         sideGun: ["sideGun-common", "sideGun-common", "sideGun-common", "sideGun-common", "sideGun-common", "sideGun-common"],
         depthCharge: [],
         magazine: ["magazine-common"],
@@ -300,7 +300,7 @@ describe("HostBattleSession", () => {
         buildId: "host-purple-battery",
         buildName: "Twin battery and long-range torpedoes",
         slots: {
-          mainGun: ["mainGun-purple", "mainGun-purple", null, null, null],
+          mainGun: ["mainGun-purple", "mainGun-purple", "mainGun-purple", "mainGun-purple", "mainGun-purple"],
           torpedo: ["torpedo-gold", null],
           antiAir: ["antiAir-purple", null, null, null],
           sideGun: [],
@@ -314,10 +314,12 @@ describe("HostBattleSession", () => {
     const ship = session.state.ships.find(({ id }) => id === session.assignments.get("peer-host-1"))!;
 
     expect(ship.mainGunId).toBe("mk2-twin");
-    expect(ship.mainGunMounts).toBe(2);
+    expect(ship.mainGunMounts).toBe(5);
     expect(ship.torpedoId).toBe("mk-15-mod-3");
     expect(ship.torpedoLauncherMounts).toBe(1);
-    expect(ship.installedEquipment.mainGun).toEqual(["mainGun-purple", "mainGun-purple", null, null, null]);
+    expect(ship.installedEquipment.mainGun).toEqual([
+      "mainGun-purple", "mainGun-purple", "mainGun-purple", "mainGun-purple", "mainGun-purple",
+    ]);
     expect(ship.performance.maxSpeedMultiplier).toBeGreaterThan(1);
     expect(ship.performance.turnMultiplier).toBeGreaterThan(1);
     expect(ship.performance.reloadMultiplier).toBeLessThan(1);
@@ -346,6 +348,21 @@ describe("HostBattleSession", () => {
     let nextPublished = published;
     for (let tick = 7; tick <= 12; tick += 1) nextPublished = session.step(zeroCommand(), FIXED_STEP);
     expect(nextPublished.snapshots.get("peer-host-1")?.events.some(({ id }) => id === shotId)).toBe(false);
+  });
+
+  it("publishes the terminal status and end reason on the exact transition tick", () => {
+    const session = createSession();
+    for (const enemy of session.state.ships.filter(({ team }) => team === "enemy")) enemy.hull = 0;
+
+    const terminal = session.step(zeroCommand(), FIXED_STEP);
+
+    expect(terminal.state.status).toBe("player-won");
+    expect(terminal.snapshots.size).toBe(2);
+    expect(terminal.snapshots.get("peer-guest-1")).toMatchObject({
+      serverTick: 1,
+      status: "player-won",
+      endReason: terminal.state.endReason,
+    });
   });
 
   it("restores guest assignment and input acceptance after disconnect then reset, and rejects states with fewer than two allies", () => {
@@ -384,6 +401,14 @@ describe("HostBattleSession", () => {
           ...build().slots,
           mainGun: ["engine-common", null, null, null, null],
         },
+      }),
+    })).toThrow(/invalid-build/);
+    expect(() => createSession(3, {
+      guestBuild: build({
+        slots: Object.fromEntries(Object.entries(build().slots).map(([key, values]) => [
+          key,
+          values.map(() => null),
+        ])) as LanBuildDescriptor["slots"],
       }),
     })).toThrow(/invalid-build/);
   });

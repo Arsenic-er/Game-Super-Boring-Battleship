@@ -34,7 +34,7 @@ const openWsClients: WebSocket[] = [];
 
 interface TestBridge {
   capabilities(): Promise<{ desktop: true; canHost: true; canDiscover: true }>;
-  createRoom(request: { announcementJson: string }): Promise<{ port: number }>;
+  createRoom(request: { announcementJson: string }): Promise<{ port: number; address: string }>;
   updateAnnouncement(announcementJson: string): Promise<void>;
   closeRoom(): Promise<void>;
   startDiscovery(): Promise<void>;
@@ -168,7 +168,7 @@ function createFakeBridge(): FakeBridge {
   let listener: ((event: LanBridgeEvent) => void) | undefined;
   return {
     capabilities: vi.fn(async () => ({ desktop: true, canHost: true, canDiscover: true })),
-    createRoom: vi.fn(async () => ({ port: LAN_GAME_PORTS[0] })),
+    createRoom: vi.fn(async () => ({ port: LAN_GAME_PORTS[0], address: "192.168.1.50" })),
     updateAnnouncement: vi.fn(async () => undefined),
     closeRoom: vi.fn(async () => undefined),
     startDiscovery: vi.fn(async () => undefined),
@@ -487,7 +487,7 @@ describe("Electron LAN bridge", () => {
     }));
 
     const validAnnouncement = buildAnnouncementJson();
-    await expect(bridge.createRoom({ announcementJson: validAnnouncement })).resolves.toEqual({ port: LAN_GAME_PORTS[0] });
+    await expect(bridge.createRoom({ announcementJson: validAnnouncement })).resolves.toMatchObject({ port: LAN_GAME_PORTS[0] });
     expect(sockets).toHaveLength(1);
     expect(servers).toHaveLength(1);
     expect(sockets[0]?.sent.some((entry) => entry.address === "255.255.255.255" && entry.message === validAnnouncement)).toBe(true);
@@ -511,18 +511,27 @@ describe("Electron LAN bridge", () => {
 
   it("selects the next allowed host port when the first LAN port is occupied and reuses the preferred port after close", async () => {
     const occupied = await occupyPort(LAN_GAME_PORTS[0]);
-    const bridge = trackBridge(createLanBridge());
+    const bridge = trackBridge(createLanBridge({ getHostAddress: () => "192.168.50.25" }));
     const alpha = buildAnnouncementJson();
     const bravo = buildAnnouncementJson({ roomId: "room-bravo", payload: { port: LAN_GAME_PORTS[0], roomName: "Bravo Room" } });
 
-    await expect(bridge.createRoom({ announcementJson: alpha })).resolves.toEqual({ port: LAN_GAME_PORTS[1] });
-    await expect(bridge.createRoom({ announcementJson: alpha })).resolves.toEqual({ port: LAN_GAME_PORTS[1] });
+    await expect(bridge.createRoom({ announcementJson: alpha })).resolves.toEqual({
+      port: LAN_GAME_PORTS[1],
+      address: "192.168.50.25",
+    });
+    await expect(bridge.createRoom({ announcementJson: alpha })).resolves.toEqual({
+      port: LAN_GAME_PORTS[1],
+      address: "192.168.50.25",
+    });
 
     await bridge.closeRoom();
     await bridge.closeRoom();
     await closeNetServer(occupied);
 
-    await expect(bridge.createRoom({ announcementJson: bravo })).resolves.toEqual({ port: LAN_GAME_PORTS[0] });
+    await expect(bridge.createRoom({ announcementJson: bravo })).resolves.toEqual({
+      port: LAN_GAME_PORTS[0],
+      address: "192.168.50.25",
+    });
   });
 
   it("normalizes announcement payload ports to the actual hosted room port", async () => {
@@ -538,7 +547,7 @@ describe("Electron LAN bridge", () => {
     );
     await expect(host.createRoom({
       announcementJson: buildAnnouncementJson({ payload: { roomName: "Alpha Room", port: LAN_GAME_PORTS[0] } }),
-    })).resolves.toEqual({ port: LAN_GAME_PORTS[1] });
+    })).resolves.toMatchObject({ port: LAN_GAME_PORTS[1] });
 
     const firstResolved = await firstAnnouncement;
     if (firstResolved.type !== "announcement") throw new Error("expected-announcement");
@@ -950,6 +959,7 @@ describe("Electron LAN bridge", () => {
     const announcementJson = buildAnnouncementJson();
     await expect(ipcMain.handlers.get(channels.createRoom)?.({ sender: sender1 }, { announcementJson })).resolves.toEqual({
       port: LAN_GAME_PORTS[0],
+      address: "192.168.1.50",
     });
     await expect(ipcMain.handlers.get(channels.createRoom)?.({ sender: sender2 }, { announcementJson })).rejects.toThrow(/lan-owner-mismatch/i);
 
@@ -962,6 +972,7 @@ describe("Electron LAN bridge", () => {
 
     await expect(ipcMain.handlers.get(channels.createRoom)?.({ sender: sender2 }, { announcementJson })).resolves.toEqual({
       port: LAN_GAME_PORTS[0],
+      address: "192.168.1.50",
     });
 
     await controller?.dispose();
@@ -1016,6 +1027,8 @@ describe("Electron LAN bridge", () => {
 
     await expect(bridge.capabilities()).resolves.toEqual(UNSUPPORTED_LAN_CAPABILITIES);
     await expect(bridge.createRoom({ announcementJson: buildAnnouncementJson() })).rejects.toThrow(/desktop app/i);
-    expect(() => bridge.subscribe(() => undefined)).toThrow(/desktop app/i);
+    const unsubscribe = bridge.subscribe(() => undefined);
+    expect(unsubscribe).toEqual(expect.any(Function));
+    expect(() => unsubscribe()).not.toThrow();
   });
 });

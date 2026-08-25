@@ -10,6 +10,7 @@ import type {
   LanJoinRejectedReason,
   LanRoomPhase,
 } from "./protocol";
+import { minimumSeaReadySlotCounts } from "../profile/loadoutPolicy";
 
 const BUILD_CATEGORIES: EquipmentCategory[] = [
   "mainGun",
@@ -22,7 +23,7 @@ const BUILD_CATEGORIES: EquipmentCategory[] = [
   "steering",
 ];
 
-type LobbyPhase = Extract<LanRoomPhase, "lobby" | "in-match" | "closing">;
+type LobbyPhase = Extract<LanRoomPhase, "lobby" | "in-match" | "post-match" | "closing">;
 
 type LobbyFailureReason = "unknown-peer" | "invalid-build" | "cannot-start" | "invalid-phase";
 
@@ -156,6 +157,15 @@ export function normalizeLanBuildDescriptor(build: LanBuildDescriptor): LanBuild
   };
 }
 
+export function isLanBuildSeaReady(build: LanBuildDescriptor): boolean {
+  const normalized = normalizeLanBuildDescriptor(build);
+  if (!normalized) return false;
+  const minimumCounts = minimumSeaReadySlotCounts(normalized.shipClassId);
+  return BUILD_CATEGORIES.every((category) => (
+    normalized.slots[category].filter((itemId) => itemId !== null).length >= minimumCounts[category]
+  ));
+}
+
 export class HostLobby {
   private phase: LobbyPhase = "lobby";
 
@@ -177,7 +187,7 @@ export class HostLobby {
     this.gameVersion = config.gameVersion;
     this.contentHash = config.contentHash;
     const hostBuild = config.hostBuild ? normalizeLanBuildDescriptor(config.hostBuild) : undefined;
-    if (config.hostBuild && !hostBuild) throw new Error("invalid-host-build");
+    if (config.hostBuild && (!hostBuild || !isLanBuildSeaReady(hostBuild))) throw new Error("invalid-host-build");
     this.host = {
       peerId: config.hostPeerId,
       commanderName: config.hostCommanderName,
@@ -197,7 +207,7 @@ export class HostLobby {
     }
     if (this.guest) return this.reject("room-full");
     const build = request.build ? normalizeLanBuildDescriptor(request.build) : undefined;
-    if (request.build && !build) return this.reject("invalid-build");
+    if (request.build && (!build || !isLanBuildSeaReady(build))) return this.reject("invalid-build");
     this.guest = {
       peerId: request.peerId,
       commanderName: request.commanderName,
@@ -233,7 +243,7 @@ export class HostLobby {
     const player = this.findPlayer(peerId);
     if (!player) return this.failure("unknown-peer");
     const normalized = normalizeLanBuildDescriptor(build);
-    if (!normalized) return this.failure("invalid-build");
+    if (!normalized || !isLanBuildSeaReady(normalized)) return this.failure("invalid-build");
     const changed = JSON.stringify(player.build) !== JSON.stringify(normalized);
     player.build = normalized;
     if (changed) player.ready = false;
@@ -244,7 +254,7 @@ export class HostLobby {
     if (this.phase !== "lobby") return this.failure("invalid-phase");
     const player = this.findPlayer(peerId);
     if (!player) return this.failure("unknown-peer");
-    if (ready && (!player.connected || !player.build || !normalizeLanBuildDescriptor(player.build))) {
+    if (ready && (!player.connected || !player.build || !isLanBuildSeaReady(player.build))) {
       return this.failure("invalid-build");
     }
     player.ready = ready;
@@ -257,17 +267,31 @@ export class HostLobby {
       && this.host.connected
       && this.host.ready
       && !!this.host.build
-      && !!normalizeLanBuildDescriptor(this.host.build)
+      && isLanBuildSeaReady(this.host.build)
       && !!guest
       && guest.connected
       && guest.ready
       && !!guest.build
-      && !!normalizeLanBuildDescriptor(guest.build);
+      && isLanBuildSeaReady(guest.build);
   }
 
   start(): LobbyResult {
     if (!this.canStart()) return this.failure("cannot-start");
     this.phase = "in-match";
+    return this.success();
+  }
+
+  finishMatch(): LobbyResult {
+    if (this.phase !== "in-match") return this.failure("invalid-phase");
+    this.phase = "post-match";
+    for (const player of this.players()) player.ready = false;
+    return this.success();
+  }
+
+  returnToLobby(): LobbyResult {
+    if (this.phase !== "post-match") return this.failure("invalid-phase");
+    this.phase = "lobby";
+    for (const player of this.players()) player.ready = false;
     return this.success();
   }
 

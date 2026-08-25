@@ -28,7 +28,7 @@ function build(
     buildName: `${peer} integration build`,
     shipClassId: "fletcher",
     slots: {
-      mainGun: ["mainGun-purple", "mainGun-purple", null, null, null],
+      mainGun: ["mainGun-purple", "mainGun-purple", "mainGun-purple", "mainGun-purple", "mainGun-purple"],
       torpedo: ["torpedo-gold", null],
       antiAir: ["antiAir-purple", null, null, null],
       sideGun: [],
@@ -98,7 +98,7 @@ function startedLoopback(): {
   client: ClientBattleSession;
   guestBuild: LanBuildDescriptor;
 } {
-  const hostBuild = build("host", { mainGun: ["mainGun-gold", null, null, null, null] });
+  const hostBuild = build("host", { mainGun: ["mainGun-gold", "mainGun-gold", "mainGun-gold", "mainGun-gold", "mainGun-gold"] });
   const guestBuild = build("guest");
   const lobby = new HostLobby({
     roomName: "Loopback acceptance",
@@ -231,7 +231,9 @@ describe("LAN co-op loopback acceptance", () => {
     const clientGuest = richView.state.ships.find(({ id }) => id === guestShipId)!;
     expect(clientGuest.mainGunId).toBe("mk2-twin");
     expect(clientGuest.torpedoId).toBe("mk-15-mod-3");
-    expect(clientGuest.installedEquipment.mainGun).toEqual(["mainGun-purple", "mainGun-purple", null, null, null]);
+    expect(clientGuest.installedEquipment.mainGun).toEqual([
+      "mainGun-purple", "mainGun-purple", "mainGun-purple", "mainGun-purple", "mainGun-purple",
+    ]);
     expect(clientGuest.performance).toEqual(hostGuest.performance);
     expect(effectiveMainBattery(clientGuest).maximumRangeMeters)
       .toBe(effectiveMainBattery(hostGuest).maximumRangeMeters);
@@ -251,12 +253,10 @@ describe("LAN co-op loopback acceptance", () => {
       }),
     ]));
 
+    host.step(idleHost(host), FIXED_STEP);
     for (const enemy of host.state.ships.filter(({ team }) => team === "enemy")) enemy.hull = 0;
-    let resultSnapshot = undefined;
-    for (let tick = 1; tick <= 6; tick += 1) {
-      const output = host.step(idleHost(host), FIXED_STEP);
-      resultSnapshot = output.snapshots.get(GUEST_ID) ?? resultSnapshot;
-    }
+    const terminalOutput = host.step(idleHost(host), FIXED_STEP);
+    const resultSnapshot = terminalOutput.snapshots.get(GUEST_ID);
     expect(host.state.status).toBe("player-won");
     expect(resultSnapshot).toBeDefined();
     deliverSnapshot(client, resultSnapshot!, 2, 300);

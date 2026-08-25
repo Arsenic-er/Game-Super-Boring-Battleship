@@ -55,6 +55,8 @@ testing, server access and short-lived transfer staging.
 - Three selectable synthesized UI sound styles plus naval combat/ambient audio.
 - Two-player LAN co-op lobby with UDP room discovery, manual IPv4 fallback, authoritative host simulation, scoped 10 Hz snapshots and 30 Hz guest input ceiling.
 - Host/guest lifecycle handling: guest dropout hands the ship to AI within five simulated seconds; host dropout returns the guest to the menu. Host migration and reconnect remain out of scope.
+- Terminal snapshots are forced on the exact authoritative transition tick; completed matches retain the socket and room, reset readiness, and return both players to the same lobby.
+- The host lobby exposes and copies the bridge-selected private IPv4 endpoint, including fallback ports when the preferred port is occupied.
 
 ## Quality baseline
 

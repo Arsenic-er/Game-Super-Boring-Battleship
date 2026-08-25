@@ -102,3 +102,96 @@ The automated loopback gate is complete. The documented two-computer Windows
 matrix remains the final physical-router smoke procedure because this Linux
 build environment cannot emulate a user's Windows firewall and Wi-Fi AP
 isolation settings.
+
+## Final release-blocker correction (2026-08-26)
+
+The whole-branch review found one browser-startup blocker and five LAN release
+contract gaps. Each correction was driven by a focused failing regression before
+the implementation changed.
+
+### Additional RED evidence
+
+The first focused run exposed ten failures. Representative failures were:
+
+```text
+browser LAN startup: LAN bridge is only available in the desktop app
+terminal transition: expected snapshots.size to be 2, received 0
+post-match lifecycle: runtime.publishHostStep is not a function
+host endpoint: expected 192.168.1.88:47779, fields absent
+pending mismatch: expected targeted version/content rejection, received none
+minimum loadout: all-null forged build was accepted
+```
+
+The integration result assertion now consumes the terminal snapshot emitted by
+the exact transition step. It no longer advances an already completed battle by
+six ticks to reach the normal snapshot cadence.
+
+A second review pass deliberately exposed two further lifecycle/catalog gaps:
+
+```text
+late guest match-ended: expected the current lobby, connection was closed
+combat fingerprint: armor/weather/simulation/air changes did not change the hash
+```
+
+Follow-up RED cases also covered a guest-first return whose reply send rejects
+and a guest disconnect during post-match that previously left a ghost seat.
+
+### Corrections
+
+- Browser fallback subscriptions now return a no-op unsubscribe function, so the
+  full runtime can start without Electron preload support; actual desktop-only
+  operations still reject.
+- `HostBattleSession` forces snapshots on every `running` to terminal transition.
+  The real main loop routes every host step through `publishHostStep`, which sends
+  the guest result before publishing `post-match`.
+- Host and guest keep the WebSocket and room after normal results. Both ready
+  flags reset, the runtime transitions through `post-match`, and either player
+  can return to the same fresh lobby without rediscovery. Concurrent and late
+  `match-ended` returns are idempotent; terminal sends, reply sends and
+  announcement refresh failures cannot block the local state transition.
+- A guest disconnect during `post-match` removes its lobby seat without closing
+  the room, allowing the host to return to a usable single-seat lobby.
+- Pending join requests receive targeted `version-mismatch` or
+  `content-mismatch` messages before their connection is closed.
+- The content fingerprint now covers the equipment, hull, armor, weather,
+  simulation rules, aircraft rules, main-gun, torpedo, secondary-gun,
+  historical battery, range, ship-class, minimum-loadout and reconstruction
+  schema inputs used by client presentation. A one-field catalog mutation
+  changes the hash.
+- The desktop bridge returns its actual selected private IPv4 address and port.
+  The host lobby displays and copies that endpoint, including a fallback port,
+  with all new strings translated across the seven supported locales.
+- Host-side join, build, ready and start boundaries enforce the same minimum
+  sea-ready slot counts as local saved builds.
+- Historical CRLF/trailing-whitespace defects in the reviewed release range were
+  normalized.
+
+Focused GREEN result:
+
+```text
+8 focused files passed
+104 focused tests passed
+```
+
+### Fresh final verification
+
+Executed again after the blocker corrections:
+
+```text
+git diff c8021a3 --check: passed
+git diff --check: passed
+npm test: 65 files passed, 2 skipped; 552 tests passed, 2 skipped
+npm run build: passed
+npm run assets:ships:validate -- public/assets/ships: valid true
+node --check desktop/main.cjs desktop/preload.cjs desktop/lanBridge.cjs: passed
+npm run desktop:dist: passed
+```
+
+Fresh server artifact (the previous executable was deleted before rebuilding):
+
+```text
+Path: /home/ubuntu/battleship/.worktrees/lan-multiplayer/release/battleship-0.7.0-windows-x64.exe
+Size: 105,666,510 bytes
+Type: PE32 executable (GUI), Intel 80386, Windows, NSIS self-extracting archive
+SHA-256: 75e01c8fa1bd8e1786cb0d434dd6888b75a5db92c2db5271c94396a3b242d4ec
+```

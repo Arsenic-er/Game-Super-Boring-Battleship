@@ -29,7 +29,7 @@ This is an early prototype rather than a finished commercial game. Visuals, bala
 ## Current features
 
 - Player-vs-AI battles tuned for a 15–20 minute normal duration, plus an unlimited sea-trials mode.
-- Two-player LAN co-op against AI with room search, manual IPv4 fallback, saved-build selection and host-authoritative simulation. See the [LAN guide](docs/LAN_MULTIPLAYER.md).
+- Two-player LAN co-op against AI with room search, a copyable host IPv4/port fallback, saved-build selection, host-authoritative simulation and same-room rematches after results. See the [LAN guide](docs/LAN_MULTIPLAYER.md).
 - Historically paced destroyer movement with gradual rudder shift, steering-damage response and speed loss during hard turns.
 - Main-gun ballistics with visible shell arcs, dispersion, reload progress and independent turret alignment.
 - Staged HE/AP loading with 21 mm HE penetration, probabilistic AP ricochet, fuse-based overpenetration and compartment saturation.
@@ -123,7 +123,7 @@ Third-party libraries and the Fusion Pixel Font remain under their respective li
 ## 当前内容
 
 - 常规时长目标为 15–20 分钟的人机战斗，以及没有时间限制的舰船测试模式。
-- 双人局域网合作对抗 AI：支持搜索房间、手动 IPv4、保存配装选择和房主权威模拟；配置与排障见[局域网联机指南](docs/LAN_MULTIPLAYER.md)。
+- 双人局域网合作对抗 AI：支持搜索房间、可复制的房主 IPv4/端口、保存配装选择、房主权威模拟，以及结算后保留房间直接重赛；配置与排障见[局域网联机指南](docs/LAN_MULTIPLAYER.md)。
 - 中央 A 区占领、区域优势、双方积分与积分胜利。
 - 非全知 AI 光学观测：目标测量有刷新间隔与误差，并包含识别、丢失、搜索和重获；没有实时跟踪时禁止开火。
 - 玩家 HUD、瞄准镜、3D 敌舰可见性和战术地图遵循相同的光学接触；失联后只保留逐渐衰减的最后已知标记。

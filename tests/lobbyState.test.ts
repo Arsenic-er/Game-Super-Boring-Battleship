@@ -14,7 +14,7 @@ function build(overrides: Partial<LanBuildDescriptor> = {}): LanBuildDescriptor 
     buildName: "Fletcher Standard",
     shipClassId: "fletcher",
     slots: {
-      mainGun: ["mainGun-common", "mainGun-common", null, null, null],
+      mainGun: ["mainGun-common", "mainGun-common", "mainGun-common", "mainGun-common", "mainGun-common"],
       torpedo: ["torpedo-common", null],
       antiAir: ["antiAir-common", null, null, null],
       sideGun: [],
@@ -123,6 +123,42 @@ describe("HostLobby", () => {
     expect(lobby.canStart()).toBe(true);
     expect(lobby.start()).toMatchObject({ ok: true });
     expect(lobby.snapshot().phase).toBe("in-match");
+  });
+
+  it("keeps both peers connected through post-match and resets readiness before returning to lobby", () => {
+    const lobby = createLobby();
+    expect(lobby.join(joinRequest())).toMatchObject({ accepted: true });
+    expect(lobby.setReady("peer-host-1", true)).toMatchObject({ ok: true });
+    expect(lobby.setReady("peer-guest-1", true)).toMatchObject({ ok: true });
+    expect(lobby.start()).toMatchObject({ ok: true });
+
+    expect(lobby.finishMatch()).toMatchObject({ ok: true });
+    expect(lobby.snapshot()).toMatchObject({
+      phase: "post-match",
+      players: [
+        { peerId: "peer-host-1", connected: true, ready: false },
+        { peerId: "peer-guest-1", connected: true, ready: false },
+      ],
+    });
+    expect(lobby.returnToLobby()).toMatchObject({ ok: true });
+    expect(lobby.snapshot().phase).toBe("lobby");
+  });
+
+  it("rejects structurally valid builds that do not meet minimum sea-ready slot counts", () => {
+    const emptySlots = Object.fromEntries(Object.entries(build().slots).map(([key, values]) => [
+      key,
+      values.map(() => null),
+    ])) as LanBuildDescriptor["slots"];
+    const lobby = createLobby();
+
+    expect(lobby.join(joinRequest({ build: build({ slots: emptySlots }) }))).toMatchObject({
+      accepted: false,
+      reason: "invalid-build",
+    });
+    expect(lobby.setBuild("peer-host-1", build({ slots: emptySlots }))).toMatchObject({
+      ok: false,
+      reason: "invalid-build",
+    });
   });
 
   it("removes the guest on leave, closes if the host leaves, and freezes snapshots", () => {

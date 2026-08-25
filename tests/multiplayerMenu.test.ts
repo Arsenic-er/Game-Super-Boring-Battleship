@@ -424,11 +424,65 @@ describe("multiplayer menu helpers", () => {
     expect(render).toHaveBeenCalledTimes(1);
   });
 
+  it("shows the actual host IPv4 address and selected fallback port in the lobby", () => {
+    const profile = createDefaultLocalProfile();
+    const snapshot = createHostSnapshot(profile, profile.savedShipBuilds[0]!.id, false);
+    const markup = (MultiplayerMenu.prototype as unknown as {
+      lobbyMarkup(this: {
+        controller: {
+          getLobbyControls: () => Record<string, unknown>;
+          getSelectedBuildId: () => string;
+          getLobby: () => { localPeerId: string };
+        };
+        profile: typeof profile;
+        hostEndpoint: { address: string; port: number };
+        seatMarkup: () => string;
+        buildOptionsMarkup: () => string;
+      }, next: LobbySnapshot, peerId: string): string;
+    }).lobbyMarkup.call({
+      controller: {
+        getLobbyControls: () => ({
+          localRole: "host", canReady: true, canStart: false, canLeave: true,
+          showStart: true, selectedBuildReady: true,
+        }),
+        getSelectedBuildId: () => profile.savedShipBuilds[0]!.id,
+        getLobby: () => ({ localPeerId: "peer-host" }),
+      },
+      profile,
+      hostEndpoint: { address: "192.168.1.88", port: 47779 },
+      seatMarkup: () => "",
+      buildOptionsMarkup: () => "",
+    }, snapshot, "peer-host");
+
+    expect(markup).toContain("192.168.1.88:47779");
+    expect(markup).toContain("multiplayer-copy-endpoint");
+    expect(markup).toContain("主机地址");
+  });
+
+  it("copies the displayed host endpoint through the browser clipboard API", async () => {
+    const writeText = vi.fn(async () => undefined);
+    vi.stubGlobal("navigator", { clipboard: { writeText } });
+    const fakeMenu = {
+      hostEndpoint: { address: "192.168.1.88", port: 47779 },
+      statusSource: null as string | null,
+      render: vi.fn(),
+    };
+
+    await (MultiplayerMenu.prototype as unknown as {
+      copyHostEndpoint(this: typeof fakeMenu): Promise<void>;
+    }).copyHostEndpoint.call(fakeMenu);
+
+    expect(writeText).toHaveBeenCalledWith("192.168.1.88:47779");
+    expect(fakeMenu.statusSource).toBe("主机地址已复制。");
+  });
+
   it("tracks the full multiplayer source-string surface for locale coverage", () => {
     expect(MULTIPLAYER_MENU_SOURCE_STRINGS).toContain("多人联机");
     expect(MULTIPLAYER_MENU_SOURCE_STRINGS).toContain("手动加入也需要桌面版联机桥。");
     expect(MULTIPLAYER_MENU_SOURCE_STRINGS).toContain("搜索尚未连接到对战会话");
     expect(MULTIPLAYER_MENU_SOURCE_STRINGS).toContain("近似延迟（最近广播）");
+    expect(MULTIPLAYER_MENU_SOURCE_STRINGS).toContain("主机地址");
+    expect(MULTIPLAYER_MENU_SOURCE_STRINGS).toContain("复制地址");
     expect(new Set(MULTIPLAYER_MENU_SOURCE_STRINGS).size).toBe(MULTIPLAYER_MENU_SOURCE_STRINGS.length);
     for (const source of [
       "客席已断开 · AI 已接管。",
@@ -437,6 +491,11 @@ describe("multiplayer menu helpers", () => {
       "房间已关闭 · 已返回主菜单。",
       "收到无效的联机消息。",
       "多人联机已禁用开发者改动。",
+      "主机地址",
+      "复制地址",
+      "主机地址已复制。",
+      "无法复制主机地址。",
+      "返回联机大厅",
     ]) {
       for (const locale of SUPPORTED_GAME_LOCALES.filter((value) => value !== "zh-CN")) {
         expect(translateGameText(source, locale), `${source} -> ${locale}`).not.toBe(source);
@@ -444,5 +503,3 @@ describe("multiplayer menu helpers", () => {
     }
   });
 });
-
-

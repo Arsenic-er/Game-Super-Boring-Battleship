@@ -90,6 +90,9 @@ function enterActiveBattle(nextState: BattleState): void {
   developerPanel?.close();
   menus?.closeAll();
   hud.resetMetrics();
+  hud.setResultReturnLabel(localizedMultiplayerNotice(
+    lanRuntime?.role !== "none" ? "返回联机大厅" : "返回主菜单",
+  ));
   developerView = normalDeveloperView();
   playerPerception.reset();
   audio.unlock();
@@ -127,7 +130,8 @@ function startMode(request: GameLaunchRequest): void {
 
 function restart(): void {
   if (lanRuntime?.role !== "none") {
-    returnToMainMenu();
+    if (state.status !== "running") void lanRuntime.callbacks.returnToLobby?.();
+    else returnToMainMenu();
     return;
   }
   startMode(currentLaunchRequest);
@@ -173,7 +177,15 @@ function toggleQuality(): void {
   applyQuality(view.getQuality() === "low" ? "medium" : "low");
 }
 
-const hud = new Hud(root, restart, toggleQuality, returnToMainMenu);
+function exitBattleResult(): void {
+  if (lanRuntime?.role !== "none" && state.status !== "running") {
+    void lanRuntime.callbacks.returnToLobby?.();
+    return;
+  }
+  returnToMainMenu();
+}
+
+const hud = new Hud(root, restart, toggleQuality, exitBattleResult);
 view = new GameView(hud.canvas);
 input = new PlayerInput(hud.canvas, view);
 const settings = loadGameSettings();
@@ -245,6 +257,10 @@ lanRuntime = new LanMultiplayerRuntime(lanBridge, profile, {
     hud.showMultiplayerNotice(localizedMultiplayerNotice(notice));
   },
   onLobbyUpdated: (snapshot, localPeerId) => menus?.setMultiplayerLobby(snapshot, localPeerId),
+  onLobbyReturned: (snapshot, localPeerId) => {
+    returnToMainMenu();
+    menus?.showMultiplayerLobby(snapshot, localPeerId);
+  },
 });
 menus = new GameMenus(gameShell, settings, profile, view.getQuality(), {
   onStart: startMode,
@@ -273,7 +289,8 @@ menus = new GameMenus(gameShell, settings, profile, view.getQuality(), {
   },
   onRestart: () => {
     if (lanRuntime.role !== "none") {
-      returnToMainMenu();
+      if (state.status !== "running") void lanRuntime.callbacks.returnToLobby?.();
+      else returnToMainMenu();
       return;
     }
     restart();
@@ -521,11 +538,7 @@ function renderHostFrame(frameSeconds: number): void {
       audio.consumeShots(visibleShots);
       audio.consumeImpacts(stepOutput.impacts);
       hud.consumeImpacts(stepOutput.impacts);
-      const guestPeerId = lanRuntime.currentGuestPeerId();
-      const guestSnapshot = guestPeerId ? stepOutput.snapshots.get(guestPeerId) : undefined;
-      if (guestSnapshot) {
-        void lanRuntime.send(lanRuntime.createEnvelope("player-snapshot", guestSnapshot));
-      }
+      void lanRuntime.publishHostStep(stepOutput);
       accumulator -= FIXED_STEP;
     }
   } else {
