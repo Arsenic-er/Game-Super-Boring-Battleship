@@ -1,6 +1,7 @@
-import "@babylonjs/loaders/glTF";
+import "@babylonjs/loaders/glTF/glTFFileLoader";
 import { ImportMeshAsync } from "@babylonjs/core/Loading/sceneLoader";
 import { Mesh } from "@babylonjs/core/Meshes/mesh";
+import { CreateBox } from "@babylonjs/core/Meshes/Builders/boxBuilder.pure";
 import { TransformNode } from "@babylonjs/core/Meshes/transformNode";
 import type { Node } from "@babylonjs/core/node";
 import type { Scene } from "@babylonjs/core/scene";
@@ -10,6 +11,7 @@ export interface ExternalShipModel {
   root: TransformNode;
   renderMeshes: Mesh[];
   hardpoints: ReadonlyMap<string, TransformNode>;
+  collisionMeshes: Mesh[];
   manifest: ShipAssetManifest;
 }
 
@@ -65,5 +67,19 @@ export async function importExternalShipModel(
   for (const name of manifest.hardpoints) hardpoints.set(name, byName.get(name)!);
   for (const mesh of result.meshes) mesh.isPickable = false;
 
-  return { root, renderMeshes, hardpoints, manifest };
+  const collisionMeshes = manifest.collisionVolumes.map((volume) => {
+    const collider = CreateBox(`${instanceName}-${volume.nodeName}`, {
+      width: volume.size[0],
+      height: volume.size[1],
+      depth: volume.size[2],
+    }, scene);
+    collider.position.set(volume.center[0], volume.center[1], volume.center[2]);
+    collider.parent = root;
+    collider.visibility = 0;
+    collider.isPickable = false;
+    collider.metadata = { shipCollisionZone: volume.zone };
+    return collider;
+  });
+
+  return { root, renderMeshes, hardpoints, collisionMeshes, manifest };
 }

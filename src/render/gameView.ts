@@ -39,13 +39,13 @@ import { getShipClass } from "../ships/classes";
 import type { ShipClassId } from "../ships/classes";
 import { getTorpedo } from "../ships/torpedoes";
 import {
-  createDestroyerHull,
-  createDestroyerV3Superstructure,
-  createHullClassSilhouette,
-  createNavalMotionParts,
   createMainGunVisual,
   createTorpedoLauncherVisual,
 } from "./shipGeometry";
+import { createProceduralShipHull } from "./shipHullVisual";
+import { importExternalShipModel } from "./externalShipModel";
+import { loadShipModelCatalog } from "./shipModelCatalog";
+import { loadRegisteredShipModel } from "./shipModelFactory";
 import { createPixelShipPalette } from "./shipMaterials";
 import {
   combatEquipmentVisualPlan,
@@ -103,6 +103,8 @@ interface ShipVisual {
   shipClassId: ShipClassId;
   armamentSignature: string;
   root: TransformNode;
+  proceduralHullRoot: TransformNode;
+  externalHullRoot?: TransformNode;
   bodyMeshes: Mesh[];
   bodyVisibility: number;
   turrets: TransformNode[];
@@ -116,7 +118,7 @@ interface ShipVisual {
   wakes: Mesh[];
   smokePuffs: Mesh[];
   fireFlames: Mesh[];
-  collider: Mesh;
+  colliders: Mesh[];
   ownedMaterials: StandardMaterial[];
 }
 
@@ -181,6 +183,7 @@ export class GameView implements AimProvider {
   private readonly ambientLight: HemisphericLight;
   private readonly sunLight: DirectionalLight;
   private readonly ships = new Map<string, ShipVisual>();
+  private readonly shipModelCatalogReady = loadShipModelCatalog();
   private readonly airSquadronVisuals = new Map<string, AirSquadronVisual>();
   private readonly projectileMeshes = new Map<number, ProjectileVisual>();
   private readonly depthChargeMeshes = new Map<number, Mesh>();
@@ -552,22 +555,7 @@ export class GameView implements AimProvider {
       ship.id,
       ally ? "ally" : testTarget ? "target" : "enemy",
     );
-    const hullMaterial = palette.hull;
-    const deckMaterial = palette.deck;
-
-    createDestroyerHull(this.scene, root, {
-      name: ship.id,
-      length: 112,
-      beam: 11,
-      hullId: ship.hullId,
-      hullMaterial,
-      deckMaterial,
-    });
-
-    const motion = ship.hullId === "destroyer"
-      ? createDestroyerV3Superstructure(this.scene, root, ship.id, palette)
-      : createNavalMotionParts(this.scene, root, ship.id, palette);
-    createHullClassSilhouette(this.scene, root, ship.id, ship.hullId, palette, hullDefinition.visualVariant);
+    const motion = createProceduralShipHull(this.scene, root, ship.id, ship.shipClassId, palette);
     const gunDefinition = effectiveMainBattery(ship);
     const guns = gunDefinition.mounts.map((mount, index) => {
       const gun = createMainGunVisual(this.scene, root, `${ship.id}-mount-${index}`, {
@@ -666,11 +654,12 @@ export class GameView implements AimProvider {
     collider.visibility = 0;
     collider.parent = root;
 
-    return {
+    const visual: ShipVisual = {
       hullId: ship.hullId,
       shipClassId: ship.shipClassId,
       armamentSignature: shipArmamentSignature(ship),
       root,
+      proceduralHullRoot: motion.root,
       bodyMeshes,
       bodyVisibility: 1,
       turrets: guns.map((gun) => gun.root),
@@ -684,12 +673,53 @@ export class GameView implements AimProvider {
       wakes,
       smokePuffs,
       fireFlames,
-      collider,
+      colliders: [collider],
       ownedMaterials: [...Object.values(palette), wakeMaterial, colliderMaterial],
     };
+    void this.attachExternalShipModel(ship, visual, motion.bodyMeshes);
+    return visual;
+  }
+
+  private async attachExternalShipModel(
+    ship: ShipState,
+    visual: ShipVisual,
+    proceduralMeshes: readonly Mesh[],
+  ): Promise<void> {
+    const catalog = await this.shipModelCatalogReady;
+    const result = await loadRegisteredShipModel({
+      registry: catalog.registry,
+      shipClassId: ship.shipClassId,
+      quality: this.quality,
+      distanceMeters: 0,
+      loader: (baseUrl, file, manifest) => importExternalShipModel(
+        this.scene,
+        ship.id,
+        baseUrl,
+        file,
+        manifest,
+      ),
+      fallback: () => undefined,
+    });
+    if (result.source !== "external" || !result.model) return;
+    if (this.ships.get(ship.id) !== visual || visual.root.isDisposed()) {
+      result.model.root.dispose(false, true);
+      return;
+    }
+    result.model.root.parent = visual.root;
+    visual.proceduralHullRoot.setEnabled(false);
+    visual.externalHullRoot = result.model.root;
+    for (const collider of visual.colliders) collider.visibility = 0;
+    for (const collider of result.model.collisionMeshes) collider.material = visual.colliders[0]?.material ?? null;
+    visual.colliders = result.model.collisionMeshes;
+    const proceduralSet = new Set(proceduralMeshes);
+    visual.bodyMeshes = [
+      ...result.model.renderMeshes,
+      ...visual.bodyMeshes.filter((mesh) => !proceduralSet.has(mesh)),
+    ];
   }
 
   private disposeShipVisual(visual: ShipVisual): void {
+    visual.externalHullRoot?.dispose(false, true);
     visual.root.dispose(false, false);
     for (const material of new Set(visual.ownedMaterials)) material.dispose(false, true);
   }
@@ -797,7 +827,7 @@ export class GameView implements AimProvider {
         for (const wake of visual.wakes) wake.visibility = 0;
         for (const smoke of visual.smokePuffs) smoke.visibility = 0;
         for (const flame of visual.fireFlames) flame.visibility = 0;
-        visual.collider.visibility = 0;
+        for (const collider of visual.colliders) collider.visibility = 0;
         continue;
       }
       for (const mesh of visual.bodyMeshes) mesh.renderOutline = false;
@@ -899,7 +929,9 @@ export class GameView implements AimProvider {
         flame.visibility = ship.hull > 0 ? fireRatio * (0.82 + index * 0.08) : 0;
         flame.scaling.set(0.72 + flicker * 0.22, 0.48 + fireRatio * flicker, 0.72 + flicker * 0.22);
       }
-      visual.collider.visibility = this.debugColliders && ship.hull > 0 ? 0.9 : 0;
+      for (const collider of visual.colliders) {
+        collider.visibility = this.debugColliders && ship.hull > 0 ? 0.9 : 0;
+      }
     }
   }
 

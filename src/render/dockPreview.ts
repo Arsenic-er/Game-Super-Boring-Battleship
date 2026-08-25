@@ -20,13 +20,13 @@ import type { ShipClassId } from "../ships/classes";
 import { DEFAULT_TORPEDO_ID, getTorpedo } from "../ships/torpedoes";
 import type { TorpedoId } from "../ships/torpedoes";
 import {
-  createDestroyerHull,
-  createDestroyerV3Superstructure,
-  createHullClassSilhouette,
-  createNavalMotionParts,
   createMainGunVisual,
   createTorpedoLauncherVisual,
 } from "./shipGeometry";
+import { createProceduralShipHull } from "./shipHullVisual";
+import { importExternalShipModel } from "./externalShipModel";
+import { loadShipModelCatalog } from "./shipModelCatalog";
+import { loadRegisteredShipModel } from "./shipModelFactory";
 import { createPixelShipPalette } from "./shipMaterials";
 import type { PixelShipPalette } from "./shipMaterials";
 import { createDockEquipmentPreviewVisual } from "./equipmentPreviewVisuals";
@@ -39,8 +39,10 @@ export class DockPreview {
   private readonly palette: PixelShipPalette;
   private readonly modulePreviewMaterial: StandardMaterial;
   private hullRoot?: TransformNode;
+  private externalHullRoot?: TransformNode;
+  private hullGeneration = 0;
+  private readonly shipModelCatalogReady = loadShipModelCatalog();
   private propellers: TransformNode[] = [];
-  private classDetailRoot?: TransformNode;
   private shipClassId: ShipClassId = DEFAULT_SHIP_CLASS_ID;
   private turrets: TransformNode[] = [];
   private gunCradles: TransformNode[] = [];
@@ -162,32 +164,22 @@ export class DockPreview {
     this.shipClassId = id;
     const hull = getShipClass(id);
     this.shipRoot.scaling.set(hull.renderScale.x, hull.renderScale.y, hull.renderScale.z);
+    this.externalHullRoot?.dispose(false, true);
+    this.externalHullRoot = undefined;
     this.hullRoot?.dispose(false, false);
     this.hullRoot = new TransformNode(`dock-${id}-hull-root`, this.scene);
     this.hullRoot.parent = this.shipRoot;
-    createDestroyerHull(this.scene, this.hullRoot, {
-      name: `dock-${id}`,
-      length: 112,
-      beam: 11,
-      hullId: hull.hullId,
-      hullMaterial: this.palette.hull,
-      deckMaterial: this.palette.deck,
-    });
-    this.classDetailRoot?.dispose(false, false);
-    this.classDetailRoot = new TransformNode(`dock-${id}-class-details`, this.scene);
-    this.classDetailRoot.parent = this.shipRoot;
-    const motion = hull.hullId === "destroyer"
-      ? createDestroyerV3Superstructure(this.scene, this.classDetailRoot, `dock-${id}`, this.palette)
-      : createNavalMotionParts(this.scene, this.classDetailRoot, `dock-${id}`, this.palette);
-    this.propellers = motion.propellers;
-    createHullClassSilhouette(
+    const proceduralRoot = this.hullRoot;
+    const generation = ++this.hullGeneration;
+    const motion = createProceduralShipHull(
       this.scene,
-      this.classDetailRoot,
+      this.hullRoot,
       `dock-${id}`,
-      hull.hullId,
+      id,
       this.palette,
-      hull.visualVariant,
     );
+    this.propellers = motion.propellers;
+    void this.attachExternalHull(id, proceduralRoot, generation);
     this.torpedoLauncher?.setEnabled(hull.slotCounts.torpedo > 0);
     this.setMainGun(this.mainGunId, false);
     this.setTorpedo(this.torpedoId, false);
@@ -195,6 +187,36 @@ export class DockPreview {
     this.camera.radius = radius;
     this.camera.lowerRadiusLimit = radius * 0.72;
     this.camera.target.y = 5 * hull.renderScale.y;
+  }
+
+  private async attachExternalHull(
+    shipClassId: ShipClassId,
+    proceduralRoot: TransformNode,
+    generation: number,
+  ): Promise<void> {
+    const catalog = await this.shipModelCatalogReady;
+    const result = await loadRegisteredShipModel({
+      registry: catalog.registry,
+      shipClassId,
+      quality: "medium",
+      distanceMeters: 0,
+      loader: (baseUrl, file, manifest) => importExternalShipModel(
+        this.scene,
+        `dock-${shipClassId}`,
+        baseUrl,
+        file,
+        manifest,
+      ),
+      fallback: () => undefined,
+    });
+    if (result.source !== "external" || !result.model) return;
+    if (generation !== this.hullGeneration || this.shipClassId !== shipClassId) {
+      result.model.root.dispose(false, true);
+      return;
+    }
+    result.model.root.parent = this.shipRoot;
+    proceduralRoot.setEnabled(false);
+    this.externalHullRoot = result.model.root;
   }
 
   resize(): void { this.engine.resize(); }
