@@ -9,7 +9,7 @@ credentials, caches or generated builds in the repositories.
 
 ## Source of truth
 
-- Server: `ubuntu@150.65.181.202`
+- Server: `ubuntu@150.65.181.188`
 - Game project: `/home/ubuntu/battleship`
 - Asset project: `/home/ubuntu/battleship-assets`
 - Branch: `main`
@@ -17,7 +17,7 @@ credentials, caches or generated builds in the repositories.
 - Asset repository: `Arsenic-er/Game-Super-Boring-Battleship-Assets`
 - Stack: TypeScript 7, Babylon.js 9, Vite 8, Vitest 4, Electron
 - Test URL: `http://127.0.0.1:4174/`
-- Tunnel: `ssh -N -L 4174:127.0.0.1:4174 ubuntu@150.65.181.202`
+- Tunnel: `ssh -N -L 4174:127.0.0.1:4174 ubuntu@150.65.181.188`
 
 The Windows workspace is not a canonical development copy. Use it only for browser
 testing, server access and short-lived transfer staging.
@@ -30,6 +30,8 @@ testing, server access and short-lived transfer staging.
 - Players command aircraft groups but do not directly pilot aircraft.
 - Bold pixel UI; supported locales: zh-Hans, zh-Hant, en, ja, es, de and ru.
 - Portable Windows x64 build remains the release target.
+- Single-player battles use a 20-minute hard limit and are tuned toward a 15–20 minute normal duration.
+- Windows portable packages are built and retained on the server; Codex does not copy them to the local PC.
 
 ## Current archived baseline
 
@@ -81,10 +83,10 @@ testing, server access and short-lived transfer staging.
    Cleveland and Yamato as benchmark ships.
 3. Run at least 100 paired seeds per important matchup and rebase Kagero/Fletcher plus
    heavy-ship hit/timeout behaviour.
-4. Calibrate mixed-fleet missions toward a 6–9 minute median and at least 70% non-timeout endings.
+4. Calibrate mixed-fleet missions toward a 15–20 minute normal duration and at least 70% non-timeout endings.
 5. Show the complete installed loadout in dockyard preview.
 6. Add terrain-cover use, delayed shared spotting and two-to-three objective scenarios.
-7. Package Windows only after the gameplay loop and visual baseline stabilize.
+7. Package Windows on the server only after the gameplay loop and visual baseline stabilize.
 
 ## Delivery gate
 

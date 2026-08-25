@@ -1160,6 +1160,17 @@ describe("deterministic battle simulation", () => {
     expect(state.endReason).toBe("destroyed");
   });
 
+  it("keeps a neutral battle active after the old ten-minute limit", () => {
+    const state = createInitialState(47);
+    state.time = 10 * 60;
+    stepSimulation(state, new Map([
+      ["player", idle(0, 1_000)],
+      ["enemy", idle(0, -1_000)],
+    ]), FIXED_STEP);
+    expect(state.status).toBe("running");
+    expect(state.endReason).toBeUndefined();
+  });
+
   it("awards a time-limit victory to the ship with more hull remaining", () => {
     const state = createInitialState(12);
     state.time = BATTLE_DURATION_SECONDS - FIXED_STEP / 2;

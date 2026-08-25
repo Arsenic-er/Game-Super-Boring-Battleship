@@ -14,7 +14,7 @@ export const DEPTH_CHARGE = {
 } as const;
 export const GRAVITY = 9.81;
 export const KNOT_TO_MPS = 0.514444;
-export const BATTLE_DURATION_SECONDS = 10 * 60;
+export const BATTLE_DURATION_SECONDS = 20 * 60;
 
 export const OBJECTIVE = {
   centerX: 90,

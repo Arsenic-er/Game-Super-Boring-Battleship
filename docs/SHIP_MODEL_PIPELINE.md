@@ -2,6 +2,8 @@
 
 The battle and dockyard now share the same 112 m multi-station fallback hull. External art must not replace simulation collision or damage volumes.
 
+Runtime exports use binary `.glb` only. Blender and FBX source files remain in the private asset repository, while validated manifests, GLBs and required attribution notices are mirrored into the game repository. A failed or missing external model always falls back to the procedural hull.
+
 ## Coordinate and performance contract
 
 - metres; `+Y` up, `+Z` bow, `+X` starboard;
