@@ -1,5 +1,4 @@
 import type { ShipClassId } from "../ships/classes";
-import { SHIP_CLASSES } from "../ships/classes";
 
 export const SHIP_ASSET_SCHEMA_VERSION = 1 as const;
 
@@ -45,6 +44,7 @@ export interface ShipAssetProvenance {
 export interface ShipAssetLod {
   level: ShipLodLevel;
   file: string;
+  sha256: string;
   triangles: number;
   materials: number;
   maxTextureSize: number;
@@ -96,6 +96,12 @@ const COLLISION_ZONES = new Set<ShipCollisionZone>([
   "bow", "central", "bridge", "machinery", "magazine", "stern",
 ]);
 
+const PLAYABLE_SHIP_CLASSES = new Set<ShipClassId>([
+  "fletcher", "j-class", "kagero", "type-1936a", "tashkent",
+  "cleveland", "edinburgh", "nurnberg", "agano", "dido",
+  "north-carolina", "king-george-v", "bismarck", "yamato", "richelieu",
+]);
+
 const isRecord = (value: unknown): value is Record<string, unknown> => (
   typeof value === "object" && value !== null && !Array.isArray(value)
 );
@@ -120,7 +126,7 @@ export function validateShipAssetManifest(input: unknown): ShipAssetValidationRe
   if (input.schemaVersion !== SHIP_ASSET_SCHEMA_VERSION) {
     error("schema.unsupported", "schemaVersion", `Expected schema version ${SHIP_ASSET_SCHEMA_VERSION}.`);
   }
-  if (typeof input.shipClassId !== "string" || !(input.shipClassId in SHIP_CLASSES)) {
+  if (typeof input.shipClassId !== "string" || !PLAYABLE_SHIP_CLASSES.has(input.shipClassId as ShipClassId)) {
     error("ship-class.unknown", "shipClassId", "shipClassId must name a playable ship class.");
   }
   if (typeof input.displayName !== "string" || input.displayName.trim().length === 0) {
@@ -189,6 +195,9 @@ export function validateShipAssetManifest(input: unknown): ShipAssetValidationRe
       const budget = LOD_BUDGETS[level];
       if (typeof lod.file !== "string" || !/^lod[0-2]\.glb$/i.test(lod.file)) {
         error("lod.glb-required", `lods.${level}.file`, `LOD${level} must reference a binary .glb file.`);
+      }
+      if (typeof lod.sha256 !== "string" || !/^[a-f0-9]{64}$/i.test(lod.sha256)) {
+        error("lod.sha256-required", `lods.${level}.sha256`, `LOD${level} requires a SHA-256 checksum.`);
       }
       if (!Number.isInteger(lod.triangles) || (lod.triangles as number) <= 0) {
         error("lod.triangles-invalid", `lods.${level}.triangles`, "Triangle count must be a positive integer.");

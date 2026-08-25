@@ -26,9 +26,9 @@ const validManifest = (): unknown => ({
     modifications: ["LOD reduction", "project hardpoints"],
   },
   lods: [
-    { level: 0, file: "lod0.glb", triangles: 42_000, materials: 6, maxTextureSize: 1024 },
-    { level: 1, file: "lod1.glb", triangles: 14_000, materials: 4, maxTextureSize: 1024 },
-    { level: 2, file: "lod2.glb", triangles: 3_500, materials: 2, maxTextureSize: 512 },
+    { level: 0, file: "lod0.glb", sha256: "b".repeat(64), triangles: 42_000, materials: 6, maxTextureSize: 1024 },
+    { level: 1, file: "lod1.glb", sha256: "c".repeat(64), triangles: 14_000, materials: 4, maxTextureSize: 1024 },
+    { level: 2, file: "lod2.glb", sha256: "d".repeat(64), triangles: 3_500, materials: 2, maxTextureSize: 512 },
   ],
   hardpoints: [...REQUIRED_SHIP_HARDPOINTS],
   renderNodes: ["HULL_LOD0", "DECK_LOD0", "SUPERSTRUCTURE_LOD0"],
@@ -67,6 +67,12 @@ describe("ship asset manifest validation", () => {
     const manifest = validManifest() as { lods: Array<Record<string, unknown>> };
     manifest.lods[1]!.file = "lod1.gltf";
     expect(issueCodes(manifest)).toContain("lod.glb-required");
+  });
+
+  it("rejects a LOD without its own runtime checksum", () => {
+    const manifest = validManifest() as { lods: Array<Record<string, unknown>> };
+    manifest.lods[2]!.sha256 = "not-a-checksum";
+    expect(issueCodes(manifest)).toContain("lod.sha256-required");
   });
 
   it("rejects each LOD when it exceeds its independent performance budget", () => {

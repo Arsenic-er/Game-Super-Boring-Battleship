@@ -24,6 +24,7 @@
     "preview": "vite preview --host 127.0.0.1",
     "balance": "vitest run tests/balanceReport.test.ts --reporter=verbose",
     "balance:matrix": "vitest run tests/balanceMatrixReport.test.ts --reporter=verbose",
+    "assets:ships:validate": "node scripts/validate-ship-assets.ts",
     "test": "vitest run",
     "desktop:run": "npm run build && electron .",
     "desktop:dist": "npm run build && electron-builder --win portable --x64"
