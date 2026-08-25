@@ -53,7 +53,7 @@ let input: PlayerInput;
 let tacticalMap: TacticalMap;
 let menus: GameMenus;
 let developerPanel: DeveloperPanel | undefined;
-const session = new LocalBattleSession(state, { includeDeveloperAi: true });
+const session = new LocalBattleSession(state);
 let developerView: DeveloperViewSession = normalDeveloperView();
 const playerPerception = new PlayerPerceptionTracker();
 const audio = new CombatAudio();
@@ -380,7 +380,9 @@ view.engine.runRenderLoop(() => {
         if (airMissions.length > 0) playerCommand.airMissions = airMissions;
         commands.set(controlledShip.id, playerCommand);
       }
-      const stepOutput = session.step(commands, FIXED_STEP);
+      const stepOutput = session.step(commands, FIXED_STEP, {
+        includeDeveloperAi: developerView.active,
+      });
       tacticalMap.handleAirEvents(stepOutput.airEvents);
       perceivedTarget = state.mode === "battle"
         ? playerPerception.update(observe(state, observerShipId))

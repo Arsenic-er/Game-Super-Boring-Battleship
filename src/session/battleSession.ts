@@ -13,12 +13,17 @@ export interface BattleStepOutput {
   airEvents: readonly AirCombatEvent[];
 }
 
+export interface BattleStepOptions {
+  includeDeveloperAi?: boolean;
+}
+
 export interface AuthoritativeBattleSession {
   readonly role: "local" | "host";
   readonly state: BattleState;
   step(
     humanCommands: ReadonlyMap<string, ControlCommand>,
     dt?: number,
+    options?: Readonly<BattleStepOptions>,
   ): BattleStepOutput;
   reset(state: BattleState): void;
 }

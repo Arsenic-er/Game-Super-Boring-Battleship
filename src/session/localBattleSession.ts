@@ -2,7 +2,11 @@ import { RuleBasedAi } from "../controllers/ruleBasedAi";
 import { FIXED_STEP } from "../sim/config";
 import { observe, stepSimulation } from "../sim/simulation";
 import type { BattleState, ControlCommand } from "../sim/types";
-import type { AuthoritativeBattleSession, BattleStepOutput } from "./battleSession";
+import type {
+  AuthoritativeBattleSession,
+  BattleStepOptions,
+  BattleStepOutput,
+} from "./battleSession";
 
 const actorSeed = (id: string): number => {
   let seed = 2_166_136_261;
@@ -16,12 +20,10 @@ const actorSeed = (id: string): number => {
 export class LocalBattleSession implements AuthoritativeBattleSession {
   readonly role = "local" as const;
   private currentState: BattleState;
-  private readonly includeDeveloperAi: boolean;
   private shipAiById = new Map<string, RuleBasedAi>();
 
-  constructor(state: BattleState, options?: { includeDeveloperAi?: boolean }) {
+  constructor(state: BattleState, _options?: { includeDeveloperAi?: boolean }) {
     this.currentState = state;
-    this.includeDeveloperAi = options?.includeDeveloperAi ?? false;
   }
 
   get state(): BattleState {
@@ -31,13 +33,15 @@ export class LocalBattleSession implements AuthoritativeBattleSession {
   step(
     humanCommands: ReadonlyMap<string, ControlCommand>,
     dt = FIXED_STEP,
+    options?: Readonly<BattleStepOptions>,
   ): BattleStepOutput {
     const commands = new Map(humanCommands);
+    const includeDeveloperAi = options?.includeDeveloperAi ?? false;
     const aiShips = this.currentState.ships.filter((ship) =>
       ship.hull > 0
       && !ship.isTestTarget
       && !commands.has(ship.id)
-      && (this.includeDeveloperAi || ship.id === "enemy" || ship.aiControlled));
+      && (includeDeveloperAi || ship.id === "enemy" || ship.aiControlled));
     const activeAiIds = new Set(aiShips.map(({ id }) => id));
     for (const id of this.shipAiById.keys()) {
       if (!activeAiIds.has(id)) this.shipAiById.delete(id);
@@ -53,9 +57,9 @@ export class LocalBattleSession implements AuthoritativeBattleSession {
     stepSimulation(this.currentState, commands, dt);
     return {
       state: this.currentState,
-      shots: this.currentState.shots,
-      impacts: this.currentState.impacts,
-      airEvents: this.currentState.airEvents,
+      shots: [...this.currentState.shots],
+      impacts: [...this.currentState.impacts],
+      airEvents: [...this.currentState.airEvents],
     };
   }
 
