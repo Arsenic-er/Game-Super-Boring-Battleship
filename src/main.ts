@@ -1,7 +1,6 @@
 import "./style.css";
 import "./pixel.css";
 import "@fortawesome/fontawesome-free/css/all.min.css";
-import { RuleBasedAi } from "./controllers/ruleBasedAi";
 import { PlayerInput } from "./controllers/playerInput";
 import {
   activeControlledShipId,
@@ -23,8 +22,9 @@ import type { LocalProfile } from "./profile/localProfile";
 import { battleLoadoutForSavedBuild } from "./profile/savedBuilds";
 import { loadGameSettings, saveGameSettings } from "./settings/gameSettings";
 import type { GameSettings } from "./settings/gameSettings";
+import { LocalBattleSession } from "./session/localBattleSession";
 import { FIXED_STEP } from "./sim/config";
-import { createInitialState, observe, stepSimulation } from "./sim/simulation";
+import { createInitialState, observe } from "./sim/simulation";
 import { deployFleetAirSupport } from "./sim/airOperations";
 import { PlayerPerceptionTracker } from "./sim/playerPerception";
 import type { BattleState, ControlCommand, GameMode } from "./sim/types";
@@ -53,16 +53,8 @@ let input: PlayerInput;
 let tacticalMap: TacticalMap;
 let menus: GameMenus;
 let developerPanel: DeveloperPanel | undefined;
-let shipAiById = new Map<string, RuleBasedAi>();
+const session = new LocalBattleSession(state, { includeDeveloperAi: true });
 let developerView: DeveloperViewSession = normalDeveloperView();
-const actorSeed = (id: string): number => {
-  let seed = 2_166_136_261;
-  for (let index = 0; index < id.length; index += 1) {
-    seed ^= id.charCodeAt(index);
-    seed = Math.imul(seed, 16_777_619);
-  }
-  return seed >>> 0;
-};
 const playerPerception = new PlayerPerceptionTracker();
 const audio = new CombatAudio();
 let started = false;
@@ -98,6 +90,7 @@ function startMode(request: GameLaunchRequest): void {
       : { weatherId: "clear" },
   );
   if (state.airSupport === "fleet-edge") deployFleetAirSupport(state);
+  session.reset(state);
   input.reset();
   view.resetTransient();
   tacticalMap?.close();
@@ -105,7 +98,6 @@ function startMode(request: GameLaunchRequest): void {
   developerPanel?.close();
   menus?.closeAll();
   hud.resetMetrics();
-  shipAiById = new Map();
   developerView = normalDeveloperView();
   playerPerception.reset();
   audio.unlock();
@@ -140,6 +132,7 @@ function returnToMainMenu(): void {
     equipment.torpedoId,
     equipment.shipClassId,
   );
+  session.reset(state);
   developerView = normalDeveloperView();
   playerPerception.reset();
   view.resetTransient();
@@ -387,35 +380,18 @@ view.engine.runRenderLoop(() => {
         if (airMissions.length > 0) playerCommand.airMissions = airMissions;
         commands.set(controlledShip.id, playerCommand);
       }
-      const aiShips = state.ships.filter((ship) =>
-        ship.hull > 0
-        && !ship.isTestTarget
-        && ship.id !== controlledShipId
-        && (developerView.active || ship.id === "enemy" || ship.aiControlled));
-      const activeAiIds = new Set(aiShips.map(({ id }) => id));
-      for (const id of shipAiById.keys()) {
-        if (!activeAiIds.has(id)) shipAiById.delete(id);
-      }
-      for (const aiShip of aiShips) {
-        let controller = shipAiById.get(aiShip.id);
-        if (!controller) {
-          controller = new RuleBasedAi(state.randomSeed ^ actorSeed(aiShip.id));
-          shipAiById.set(aiShip.id, controller);
-        }
-        commands.set(aiShip.id, controller.command(observe(state, aiShip.id)));
-      }
-      stepSimulation(state, commands, FIXED_STEP);
-      tacticalMap.handleAirEvents(state.airEvents);
+      const stepOutput = session.step(commands, FIXED_STEP);
+      tacticalMap.handleAirEvents(stepOutput.airEvents);
       perceivedTarget = state.mode === "battle"
         ? playerPerception.update(observe(state, observerShipId))
         : undefined;
-      const visibleShots = state.shots.filter((shot) =>
+      const visibleShots = stepOutput.shots.filter((shot) =>
         developerView.active || shot.team === "player" || Boolean(perceivedTarget?.live));
       view.consumeShots(visibleShots);
-      view.consumeImpacts(state.impacts);
+      view.consumeImpacts(stepOutput.impacts);
       audio.consumeShots(visibleShots);
-      audio.consumeImpacts(state.impacts);
-      hud.consumeImpacts(state.impacts);
+      audio.consumeImpacts(stepOutput.impacts);
+      hud.consumeImpacts(stepOutput.impacts);
       accumulator -= FIXED_STEP;
     }
   } else {
