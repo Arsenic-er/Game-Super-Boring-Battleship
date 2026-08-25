@@ -22,13 +22,14 @@
 
 ## About the game
 
-Super Boring Battleship Game is a single-player naval combat prototype focused on readable ballistics, deliberate ship handling, modular damage and low-end-PC compatibility. It uses TypeScript, Babylon.js, Vite and Electron.
+Super Boring Battleship Game is a lightweight naval combat prototype with single-player battles and two-player LAN co-op against AI. It focuses on readable ballistics, deliberate ship handling, modular damage and low-end-PC compatibility. It uses TypeScript, Babylon.js, Vite and Electron.
 
 This is an early prototype rather than a finished commercial game. Visuals, balance, ship models and progression are still evolving.
 
 ## Current features
 
-- Ten-minute player-vs-AI battles and an unlimited sea-trials mode.
+- Player-vs-AI battles tuned for a 15–20 minute normal duration, plus an unlimited sea-trials mode.
+- Two-player LAN co-op against AI with room search, manual IPv4 fallback, saved-build selection and host-authoritative simulation. See the [LAN guide](docs/LAN_MULTIPLAYER.md).
 - Historically paced destroyer movement with gradual rudder shift, steering-damage response and speed loss during hard turns.
 - Main-gun ballistics with visible shell arcs, dispersion, reload progress and independent turret alignment.
 - Staged HE/AP loading with 21 mm HE penetration, probabilistic AP ricochet, fuse-based overpenetration and compartment saturation.
@@ -76,9 +77,8 @@ This is an early prototype rather than a finished commercial game. Visuals, bala
 ## Windows quick start
 
 1. Open the repository's **Releases** page.
-2. Download `Super-Boring-Battleship-Game-v0.6.4-Windows-x64.zip`.
-3. Extract the entire ZIP to a normal folder.
-4. Double-click `Super Boring Battleship Game.exe`.
+2. Download `battleship-0.7.0-windows-x64.exe`.
+3. Double-click the portable EXE. No installation or extraction is required.
 
 The build targets 64-bit Windows 10/11. Windows SmartScreen may warn about an unsigned indie build; only run a file downloaded from this repository's official Release page.
 
@@ -116,13 +116,14 @@ Third-party libraries and the Fusion Pixel Font remain under their respective li
 
 ## 游戏简介
 
-《超级无聊战舰游戏》是一款单人海战原型，重点是可读的弹道、偏真实的舰船操纵、模块化损伤和低配置电脑兼容性。项目使用 TypeScript、Babylon.js、Vite 与 Electron 开发。
+《超级无聊战舰游戏》是一款支持单人战斗和双人局域网合作对抗 AI 的轻量海战原型，重点是可读的弹道、偏真实的舰船操纵、模块化损伤和低配置电脑兼容性。项目使用 TypeScript、Babylon.js、Vite 与 Electron 开发。
 
 目前仍是早期原型，并非完成的商业游戏。画面、平衡、舰船模型和成长系统仍会继续修改。
 
 ## 当前内容
 
-- 10 分钟人机战斗，以及没有时间限制的舰船测试模式。
+- 常规时长目标为 15–20 分钟的人机战斗，以及没有时间限制的舰船测试模式。
+- 双人局域网合作对抗 AI：支持搜索房间、手动 IPv4、保存配装选择和房主权威模拟；配置与排障见[局域网联机指南](docs/LAN_MULTIPLAYER.md)。
 - 中央 A 区占领、区域优势、双方积分与积分胜利。
 - 非全知 AI 光学观测：目标测量有刷新间隔与误差，并包含识别、丢失、搜索和重获；没有实时跟踪时禁止开火。
 - 玩家 HUD、瞄准镜、3D 敌舰可见性和战术地图遵循相同的光学接触；失联后只保留逐渐衰减的最后已知标记。
@@ -174,9 +175,8 @@ Third-party libraries and the Fusion Pixel Font remain under their respective li
 ## Windows 使用方法
 
 1. 打开仓库的 **Releases** 页面。
-2. 下载 `Super-Boring-Battleship-Game-v0.6.4-Windows-x64.zip`。
-3. 把 ZIP 完整解压到普通文件夹。
-4. 双击 `Super Boring Battleship Game.exe`。
+2. 下载 `battleship-0.7.0-windows-x64.exe`。
+3. 双击便携 EXE 即可，无需安装或解压。
 
 目标系统为 64 位 Windows 10/11。由于目前是独立开发测试版，Windows SmartScreen 可能显示未知发布者提示；请只运行从本仓库官方 Release 下载的文件。
 

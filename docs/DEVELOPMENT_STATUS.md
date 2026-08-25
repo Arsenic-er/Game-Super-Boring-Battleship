@@ -1,6 +1,6 @@
 # Condensed Development Status
 
-Last updated: 2026-08-25
+Last updated: 2026-08-26
 
 This is the current operational handoff. Product decisions are preserved in
 `CONVERSATION_SUMMARY.md`; milestone history is preserved in `DEVELOPMENT_LOG.md`.
@@ -16,8 +16,7 @@ credentials, caches or generated builds in the repositories.
 - Game repository: `Arsenic-er/Game-Super-Boring-Battleship`
 - Asset repository: `Arsenic-er/Game-Super-Boring-Battleship-Assets`
 - Stack: TypeScript 7, Babylon.js 9, Vite 8, Vitest 4, Electron
-- Test URL: `http://127.0.0.1:4174/`
-- Tunnel: `ssh -N -L 4174:127.0.0.1:4174 ubuntu@150.65.181.188`
+- Server preview service: disabled; LAN validation uses packaged desktop instances.
 
 The Windows workspace is not a canonical development copy. Use it only for browser
 testing, server access and short-lived transfer staging.
@@ -25,17 +24,17 @@ testing, server access and short-lived transfer staging.
 ## Product direction
 
 - Lightweight World War II 3D naval combat with realistic foundations and compressed pacing.
-- Complete single-player human-versus-AI gameplay before LAN, multiplayer, submarines or RL AI.
+- Complete single-player human-versus-AI gameplay and the first two-player LAN co-op slice before PvP, Internet multiplayer, submarines or RL AI.
 - World of Warships-style combat logic without paid monetization.
 - Players command aircraft groups but do not directly pilot aircraft.
 - Bold pixel UI; supported locales: zh-Hans, zh-Hant, en, ja, es, de and ru.
 - Portable Windows x64 build remains the release target.
 - Single-player battles use a 20-minute hard limit and are tuned toward a 15–20 minute normal duration.
-- Windows portable packages are built and retained on the server; Codex does not copy them to the local PC.
+- Windows portable packages are built on the server; only the latest verified package is copied to the local PC.
 
 ## Current archived baseline
 
-- Version: `0.6.13`
+- Version: `0.7.0`
 - Game commit before this documentation update: `96fcd51`
 - Asset baseline before this synchronization: `2d46fe1`, based on game commit `e4f51ab`.
 - Fifteen historical ship classes: five destroyers, five light cruisers, five battleships.
@@ -54,6 +53,8 @@ testing, server access and short-lived transfer staging.
 - Clear/cloud/rain/fog/storm weather profiles and bright clear-day visual reference.
 - Seven-language interface and repository guides.
 - Three selectable synthesized UI sound styles plus naval combat/ambient audio.
+- Two-player LAN co-op lobby with UDP room discovery, manual IPv4 fallback, authoritative host simulation, scoped 10 Hz snapshots and 30 Hz guest input ceiling.
+- Host/guest lifecycle handling: guest dropout hands the ship to AI within five simulated seconds; host dropout returns the guest to the menu. Host migration and reconnect remain out of scope.
 
 ## Quality baseline
 
@@ -81,22 +82,23 @@ testing, server access and short-lived transfer staging.
 
 ## Resume priorities
 
-1. Capture visual-regression baselines for menu, dock, setup, combat, scope, tactical map
+1. Run the packaged two-computer Windows LAN acceptance matrix in `docs/LAN_MULTIPLAYER.md` across at least one home router.
+2. Capture visual-regression baselines for menu, dock, setup, combat, scope, tactical map
    and developer mode at 1440x900 and 1280x720.
-2. Officially download, optimize and validate the approved Fletcher source, then repeat the
+3. Officially download, optimize and validate the approved Fletcher source, then repeat the
    established external-model pipeline for Cleveland and Yamato.
-3. Run at least 100 paired seeds per important matchup and rebase Kagero/Fletcher plus
+4. Run at least 100 paired seeds per important matchup and rebase Kagero/Fletcher plus
    heavy-ship hit/timeout behaviour.
-4. Calibrate mixed-fleet missions toward a 15–20 minute normal duration and at least 70% non-timeout endings.
-5. Show the complete installed loadout in dockyard preview.
-6. Add terrain-cover use, delayed shared spotting and two-to-three objective scenarios.
-7. Package Windows on the server only after the gameplay loop and visual baseline stabilize.
+5. Calibrate mixed-fleet missions toward a 15–20 minute normal duration and at least 70% non-timeout endings.
+6. Show the complete installed loadout in dockyard preview.
+7. Add terrain-cover use, delayed shared spotting and two-to-three objective scenarios.
 
 ## Delivery gate
 
 1. `git diff --check`
 2. `npm test -- --run`
 3. `npm run build`
-4. Confirm HTTP 200 from `http://127.0.0.1:4174/`.
-5. Commit as `Arsenic-er <302726993@qq.com>`.
-6. Push only when the user explicitly requests it.
+4. Run the desktop LAN loopback integration test and the two-instance Windows smoke matrix.
+5. Build `release/battleship-0.7.0-windows-x64.exe` and verify a non-zero size plus SHA-256.
+6. Commit as `Arsenic-er <302726993@qq.com>`.
+7. Push only when the user explicitly requests it.

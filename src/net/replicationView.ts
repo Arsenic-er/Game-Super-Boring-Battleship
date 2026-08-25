@@ -249,6 +249,8 @@ export function replicationViewFor(
     serverTick,
     lastProcessedInputSequence,
     time: state.time,
+    status: state.status,
+    ...(state.endReason ? { endReason: state.endReason } : {}),
     self: cloneSelf(self),
     friendlies: observation.friendlies.flatMap((ship) => {
       const fullShip = state.ships.find(({ id }) => id === ship.id);

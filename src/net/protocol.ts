@@ -1,5 +1,5 @@
 import type { ShipClassId } from "../ships/classes";
-import type { ControlCommand } from "../sim/types";
+import type { BattleEndReason, BattleStatus, ControlCommand } from "../sim/types";
 import {
   LAN_BUILD_SLOT_KEYS,
   LAN_DISCOVERY_PORT,
@@ -111,6 +111,8 @@ export interface PlayerSnapshotPayload {
   serverTick: number;
   lastProcessedInputSequence: number;
   time: number;
+  status?: BattleStatus;
+  endReason?: BattleEndReason;
   self: Record<string, unknown>;
   friendlies: Record<string, unknown>[];
   contacts: Record<string, unknown>[];

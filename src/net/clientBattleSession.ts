@@ -93,6 +93,8 @@ interface InterpolatedSnapshot {
   readonly controlledShipId: string;
   readonly serverTick: number;
   readonly time: number;
+  readonly status: BattleState["status"];
+  readonly endReason?: BattleState["endReason"];
   readonly self: InterpolatedSelf;
   readonly friendlies: readonly InterpolatedFriendly[];
   readonly contacts: readonly PlayerTargetView[];
@@ -532,6 +534,8 @@ export class ClientBattleSession {
     const visualEvents = this.releaseVisualEvents(now);
     const state = structuredClone(this.templateState);
     state.time = sampled.time;
+    state.status = sampled.status;
+    state.endReason = sampled.endReason;
     state.ships = [predictedSelf, ...sampled.friendlies.map(makeFriendly)];
     state.objective = sampled.objective;
     state.projectiles = sampled.projectiles.map((entry) => structuredClone(entry));
@@ -654,6 +658,8 @@ export class ClientBattleSession {
       controlledShipId: next.controlledShipId,
       serverTick: next.serverTick,
       time: lerpNumber(snapshotTimeSeconds(previous), snapshotTimeSeconds(next), alpha),
+      status: next.status ?? "running",
+      endReason: next.endReason,
       self: {
         id: asString(newerSelf.id) ?? next.controlledShipId,
         team: asString(newerSelf.team) ?? "player",

@@ -104,6 +104,8 @@ const WEAPON_SLOTS = ["mainGun", "torpedo", "aircraft"] as const;
 const DAMAGE_CONTROL_PRIORITIES = ["balanced", "fire", "flood", "module"] as const;
 const AMMO_TYPES = ["he", "ap"] as const;
 const TORPEDO_SPREAD_MODES = ["narrow", "wide"] as const;
+const BATTLE_STATUSES = ["running", "player-won", "enemy-won", "draw"] as const;
+const BATTLE_END_REASONS = ["destroyed", "score", "time"] as const;
 const AIR_MISSION_KINDS = [
   "moveTo",
   "defendShip",
@@ -495,11 +497,13 @@ function readInputFramePayload(value: unknown): InputFramePayload | undefined {
 
 function readPlayerSnapshotPayload(value: unknown): PlayerSnapshotPayload | undefined {
   if (!isRecord(value)) return undefined;
-  if (!hasExactKeys(value, [
+  if (!hasAllowedKeys(value, [
     "controlledShipId",
     "serverTick",
     "lastProcessedInputSequence",
     "time",
+    "status",
+    "endReason",
     "self",
     "friendlies",
     "contacts",
@@ -513,6 +517,8 @@ function readPlayerSnapshotPayload(value: unknown): PlayerSnapshotPayload | unde
   const serverTick = readFiniteNumber(value.serverTick, { integer: true, min: 0, max: Number.MAX_SAFE_INTEGER });
   const lastProcessedInputSequence = readFiniteNumber(value.lastProcessedInputSequence, { integer: true, min: 0, max: Number.MAX_SAFE_INTEGER });
   const time = readFiniteNumber(value.time, { min: 0 });
+  const status = value.status === undefined ? undefined : readEnum(value.status, BATTLE_STATUSES);
+  const endReason = value.endReason === undefined ? undefined : readEnum(value.endReason, BATTLE_END_REASONS);
   const self = readJsonRecord(value.self);
   const friendlies = readJsonRecordArray(value.friendlies, 32);
   const contacts = readJsonRecordArray(value.contacts, 128);
@@ -526,6 +532,8 @@ function readPlayerSnapshotPayload(value: unknown): PlayerSnapshotPayload | unde
     || serverTick === undefined
     || lastProcessedInputSequence === undefined
     || time === undefined
+    || (value.status !== undefined && status === undefined)
+    || (value.endReason !== undefined && endReason === undefined)
     || !self
     || !friendlies
     || !contacts
@@ -542,6 +550,8 @@ function readPlayerSnapshotPayload(value: unknown): PlayerSnapshotPayload | unde
     serverTick,
     lastProcessedInputSequence,
     time,
+    ...(status ? { status } : {}),
+    ...(endReason ? { endReason } : {}),
     self,
     friendlies,
     contacts,
