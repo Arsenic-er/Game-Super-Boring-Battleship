@@ -15,6 +15,12 @@ describe("headless balance lab", () => {
     expect(second).toEqual(first);
   });
 
+  it("uses the live battle duration when no laboratory limit is supplied", () => {
+    const result = runHeadlessBattle(2);
+    expect(result.status).not.toBe("running");
+    expect(result.endReason).toBeDefined();
+  }, 10_000);
+
   it("fingerprints equivalent initial states identically", () => {
     expect(battleStateFingerprint(createInitialState(73)))
       .toBe(battleStateFingerprint(createInitialState(73)));

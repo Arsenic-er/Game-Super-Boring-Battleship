@@ -9,7 +9,7 @@ import type { ShipClassId } from "../ships/classes";
 import { DEFAULT_TORPEDO_ID } from "../ships/torpedoes";
 import type { TorpedoId } from "../ships/torpedoes";
 import type { SecondaryGunId } from "../ships/secondaryGuns";
-import { BATTLE_SPAWN, FIXED_STEP } from "./config";
+import { BATTLE_DURATION_SECONDS, BATTLE_SPAWN, FIXED_STEP } from "./config";
 import {
   createDeveloperShipState,
   createInitialState,
@@ -538,7 +538,7 @@ export function createBalanceInitialState(
 
 export function runHeadlessBattle(
   seed: number,
-  maximumSeconds = 10 * 60,
+  maximumSeconds = BATTLE_DURATION_SECONDS,
   scenario?: BalanceScenario,
 ): BattleTelemetry {
   const state = createBalanceInitialState(seed, scenario);
@@ -566,8 +566,8 @@ export function runHeadlessBattle(
   let contestedSeconds = 0;
   let playerControlSeconds = 0;
   let enemyControlSeconds = 0;
-  // One guard tick avoids a 599.999999... boundary leaving a nominal
-  // ten-minute battle in the "running" state.
+  // One guard tick avoids floating-point drift at the configured boundary
+  // leaving a nominally complete battle in the "running" state.
   const maximumSteps = Math.ceil(maximumSeconds / FIXED_STEP) + 1;
 
   for (let step = 0; step < maximumSteps && state.status === "running"; step += 1) {
@@ -809,14 +809,14 @@ function runScenarioBattles(
 }
 
 export function runBalanceBatch(runs: number, firstSeed = 1): BalanceReport {
-  return summarizeBattles(runScenarioBattles(runs, firstSeed, 10 * 60));
+  return summarizeBattles(runScenarioBattles(runs, firstSeed, BATTLE_DURATION_SECONDS));
 }
 
 export function runConfiguredBalanceBatch(options: BalanceBatchOptions): BalanceReport {
   return summarizeBattles(runScenarioBattles(
     options.runs,
     options.firstSeed ?? 1,
-    options.maximumSeconds ?? 10 * 60,
+    options.maximumSeconds ?? BATTLE_DURATION_SECONDS,
     {
       player: options.player,
       enemy: options.enemy,
@@ -832,7 +832,7 @@ export function runConfiguredBalanceBatch(options: BalanceBatchOptions): Balance
  */
 export function runBalanceMatrix(options: BalanceMatrixOptions): BalanceMatrixReport {
   const runsPerSpawn = Math.max(0, Math.floor(options.runsPerSpawn ?? 1));
-  const maximumSeconds = options.maximumSeconds ?? 10 * 60;
+  const maximumSeconds = options.maximumSeconds ?? BATTLE_DURATION_SECONDS;
   const includeMirroredSpawns = options.includeMirroredSpawns ?? true;
   let nextSeed = options.firstSeed ?? 1;
   let totalRuns = 0;

@@ -2,8 +2,8 @@ import { describe, expect, it } from "vitest";
 import { runBalanceBatch } from "../src/sim/balanceLab";
 
 const enabled = process.env.npm_lifecycle_event === "balance";
-const requestedRuns = Number.parseInt(process.env.BATTLE_RUNS ?? "500", 10);
-const runs = Number.isFinite(requestedRuns) ? Math.max(1, requestedRuns) : 500;
+const requestedRuns = Number.parseInt(process.env.BATTLE_RUNS ?? "50", 10);
+const runs = Number.isFinite(requestedRuns) ? Math.max(1, requestedRuns) : 50;
 
 describe.skipIf(!enabled)("balance report", () => {
   it(`simulates ${runs} deterministic battles without rendering`, () => {
@@ -17,8 +17,8 @@ describe.skipIf(!enabled)("balance report", () => {
       simulationWallSeconds: Math.round(elapsedSeconds * 100) / 100,
       ...report,
     }, null, 2));
-  // Five hundred full ten-minute, 60 Hz simulations take roughly 170 seconds
-  // with independent main-battery mounts. Keep a real guard while allowing the default
-  // balance command to complete instead of timing out after producing a report.
+  // Fifty full twenty-minute, 60 Hz simulations keep the routine report practical
+  // while still sampling controller seeds and time-limit outcomes. Larger audits can
+  // opt in with BATTLE_RUNS without making the default developer command excessive.
   }, 240_000);
 });
