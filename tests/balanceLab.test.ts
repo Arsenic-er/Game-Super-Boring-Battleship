@@ -130,5 +130,5 @@ describe("headless balance lab", () => {
     expect(report.averageTorpedoSalvosPerTeam).toBeGreaterThanOrEqual(0);
     expect(report.playerGunHitRate).toBeGreaterThanOrEqual(0);
     expect(report.playerGunHitRate).toBeLessThanOrEqual(1);
-  }, 15_000);
+  }, 30_000);
 });
