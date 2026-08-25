@@ -8,9 +8,15 @@ import {
   fleetHullRoster,
   type FleetSize,
 } from "./battleSetup";
-import type { Team, Vec3 } from "./types";
+import type { InstalledEquipmentIds, Team, Vec3 } from "./types";
 
 export type ScenarioFleetRole = "flagship" | "screen" | "escort" | "line";
+
+export interface ScenarioHumanPlayerDescriptor {
+  peerId: string;
+  shipClassId: ShipClassId;
+  installedEquipment: InstalledEquipmentIds;
+}
 
 export interface ScenarioShipSlot {
   id: string;
@@ -22,6 +28,8 @@ export interface ScenarioShipSlot {
   playerControlled: boolean;
   aiControlled: boolean;
   countsForVictory: boolean;
+  humanPeerId?: string;
+  installedEquipment?: InstalledEquipmentIds;
 }
 
 export interface BattleScenarioDescriptor {
@@ -35,8 +43,10 @@ export interface AtollBattleScenarioOptions {
   playerShipClassId: ShipClassId;
   teamSize: FleetSize;
   seed?: number;
+  humanPlayers?: readonly ScenarioHumanPlayerDescriptor[];
 }
 
+const SUPPORTED_FLEET_SIZES: readonly FleetSize[] = [1, 3, 5, 7];
 const point = (x: number, z: number): Vec3 => ({ x, y: 0, z });
 const roleForHull = (hullId: HullId): ScenarioFleetRole =>
   hullId === "destroyer" ? "screen" : hullId === "lightCruiser" ? "escort" : "line";
@@ -49,18 +59,31 @@ function deterministicClass(hullId: HullId, index: number, seed: number, enemy: 
   return pool[offset] ?? pool[0]!;
 }
 
-function alliedClassRoster(options: AtollBattleScenarioOptions): ShipClassId[] {
-  const hulls = fleetHullRoster(options.teamSize, options.playerShipClassId);
-  const playerHull = getShipClass(options.playerShipClassId).hullId;
-  const playerHullIndex = hulls.indexOf(playerHull);
-  if (playerHullIndex >= 0) hulls.splice(playerHullIndex, 1);
-  return [options.playerShipClassId, ...hulls.map((hullId, index) =>
-    deterministicClass(hullId, index, options.seed ?? 0, false))];
+function cloneInstalledEquipment(installedEquipment: InstalledEquipmentIds): InstalledEquipmentIds {
+  return {
+    mainGun: [...installedEquipment.mainGun],
+    torpedo: [...installedEquipment.torpedo],
+    antiAir: [...installedEquipment.antiAir],
+    sideGun: [...installedEquipment.sideGun],
+    depthCharge: [...installedEquipment.depthCharge],
+    magazine: [...installedEquipment.magazine],
+    engine: [...installedEquipment.engine],
+    steering: [...installedEquipment.steering],
+  };
 }
 
-function enemyClassRoster(options: AtollBattleScenarioOptions): ShipClassId[] {
-  return fleetHullRoster(options.teamSize, options.playerShipClassId)
-    .map((hullId, index) => deterministicClass(hullId, index, options.seed ?? 0, true));
+function alliedClassRoster(teamSize: FleetSize, playerShipClassId: ShipClassId, seed: number): ShipClassId[] {
+  const hulls = fleetHullRoster(teamSize, playerShipClassId);
+  const playerHull = getShipClass(playerShipClassId).hullId;
+  const playerHullIndex = hulls.indexOf(playerHull);
+  if (playerHullIndex >= 0) hulls.splice(playerHullIndex, 1);
+  return [playerShipClassId, ...hulls.map((hullId, index) =>
+    deterministicClass(hullId, index, seed, false))];
+}
+
+function enemyClassRoster(teamSize: FleetSize, playerShipClassId: ShipClassId, seed: number): ShipClassId[] {
+  return fleetHullRoster(teamSize, playerShipClassId)
+    .map((hullId, index) => deterministicClass(hullId, index, seed, true));
 }
 
 function friendlyPosition(index: number): Vec3 {
@@ -74,11 +97,17 @@ function enemyPosition(index: number): Vec3 {
   return point(BATTLE_SPAWN.enemy.x + laneIndex * 360, BATTLE_SPAWN.enemy.z + Math.floor(index / 2) * 170);
 }
 
-export function buildAtollBattleScenario(
-  options: AtollBattleScenarioOptions,
-): BattleScenarioDescriptor {
-  const friendlyClasses = alliedClassRoster(options);
-  const enemyClasses = enemyClassRoster(options);
+function effectiveTeamSize(options: AtollBattleScenarioOptions): FleetSize {
+  const humans = options.humanPlayers?.length ?? 0;
+  if (humans <= 1) return options.teamSize;
+  const minimum = Math.max(options.teamSize, humans);
+  return SUPPORTED_FLEET_SIZES.find((size) => size >= minimum) ?? 7;
+}
+
+function buildSinglePlayerScenario(options: AtollBattleScenarioOptions): BattleScenarioDescriptor {
+  const seed = options.seed ?? 0;
+  const friendlyClasses = alliedClassRoster(options.teamSize, options.playerShipClassId, seed);
+  const enemyClasses = enemyClassRoster(options.teamSize, options.playerShipClassId, seed);
   const composition = fleetCompositionForSize(options.teamSize, options.playerShipClassId);
   const friendlyShips: ScenarioShipSlot[] = friendlyClasses.map((shipClassId, index) => ({
     id: index === 0 ? "player" : `ally-${getShipClass(shipClassId).hullId}-${index}`,
@@ -104,6 +133,57 @@ export function buildAtollBattleScenario(
   }));
   return {
     id: `dawn-atoll-${options.teamSize}v${options.teamSize}`,
+    mapId: "atoll-prototype",
+    airSupport: composition.airSupport > 0 ? "fleet-edge" : "none",
+    ships: [...friendlyShips, ...enemyShips],
+  };
+}
+
+export function buildAtollBattleScenario(
+  options: AtollBattleScenarioOptions,
+): BattleScenarioDescriptor {
+  if (!options.humanPlayers || options.humanPlayers.length <= 1) {
+    return buildSinglePlayerScenario(options);
+  }
+
+  const teamSize = effectiveTeamSize(options);
+  const seed = options.seed ?? 0;
+  const primaryClassId = options.humanPlayers[0]!.shipClassId;
+  const friendlyClasses = alliedClassRoster(teamSize, primaryClassId, seed);
+  const enemyClasses = enemyClassRoster(teamSize, primaryClassId, seed);
+  const composition = fleetCompositionForSize(teamSize, primaryClassId);
+  const friendlyShips: ScenarioShipSlot[] = friendlyClasses.map((defaultClassId, index) => {
+    const human = options.humanPlayers?.[index];
+    const shipClassId = human?.shipClassId ?? defaultClassId;
+    return {
+      id: index === 0 ? "player" : `ally-${getShipClass(shipClassId).hullId}-${index}`,
+      team: "player",
+      role: index === 0 ? "flagship" : roleForHull(getShipClass(shipClassId).hullId),
+      shipClassId,
+      position: friendlyPosition(index),
+      heading: 0,
+      playerControlled: Boolean(human),
+      aiControlled: !human,
+      countsForVictory: true,
+      ...(human ? {
+        humanPeerId: human.peerId,
+        installedEquipment: cloneInstalledEquipment(human.installedEquipment),
+      } : {}),
+    };
+  });
+  const enemyShips: ScenarioShipSlot[] = enemyClasses.map((shipClassId, index) => ({
+    id: index === 0 ? "enemy" : `enemy-${getShipClass(shipClassId).hullId}-${index}`,
+    team: "enemy",
+    role: roleForHull(getShipClass(shipClassId).hullId),
+    shipClassId,
+    position: enemyPosition(index),
+    heading: Math.PI,
+    playerControlled: false,
+    aiControlled: true,
+    countsForVictory: true,
+  }));
+  return {
+    id: `dawn-atoll-${teamSize}v${teamSize}`,
     mapId: "atoll-prototype",
     airSupport: composition.airSupport > 0 ? "fleet-edge" : "none",
     ships: [...friendlyShips, ...enemyShips],
