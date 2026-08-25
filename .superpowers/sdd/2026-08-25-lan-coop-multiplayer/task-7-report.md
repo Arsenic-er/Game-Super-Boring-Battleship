@@ -116,3 +116,66 @@ Result:
 - CommonJS syntax check passed.
 - Production TypeScript/Vite build passed (existing large-chunk advisory only).
 - Whitespace diff check passed.
+
+## Second independent-review remediation (2026-08-26)
+
+A second review of `5f7a88d` identified an exploitable multiplayer-menu HTML
+injection path, guest loadout loss, incomplete visual-event replication, event
+loss between 60 Hz simulation ticks and 10 Hz snapshots, and an incomplete
+pending websocket handshake lifecycle. These items were reproduced with failing
+tests before implementation.
+
+### Security and transport hardening
+- Escaped every dynamic multiplayer-menu text and attribute insertion, including
+  remote room IDs/names, host/commander names, game versions, lobby build names,
+  local saved build names, and editable input values. Regression payloads cover
+  raw image/SVG handlers and quote-based attribute injection.
+- Split host websocket state into one pending handshake and one accepted guest.
+  Pending handshakes expire after 4.5 seconds, can receive only targeted join
+  responses, require explicit runtime promotion after a validated join, and can
+  be closed by connection ID. A newcomer can replace neither pending nor accepted
+  state; accepted targeted sends remain bound to the original socket.
+- Host runtime now immediately closes invalid pending handshakes. Once accepted,
+  malformed protocol and over-frequency input violations are counted in a
+  per-connection two-second window and close the offender at five violations.
+- Every host disconnect unconditionally clears sequence and violation state before
+  guest fallback handling. A guest disconnect during join resolves immediately
+  instead of waiting for the four-second application timeout.
+- The bridge API, IPC controller, preload surface, and browser-facing TypeScript
+  contract now expose explicit `acceptConnection` and targeted `closeConnection`
+  operations.
+
+### Authoritative loadouts and visual replication
+- Host human ships now derive the complete runtime loadout from validated lobby
+  slots: historical main gun/torpedo IDs, mount counts, secondary/AA/depth-charge
+  configuration, installed component identities, and performance modifiers.
+- Scoped snapshots expose the same visible loadout for self and friendlies only;
+  hostile contacts still contain no ship internals. The guest reconstructs these
+  fields through the existing build validator and also carries its validated
+  lobby build into client-session startup.
+- Replicated shots now retain depth-charge kind, weapon source, and air weapon;
+  impacts retain projectile/ammunition/weapon metadata; air events retain their
+  server-filtered team and weapon data even when source identity is anonymous.
+  Missing team data is dropped rather than guessed.
+- Host sessions accumulate each player's already-filtered visual events across the
+  six simulation ticks between snapshots, publish them once, and clear the batch
+  only after snapshot creation.
+
+### Verification after second review remediation (2026-08-26)
+
+```bash
+npm test -- --run tests/lanMultiplayerRuntime.test.ts tests/lanBridge.test.ts tests/multiplayerMenu.test.ts tests/clientBattleSession.test.ts tests/hostBattleSession.test.ts tests/replicationView.test.ts
+npm test
+node --check desktop/lanBridge.cjs
+node --check desktop/preload.cjs
+npm run build
+git diff --check
+```
+
+Result:
+- Focused regression: 6 files, 63 tests passed.
+- Full suite: 63 files passed, 2 report suites skipped; 523 tests passed,
+  2 report tests skipped.
+- Both CommonJS entry points passed syntax checks.
+- Production TypeScript/Vite build passed (existing large-chunk advisory only).
+- Whitespace diff check passed.

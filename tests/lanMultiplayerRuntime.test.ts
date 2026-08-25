@@ -22,6 +22,8 @@ class FakeLanBridge implements BattleshipLanApi {
   stopDiscovery = vi.fn(async () => {});
   connect = vi.fn(async () => {});
   disconnect = vi.fn(async () => {});
+  acceptConnection = vi.fn(async (_connectionId: string) => {});
+  closeConnection = vi.fn(async (_connectionId: string, _reason?: string) => {});
   send = vi.fn(async (messageJson: string, target?: LanSendTarget) => {
     const parsed = parseLanMessage(JSON.parse(messageJson));
     if (!parsed) throw new Error("invalid-test-message");
@@ -84,7 +86,7 @@ describe("LanMultiplayerRuntime receive validation", () => {
     await expect(runtime.callbacks.createRoom({ roomName: "Host room", buildId: build.id })).resolves.toMatchObject({ ok: true });
     const announcementJson = bridge.updateAnnouncement.mock.calls.at(-1)?.[0];
     const roomId = parseLanMessage(JSON.parse(String(announcementJson)))!.roomId;
-    bridge.emit({ type: "connected", role: "host", connectionId: "connection-a", url: "ws://127.0.0.1" });
+    bridge.emit({ type: "connected", role: "host", connectionId: "connection-bad", url: "ws://127.0.0.1" });
 
     const requestPayload = {
       peerId: "peer-guest",
@@ -94,11 +96,14 @@ describe("LanMultiplayerRuntime receive validation", () => {
       build: buildPayload,
     };
     bridge.emit({
-      type: "message", role: "host", connectionId: "connection-a",
+      type: "message", role: "host", connectionId: "connection-bad",
       messageJson: encodeLanMessage(envelope("join-request", requestPayload, { roomId: "wrong-room", sequence: 1 })),
     });
     await flush();
     expect(runtime.currentGuestPeerId()).toBeUndefined();
+    expect(bridge.closeConnection).toHaveBeenCalledWith("connection-bad", "protocol-violation");
+
+    bridge.emit({ type: "connected", role: "host", connectionId: "connection-a", url: "ws://127.0.0.1" });
 
     bridge.emit({
       type: "message", role: "host", connectionId: "connection-a",
@@ -106,7 +111,8 @@ describe("LanMultiplayerRuntime receive validation", () => {
     });
     await flush();
     expect(runtime.currentGuestPeerId()).toBe("peer-guest");
-    expect(runtime.currentGuestConnectionId()).toBe("connection-a");
+    await vi.waitFor(() => expect(runtime.currentGuestConnectionId()).toBe("connection-a"));
+    expect(bridge.acceptConnection).toHaveBeenCalledWith("connection-a");
 
     bridge.emit({
       type: "message", role: "host", connectionId: "connection-other",
@@ -247,6 +253,105 @@ describe("LanMultiplayerRuntime receive validation", () => {
     });
     await flush();
     expect(clientStarts).toHaveBeenCalledTimes(1);
+    expect((clientStarts.mock.calls[0]![0] as unknown as { config: { build?: unknown } }).config.build).toEqual(buildPayload);
+    await runtime.dispose();
+  });
+
+  it("fails an in-flight manual join immediately when the pending guest socket disconnects", async () => {
+    const bridge = new FakeLanBridge();
+    const runtime = new LanMultiplayerRuntime(bridge, createDefaultLocalProfile(), {
+      onHostMatchStarted: vi.fn(), onClientMatchStarted: vi.fn(), onLobbyUpdated: vi.fn(),
+      onReturnToMenu: vi.fn(), onNotice: vi.fn(),
+    });
+    vi.stubGlobal("window", {
+      setTimeout: globalThis.setTimeout.bind(globalThis),
+      clearTimeout: globalThis.clearTimeout.bind(globalThis),
+    });
+
+    const joining = runtime.callbacks.manualJoin({ address: "192.168.1.22", port: 47778 });
+    await vi.waitFor(() => expect(bridge.sent.some(({ message }) => message.type === "join-request")).toBe(true));
+    bridge.emit({ type: "disconnected", role: "guest", hadError: true });
+    await expect(joining).resolves.toEqual({ ok: false, errorSource: "联机连接已断开。" });
+    await runtime.dispose();
+  });
+
+  it("disconnects a host connection after a sliding-window threshold of malformed frames", async () => {
+    const profile = createDefaultLocalProfile();
+    const build = profile.savedShipBuilds[0]!;
+    const buildPayload = {
+      buildId: build.id, buildName: build.name, shipClassId: build.shipClassId, slots: structuredClone(build.slots),
+    };
+    const bridge = new FakeLanBridge();
+    const runtime = new LanMultiplayerRuntime(bridge, profile, {
+      onHostMatchStarted: vi.fn(), onClientMatchStarted: vi.fn(), onLobbyUpdated: vi.fn(),
+      onReturnToMenu: vi.fn(), onNotice: vi.fn(), now: () => 1_000,
+    });
+    await runtime.callbacks.createRoom({ roomName: "Guarded room", buildId: build.id });
+    const announcementJson = bridge.updateAnnouncement.mock.calls.at(-1)?.[0];
+    const roomId = parseLanMessage(JSON.parse(String(announcementJson)))!.roomId;
+    bridge.emit({ type: "connected", role: "host", connectionId: "connection-malformed" });
+    bridge.emit({
+      type: "message", role: "host", connectionId: "connection-malformed",
+      messageJson: encodeLanMessage(envelope("join-request", {
+        peerId: "peer-malformed", commanderName: "Malformed guest",
+        expectedGameVersion: LAN_GAME_VERSION, expectedContentHash: LAN_CONTENT_HASH, build: buildPayload,
+      }, { roomId, sequence: 1 })),
+    });
+    await vi.waitFor(() => expect(runtime.currentGuestConnectionId()).toBe("connection-malformed"));
+    bridge.closeConnection.mockClear();
+    for (let index = 0; index < 5; index += 1) {
+      bridge.emit({
+        type: "message", role: "host", connectionId: "connection-malformed",
+        messageJson: index % 2 === 0 ? "{" : JSON.stringify({ protocolVersion: 99, type: "join-request" }),
+      });
+    }
+    await flush();
+    await vi.waitFor(() => expect(bridge.closeConnection).toHaveBeenCalledWith("connection-malformed", "protocol-violation"));
+    await runtime.dispose();
+  });
+
+  it("disconnects an accepted guest after repeated over-frequency input frames", async () => {
+    const profile = createDefaultLocalProfile();
+    const build = profile.savedShipBuilds[0]!;
+    const buildPayload = {
+      buildId: build.id, buildName: build.name, shipClassId: build.shipClassId, slots: structuredClone(build.slots),
+    };
+    const bridge = new FakeLanBridge();
+    const runtime = new LanMultiplayerRuntime(bridge, profile, {
+      onHostMatchStarted: vi.fn(), onClientMatchStarted: vi.fn(), onLobbyUpdated: vi.fn(),
+      onReturnToMenu: vi.fn(), onNotice: vi.fn(), now: () => 1_000,
+    });
+    await runtime.callbacks.createRoom({ roomName: "Rate guarded", buildId: build.id });
+    const announcementJson = bridge.updateAnnouncement.mock.calls.at(-1)?.[0];
+    const roomId = parseLanMessage(JSON.parse(String(announcementJson)))!.roomId;
+    bridge.emit({ type: "connected", role: "host", connectionId: "connection-fast" });
+    bridge.emit({
+      type: "message", role: "host", connectionId: "connection-fast",
+      messageJson: encodeLanMessage(envelope("join-request", {
+        peerId: "peer-fast", commanderName: "Fast guest",
+        expectedGameVersion: LAN_GAME_VERSION, expectedContentHash: LAN_CONTENT_HASH, build: buildPayload,
+      }, { roomId, sequence: 1 })),
+    });
+    await vi.waitFor(() => expect(runtime.currentGuestConnectionId()).toBe("connection-fast"));
+    await runtime.callbacks.readyLobby({ ready: true, buildId: build.id });
+    bridge.emit({
+      type: "message", role: "host", connectionId: "connection-fast",
+      messageJson: encodeLanMessage(envelope("ready-request", {
+        peerId: "peer-fast", ready: true, build: buildPayload,
+      }, { roomId, sequence: 2 })),
+    });
+    await vi.waitFor(async () => expect(await runtime.callbacks.startLobby()).toMatchObject({ ok: true }));
+
+    for (let index = 1; index <= 35; index += 1) {
+      bridge.emit({
+        type: "message", role: "host", connectionId: "connection-fast",
+        messageJson: encodeLanMessage(envelope("input-frame", {
+          peerId: "peer-fast", inputSequence: index,
+          command: { throttle: 0, rudder: 0, aimPoint: { x: 0, y: 0, z: 1_000 }, fire: false },
+        }, { roomId, sequence: index + 2 })),
+      });
+    }
+    await vi.waitFor(() => expect(bridge.closeConnection).toHaveBeenCalledWith("connection-fast", "protocol-violation"));
     await runtime.dispose();
   });
 

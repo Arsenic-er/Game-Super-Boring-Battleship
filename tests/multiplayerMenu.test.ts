@@ -304,6 +304,55 @@ describe("multiplayer menu helpers", () => {
     expect(markup).toMatch(/multiplayer-room-join" type="button" data-room-id="room-legacy" disabled>加入<\/button>/);
   });
 
+  it("renders discovered room text and identifiers without creating executable markup", () => {
+    const directory = new RoomDirectory();
+    expect(directory.ingest(makeRoom({
+      roomId: `room\" data-owned=\"yes`,
+      roomName: `<img src=x onerror=x>`,
+      hostName: `\"><svg onload=x>`,
+      gameVersion: `<script>x=1</script>`,
+    }))).toBe(true);
+
+    const markup = (MultiplayerMenu.prototype as unknown as {
+      roomCardsMarkup(this: { roomDirectory: RoomDirectory; loadingRooms: boolean; now: () => number }): string;
+    }).roomCardsMarkup.call({ roomDirectory: directory, loadingRooms: false, now: () => 1_500 });
+
+    expect(markup).not.toContain("<img");
+    expect(markup).not.toContain("<svg");
+    expect(markup).not.toContain("<script");
+    expect(markup).not.toContain('data-owned="yes"');
+    expect(markup).toContain("&lt;img");
+    expect(markup).toContain("&quot; data-owned=&quot;yes");
+  });
+
+  it("renders remote commander and build names as inert lobby text", () => {
+    const markup = (MultiplayerMenu.prototype as unknown as {
+      seatMarkup(
+        this: { controller: { getLobby: () => { localPeerId?: string } } },
+        title: string,
+        player: LobbySnapshot["players"][number] | undefined,
+        localBuildName: string | null,
+      ): string;
+    }).seatMarkup.call({
+      controller: { getLobby: () => ({ localPeerId: "peer-host" }) },
+    }, "客席位", {
+      peerId: "peer-guest",
+      role: "guest",
+      connected: true,
+      ready: true,
+      commanderName: `<img src=x onerror=globalThis.__commanderXss=1>`,
+      build: {
+        ...savedBuildToLan(createDefaultLocalProfile().savedShipBuilds[0]!),
+        buildName: `\"><svg onload=globalThis.__buildXss=1>`,
+      },
+    }, null);
+
+    expect(markup).not.toContain("<img");
+    expect(markup).not.toContain("<svg");
+    expect(markup).toContain("&lt;img");
+    expect(markup).toContain("&quot;&gt;&lt;svg");
+  });
+
   it("renders localized lobby roles and a dedicated ready-status field in seat cards", () => {
     const profile = createDefaultLocalProfile();
     const readyBuildId = profile.savedShipBuilds[0]!.id;

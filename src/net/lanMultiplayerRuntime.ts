@@ -25,6 +25,8 @@ import { RoomDirectory } from "./roomDirectory";
 const JOIN_TIMEOUT_MS = 4_000;
 const SEARCH_WINDOW_MS = 350;
 const DEFAULT_TEAM_SIZE = 3;
+const HOST_VIOLATION_WINDOW_MS = 2_000;
+const HOST_VIOLATION_THRESHOLD = 5;
 
 type LanRole = "none" | "host" | "client";
 
@@ -128,6 +130,8 @@ export class LanMultiplayerRuntime {
   private readonly hostInboundSequences = new Map<string, number>();
   private guestInboundSequence = 0;
   private guestJoinAccepted = false;
+  private readonly pendingHostConnections = new Set<string>();
+  private readonly hostViolationTimestamps = new Map<string, number[]>();
 
   constructor(
     private readonly bridge: BattleshipLanApi,
@@ -285,6 +289,8 @@ export class LanMultiplayerRuntime {
     this.clientSessionValue = undefined;
     this.guestConnectionId = undefined;
     this.hostInboundSequences.clear();
+    this.pendingHostConnections.clear();
+    this.hostViolationTimestamps.clear();
     this.guestInboundSequence = 0;
     this.guestJoinAccepted = false;
     this.roleValue = "none";
@@ -479,7 +485,11 @@ export class LanMultiplayerRuntime {
 
   private async handleBridgeEvent(event: LanBridgeEvent): Promise<void> {
     if (event.type === "connected") {
-      if (event.role === "host" && event.connectionId) this.hostInboundSequences.set(event.connectionId, 0);
+      if (event.role === "host" && event.connectionId) {
+        this.hostInboundSequences.set(event.connectionId, 0);
+        this.hostViolationTimestamps.delete(event.connectionId);
+        this.pendingHostConnections.add(event.connectionId);
+      }
       if (event.role === "guest") this.guestInboundSequence = 0;
       return;
     }
@@ -504,8 +514,17 @@ export class LanMultiplayerRuntime {
 
     if (event.type === "message") {
       const parsed = this.safeParse(event.messageJson);
-      if (!parsed) return;
-      if (!this.acceptInboundMessage(parsed, event)) return;
+      if (!parsed) {
+        if (event.role === "host" && event.connectionId) {
+          if (this.pendingHostConnections.has(event.connectionId)) {
+            await this.closeHostConnection(event.connectionId, "protocol-violation");
+          } else {
+            await this.recordHostViolation(event.connectionId);
+          }
+        }
+        return;
+      }
+      if (!await this.acceptInboundMessage(parsed, event)) return;
       await this.handleLanMessage(parsed, event);
       return;
     }
@@ -518,10 +537,14 @@ export class LanMultiplayerRuntime {
     }
 
     if (event.type === "disconnected") {
+      if (event.role === "host" && event.connectionId) {
+        this.hostInboundSequences.delete(event.connectionId);
+        this.hostViolationTimestamps.delete(event.connectionId);
+        this.pendingHostConnections.delete(event.connectionId);
+      }
       if (event.role === "host" && event.connectionId && event.connectionId === this.guestConnectionId) {
         const guestPeerId = this.currentGuestPeerId();
         this.guestConnectionId = undefined;
-        this.hostInboundSequences.delete(event.connectionId);
         if (this.hostSessionValue) {
           this.hostSessionValue.disconnectGuest(this.now());
           this.hooks.onNotice("客席已断开 · AI 已接管。");
@@ -534,6 +557,13 @@ export class LanMultiplayerRuntime {
           await this.refreshAnnouncement();
           await this.broadcastLobbyUpdate();
         }
+        return;
+      }
+      if (event.role === "guest" && this.pendingJoin) {
+        this.resolvePendingJoin({ ok: false, errorSource: "联机连接已断开。" });
+        this.roomId = undefined;
+        this.guestInboundSequence = 0;
+        this.guestJoinAccepted = false;
         return;
       }
       if (event.role === "guest" && (this.clientSessionValue || this.lobby)) {
@@ -555,21 +585,42 @@ export class LanMultiplayerRuntime {
     }
   }
 
-  private acceptInboundMessage(
+  private async acceptInboundMessage(
     message: LanMessage,
     event: Extract<LanBridgeEvent, { type: "message" }>,
-  ): boolean {
+  ): Promise<boolean> {
     if (message.protocolVersion !== LAN_PROTOCOL_VERSION
       || message.gameVersion !== LAN_GAME_VERSION
-      || message.contentHash !== LAN_CONTENT_HASH) return false;
+      || message.contentHash !== LAN_CONTENT_HASH) {
+      if (event.role === "host" && event.connectionId) {
+        if (this.pendingHostConnections.has(event.connectionId)) {
+          await this.closeHostConnection(event.connectionId, "protocol-violation");
+        } else {
+          await this.recordHostViolation(event.connectionId);
+        }
+      }
+      return false;
+    }
     if (event.role === "host") {
       const connectionId = event.connectionId;
       if (!connectionId || !this.roomId) return false;
       const manualJoinRoom = message.type === "join-request"
         && /^manual-(?:\d{1,3}-){3}\d{1,3}-477(?:7[89]|8[0-8])$/.test(message.roomId);
-      if (message.roomId !== this.roomId && !manualJoinRoom) return false;
+      if (message.roomId !== this.roomId && !manualJoinRoom) {
+        if (this.pendingHostConnections.has(connectionId)) await this.closeHostConnection(connectionId, "protocol-violation");
+        else await this.recordHostViolation(connectionId);
+        return false;
+      }
+      if (this.pendingHostConnections.has(connectionId) && message.type !== "join-request") {
+        await this.closeHostConnection(connectionId, "protocol-violation");
+        return false;
+      }
+      if (!this.pendingHostConnections.has(connectionId) && connectionId !== this.guestConnectionId) return false;
       const last = this.hostInboundSequences.get(connectionId) ?? 0;
-      if (message.sequence <= last) return false;
+      if (message.sequence <= last) {
+        await this.recordHostViolation(connectionId);
+        return false;
+      }
       this.hostInboundSequences.set(connectionId, message.sequence);
       return true;
     }
@@ -579,6 +630,27 @@ export class LanMultiplayerRuntime {
     if (message.sequence <= this.guestInboundSequence) return false;
     this.guestInboundSequence = message.sequence;
     return true;
+  }
+
+  private async recordHostViolation(connectionId: string): Promise<void> {
+    const now = this.now();
+    const recent = (this.hostViolationTimestamps.get(connectionId) ?? [])
+      .filter((timestamp) => now - timestamp <= HOST_VIOLATION_WINDOW_MS);
+    recent.push(now);
+    this.hostViolationTimestamps.set(connectionId, recent);
+    if (recent.length < HOST_VIOLATION_THRESHOLD) return;
+    await this.closeHostConnection(connectionId, "protocol-violation");
+  }
+
+  private async closeHostConnection(connectionId: string, reason: string): Promise<void> {
+    this.hostInboundSequences.delete(connectionId);
+    this.hostViolationTimestamps.delete(connectionId);
+    this.pendingHostConnections.delete(connectionId);
+    try {
+      await this.bridge.closeConnection(connectionId, reason);
+    } catch {
+      // The transport may already have emitted its disconnected event.
+    }
   }
 
   private async handleLanMessage(message: LanMessage, event: Extract<LanBridgeEvent, { type: "message" }>): Promise<void> {
@@ -598,18 +670,23 @@ export class LanMultiplayerRuntime {
     const guestPeerId = this.guestIdentityFor(connectionId);
     switch (message.type) {
       case "join-request": {
-        if (!this.hostLobby || this.hostSessionValue || !connectionId || this.guestConnectionId) return;
+        if (!this.hostLobby || this.hostSessionValue || !connectionId || this.guestConnectionId) {
+          if (connectionId) await this.closeHostConnection(connectionId, "invalid-request");
+          return;
+        }
         const result = this.hostLobby.join(message.payload);
         this.lobby = cloneLobby(result.lobby);
         await this.refreshAnnouncement();
         if (result.accepted) {
-          this.guestConnectionId = connectionId;
-          this.hostInboundSequences.set(connectionId, message.sequence);
           await this.send(this.nextEnvelope("join-accepted", {
             peerId: message.payload.peerId,
             assignedRole: "guest",
             lobby: lobbyPayload(this.lobby),
           }), { connectionId });
+          await this.bridge.acceptConnection(connectionId);
+          this.pendingHostConnections.delete(connectionId);
+          this.guestConnectionId = connectionId;
+          this.hostInboundSequences.set(connectionId, message.sequence);
           await this.broadcastLobbyUpdate();
           this.publishLobby();
         } else {
@@ -617,6 +694,7 @@ export class LanMultiplayerRuntime {
             reason: result.reason ?? "invalid-request",
             detail: result.detail,
           }), { connectionId });
+          await this.closeHostConnection(connectionId, result.reason ?? "invalid-request");
         }
         return;
       }
@@ -635,10 +713,14 @@ export class LanMultiplayerRuntime {
       }
       case "input-frame": {
         if (!this.hostSessionValue || !guestPeerId) return;
-        this.hostSessionValue.acceptInput(guestPeerId, {
+        const acceptance = this.hostSessionValue.acceptInput(guestPeerId, {
           ...message.payload,
           peerId: guestPeerId,
         }, this.now());
+        if (!acceptance.accepted && (acceptance.reason === "rate-limited"
+          || acceptance.reason === "invalid-command" || acceptance.reason === "invalid-sequence")) {
+          if (connectionId) await this.recordHostViolation(connectionId);
+        }
         return;
       }
       case "return-to-lobby": {
@@ -697,6 +779,7 @@ export class LanMultiplayerRuntime {
           peerId: this.peerId,
           gameVersion: LAN_GAME_VERSION,
           contentHash: LAN_CONTENT_HASH,
+          build: this.lobby.players.find((player) => player.peerId === this.peerId)?.build,
         });
         this.roleValue = "client";
         this.hooks.onClientMatchStarted(this.clientSessionValue);

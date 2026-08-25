@@ -90,6 +90,15 @@ export const MULTIPLAYER_MENU_SOURCE_STRINGS = [
 
 const GAME_PORT_SET = new Set<number>(LAN_GAME_PORTS);
 
+function escapeMarkup(value: unknown): string {
+  return String(value)
+    .replaceAll("&", "&amp;")
+    .replaceAll("<", "&lt;")
+    .replaceAll(">", "&gt;")
+    .replaceAll('"', "&quot;")
+    .replaceAll("'", "&#39;");
+}
+
 function isCanonicalIpv4Octet(value: string): boolean {
   if (value === "0") return true;
   if (!/^[1-9]\d{0,2}$/.test(value)) return false;
@@ -447,15 +456,15 @@ export class MultiplayerMenu {
           <div class="multiplayer-room-card-header">
             <div>
               <p class="multiplayer-field-label">房间名</p>
-              <b>${room.roomName}</b>
+              <b>${escapeMarkup(room.roomName)}</b>
             </div>
-            <button class="menu-button primary multiplayer-room-join" type="button" data-room-id="${room.roomId}" ${room.phase === "lobby" && compatible ? "" : "disabled"}>加入</button>
+            <button class="menu-button primary multiplayer-room-join" type="button" data-room-id="${escapeMarkup(room.roomId)}" ${room.phase === "lobby" && compatible ? "" : "disabled"}>加入</button>
           </div>
           <dl class="multiplayer-room-fields">
-            <div><dt>主机</dt><dd>${room.hostName}</dd></div>
+            <div><dt>主机</dt><dd>${escapeMarkup(room.hostName)}</dd></div>
             <div><dt>席位</dt><dd>${room.playerCount}/${room.capacity}</dd></div>
             <div><dt>近似延迟（最近广播）</dt><dd>≈${latency} ms</dd></div>
-            <div><dt>游戏版本</dt><dd>${room.gameVersion}</dd></div>
+            <div><dt>游戏版本</dt><dd>${escapeMarkup(room.gameVersion)}</dd></div>
             <div><dt>房间状态</dt><dd>${compatible ? roomPhaseSource(room) : "不兼容"}</dd></div>
           </dl>
         </article>`;
@@ -465,7 +474,7 @@ export class MultiplayerMenu {
   private buildOptionsMarkup(): string {
     return this.profile.savedShipBuilds.map((build) => {
       const selected = build.id === this.controller.getSelectedBuildId();
-      return `<option value="${build.id}" ${selected ? "selected" : ""}>${build.name}</option>`;
+      return `<option value="${escapeMarkup(build.id)}" ${selected ? "selected" : ""}>${escapeMarkup(build.name)}</option>`;
     }).join("");
   }
 
@@ -475,12 +484,12 @@ export class MultiplayerMenu {
       : "—";
     return `
       <section class="multiplayer-seat-card">
-        <h3>${title}</h3>
+        <h3>${escapeMarkup(title)}</h3>
         <dl>
           <div><dt>席位</dt><dd>${roleSource(player?.role)}</dd></div>
-          <div><dt>主机</dt><dd>${player?.commanderName ?? "—"}</dd></div>
+          <div><dt>主机</dt><dd>${escapeMarkup(player?.commanderName ?? "—")}</dd></div>
           <div><dt>房间状态</dt><dd>${player?.connected ? "已连接" : "未连接"}</dd></div>
-          <div><dt>本地方案</dt><dd>${buildName}</dd></div>
+          <div><dt>本地方案</dt><dd>${escapeMarkup(buildName)}</dd></div>
           <div><dt>准备状态</dt><dd>${player?.ready ? "已准备" : "未准备"}</dd></div>
         </dl>
       </section>`;
@@ -524,13 +533,13 @@ export class MultiplayerMenu {
       ${capabilityState.unsupportedSource ? `<p class="multiplayer-inline-note">${capabilityState.unsupportedSource}</p>` : ""}
       <div class="multiplayer-grid">
         <section class="multiplayer-panel multiplayer-actions-panel">
-          <label class="multiplayer-stack-field"><span>房间名称</span><input class="multiplayer-room-name" value="${this.roomName}" maxlength="32" /></label>
+          <label class="multiplayer-stack-field"><span>房间名称</span><input class="multiplayer-room-name" value="${escapeMarkup(this.roomName)}" maxlength="32" /></label>
           <div class="multiplayer-action-buttons">
             <button class="menu-button primary multiplayer-create" type="button" ${capabilityState.canCreate ? "" : "disabled"}>创建房间</button>
             <button class="menu-button multiplayer-search" type="button" ${capabilityState.canSearch ? "" : "disabled"}>搜索局域网房间</button>
             <button class="menu-button multiplayer-refresh" type="button" ${capabilityState.canRefresh ? "" : "disabled"}>刷新</button>
           </div>
-          <label class="multiplayer-stack-field"><span>手动输入 IPv4</span><input class="multiplayer-address" value="${this.manualAddress}" inputmode="decimal" /></label>
+          <label class="multiplayer-stack-field"><span>手动输入 IPv4</span><input class="multiplayer-address" value="${escapeMarkup(this.manualAddress)}" inputmode="decimal" /></label>
           <label class="multiplayer-stack-field"><span>允许端口</span><select class="multiplayer-port">${LAN_GAME_PORTS.map((port) => `<option value="${port}" ${String(port) === this.manualPort ? "selected" : ""}>${port}</option>`).join("")}</select></label>
           <button class="menu-button multiplayer-manual-join" type="button" ${capabilityState.canManualConnect ? "" : "disabled"}>加入房间</button>
           ${capabilityState.manualJoinSource ? `<p class="multiplayer-inline-note">${capabilityState.manualJoinSource}</p>` : ""}
@@ -548,7 +557,7 @@ export class MultiplayerMenu {
       ? this.lobbyMarkup(lobby.snapshot, lobby.localPeerId)
       : this.directoryMarkup();
     this.bindEvents();
-    const status = this.statusSource ? `<p class="multiplayer-status" aria-live="polite">${this.statusSource}</p>` : "";
+    const status = this.statusSource ? `<p class="multiplayer-status" aria-live="polite">${escapeMarkup(this.statusSource)}</p>` : "";
     if (status) this.root.insertAdjacentHTML("beforeend", status);
     applyDocumentLocale(this.locale);
     localizeElement(this.root, this.locale);
@@ -664,4 +673,3 @@ export class MultiplayerMenu {
     this.render();
   }
 }
-

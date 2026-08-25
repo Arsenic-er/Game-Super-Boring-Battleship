@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest";
 import type { ControlCommand } from "../src/sim/types";
 import { LAN_CONTENT_HASH, LAN_GAME_VERSION } from "../src/net/networkFingerprint";
 import { ClientBattleSession } from "../src/net/clientBattleSession";
-import type { PlayerSnapshotPayload } from "../src/net/protocol";
+import type { LanBuildDescriptor, PlayerSnapshotPayload } from "../src/net/protocol";
 
 function baseCommand(): ControlCommand {
   return {
@@ -79,6 +79,24 @@ function snapshot(overrides: Partial<PlayerSnapshotPayload> = {}): PlayerSnapsho
     },
     events: [],
     ...overrides,
+  };
+}
+
+function upgradedBuild(): LanBuildDescriptor {
+  return {
+    buildId: "guest-upgraded",
+    buildName: "Twin battery guest",
+    shipClassId: "fletcher",
+    slots: {
+      mainGun: ["mainGun-purple", "mainGun-purple", null, null, null],
+      torpedo: ["torpedo-gold", null],
+      antiAir: ["antiAir-purple", null, null, null],
+      sideGun: [],
+      depthCharge: ["depthCharge-purple", null],
+      magazine: ["magazine-gold"],
+      engine: ["engine-gold"],
+      steering: ["steering-purple"],
+    },
   };
 }
 
@@ -412,9 +430,11 @@ describe("ClientBattleSession", () => {
         position: { x: 10, y: 80, z: 20 }, heading: 1.2, aircraftOperational: 4,
       }],
       events: [
-        { id: 51, kind: "shot", team: "player", ownerId: "guest-ship", position: { x: 0, y: 3, z: 0 }, projectileKind: "shell", ammoType: "he" },
-        { id: 52, kind: "splash", position: { x: 20, y: 0, z: 30 }, damage: 0 },
-        { id: 53, kind: "mission-complete", controllerId: "guest-ship", squadronId: "air-1", position: { x: 30, y: 70, z: 40 } },
+        { id: 51, kind: "shot", team: "player", ownerId: "guest-ship", position: { x: 0, y: 3, z: 0 }, projectileKind: "shell", ammoType: "he", weaponSource: "aircraft", airWeapon: "heBomb" },
+        { id: 52, kind: "splash", position: { x: 20, y: 0, z: 30 }, damage: 0, projectileKind: "shell", ammoType: "ap", weaponSource: "mainGun" },
+        { id: 53, kind: "mission-complete", team: "player", controllerId: "guest-ship", squadronId: "air-1", position: { x: 30, y: 70, z: 40 } },
+        { id: 54, kind: "shot", team: "player", ownerId: "guest-ship", position: { x: 0, y: 0, z: 1 }, projectileKind: "depthCharge", weaponSource: "secondary" },
+        { id: 55, kind: "weaponReleased", team: "enemy", position: { x: 35, y: 80, z: 45 }, weapon: "aerialTorpedo" },
       ],
     });
     session.receiveSnapshot(replicated, 0);
@@ -424,9 +444,91 @@ describe("ClientBattleSession", () => {
     expect(state.projectiles.map(({ id }) => id)).toEqual([41, 42]);
     expect(state.projectiles[0]!.position).toEqual({ x: 1, y: 2, z: 3 });
     expect(state.airSquadrons).toHaveLength(1);
-    expect(state.shots.map(({ id }) => id)).toEqual([51]);
+    expect(state.shots.map(({ id }) => id)).toEqual([51, 54]);
+    expect(state.shots[0]).toMatchObject({ weaponSource: "aircraft", airWeapon: "heBomb" });
+    expect(state.shots[1]).toMatchObject({ kind: "depthCharge", weaponSource: "secondary" });
     expect(state.impacts.map(({ id }) => id)).toEqual([52]);
-    expect(state.airEvents.map(({ id }) => id)).toEqual([53]);
+    expect(state.impacts[0]).toMatchObject({ projectileKind: "shell", ammoType: "ap", weaponSource: "mainGun" });
+    expect(state.airEvents.map(({ id }) => id)).toEqual([53, 55]);
+    expect(state.airEvents[1]).toMatchObject({ team: "enemy", weapon: "aerialTorpedo" });
+    expect(state.airEvents[1]!.controllerId).toMatch(/^replicated-anonymous-air-/);
     expect(state.projectiles[0]!.position).not.toEqual({ x: 999, y: 999, z: 999 });
+  });
+
+  it("reconstructs self and friendly visible loadouts from validated build and scoped snapshot data", () => {
+    const build = upgradedBuild();
+    const session = new ClientBattleSession({
+      roomId: "room-alpha",
+      peerId: "peer-guest",
+      gameVersion: LAN_GAME_VERSION,
+      contentHash: LAN_CONTENT_HASH,
+      build,
+    } as unknown as ConstructorParameters<typeof ClientBattleSession>[0]);
+    const installedEquipment = structuredClone(build.slots);
+    session.receiveSnapshot(snapshot({
+      self: {
+        ...snapshot().self,
+        mainGunId: "mk2-twin",
+        torpedoId: "mk-15-mod-3",
+        mainGunMounts: 2,
+        torpedoLauncherMounts: 1,
+        depthChargeMounts: 1,
+        antiAirMounts: 1,
+        antiAirEfficiencyMultiplier: 1.06,
+        installedEquipment,
+        performance: {
+          maxSpeedMultiplier: 1.1,
+          accelerationMultiplier: 1.085,
+          turnMultiplier: 1.06,
+          reloadMultiplier: 0.928,
+          magazineRiskMultiplier: 1.01,
+        },
+      },
+      friendlies: [{
+        ...snapshot().friendlies[0],
+        shipClassId: "fletcher",
+        mainGunId: "mk2-twin",
+        torpedoId: "mk-15-mod-3",
+        mainGunMounts: 2,
+        torpedoLauncherMounts: 1,
+        depthChargeMounts: 0,
+        antiAirMounts: 2,
+        antiAirEfficiencyMultiplier: 1.06,
+        installedEquipment,
+        performance: {
+          maxSpeedMultiplier: 1.1,
+          accelerationMultiplier: 1.085,
+          turnMultiplier: 1.06,
+          reloadMultiplier: 0.928,
+          magazineRiskMultiplier: 1.01,
+        },
+      }],
+    }), 0);
+
+    const state = session.renderState(120).state;
+    const own = state.ships.find(({ id }) => id === "guest-ship")!;
+    const ally = state.ships.find(({ id }) => id === "ally-1")!;
+    for (const ship of [own, ally]) {
+      expect(ship.mainGunId).toBe("mk2-twin");
+      expect(ship.torpedoId).toBe("mk-15-mod-3");
+      expect(ship.mainGunMounts).toBe(2);
+      expect(ship.installedEquipment.mainGun).toEqual(["mainGun-purple", "mainGun-purple", null, null, null]);
+      expect(ship.performance.maxSpeedMultiplier).toBe(1.1);
+    }
+  });
+
+  it("drops replicated entities whose team was not explicitly disclosed", () => {
+    const session = new ClientBattleSession({
+      roomId: "room-alpha", peerId: "peer-guest", gameVersion: LAN_GAME_VERSION, contentHash: LAN_CONTENT_HASH,
+    });
+    session.receiveSnapshot(snapshot({
+      projectiles: [{ id: 91, kind: "shell", position: { x: 0, y: 0, z: 0 }, velocity: { x: 1, y: 0, z: 0 } }],
+      aircraft: [{ role: "fighter", phase: "patrolling", position: { x: 0, y: 80, z: 0 }, heading: 0, aircraftOperational: 4 }],
+      events: [{ id: 92, kind: "weaponReleased", position: { x: 0, y: 80, z: 0 } }],
+    }), 0);
+    const state = session.renderState(120).state;
+    expect(state.projectiles).toEqual([]);
+    expect(state.airSquadrons).toEqual([]);
+    expect(state.airEvents).toEqual([]);
   });
 });

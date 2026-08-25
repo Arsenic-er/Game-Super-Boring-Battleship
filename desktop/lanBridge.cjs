@@ -17,6 +17,8 @@ const CHANNELS = Object.freeze({
   stopDiscovery: "battleship-lan:stop-discovery",
   connect: "battleship-lan:connect",
   disconnect: "battleship-lan:disconnect",
+  acceptConnection: "battleship-lan:accept-connection",
+  closeConnection: "battleship-lan:close-connection",
   send: "battleship-lan:send",
   event: "battleship-lan:event",
 });
@@ -24,6 +26,7 @@ const UDP_MAX_BYTES = 1_024;
 const WS_MAX_BYTES = 64 * 1_024;
 const ANNOUNCEMENT_INTERVAL_MS = 1_000;
 const PROBE_WINDOW_MS = 1_500;
+const PENDING_HANDSHAKE_MS = 4_500;
 const DISCOVERY_PROBE = "__BATTLESHIP_LAN_PROBE__";
 const BROADCAST_ADDRESSES = ["255.255.255.255", "127.0.0.1"];
 const SUPPORTED_CAPABILITIES = Object.freeze({ desktop: true, canHost: true, canDiscover: true });
@@ -56,6 +59,8 @@ const STATEFUL_CHANNELS = Object.freeze([
   CHANNELS.stopDiscovery,
   CHANNELS.connect,
   CHANNELS.disconnect,
+  CHANNELS.acceptConnection,
+  CHANNELS.closeConnection,
   CHANNELS.send,
 ]);
 
@@ -236,6 +241,25 @@ function closeWebSocket(socket) {
   });
 }
 
+function closeWebSocketWithReason(socket, code, reason) {
+  if (!socket || socket.readyState === WebSocket.CLOSED) return Promise.resolve();
+  return new Promise((resolve) => {
+    let settled = false;
+    const finish = () => {
+      if (settled) return;
+      settled = true;
+      resolve();
+    };
+    socket.once("close", finish);
+    try {
+      if (socket.readyState === WebSocket.CLOSING) return;
+      socket.close(code, reason);
+    } catch {
+      finish();
+    }
+  });
+}
+
 function closeWebSocketServer(server) {
   if (!server) return Promise.resolve();
   return new Promise((resolve) => {
@@ -288,6 +312,7 @@ class LanBridge {
     this.discoverySocket = undefined;
     this.hostPeerSocket = undefined;
     this.hostPeerConnectionId = undefined;
+    this.hostPendingConnections = new Map();
     this.clientSocket = undefined;
     this.clientUrl = undefined;
     this.connectPromise = undefined;
@@ -295,6 +320,7 @@ class LanBridge {
     this.probeSocket = undefined;
     this.probeTimer = undefined;
     this.probeWindowMs = options.probeWindowMs ?? PROBE_WINDOW_MS;
+    this.pendingHandshakeMs = options.pendingHandshakeMs ?? PENDING_HANDSHAKE_MS;
     this.setTimeoutFn = options.setTimeout ?? setTimeout;
     this.clearTimeoutFn = options.clearTimeout ?? clearTimeout;
     this.socketStates = new WeakMap();
@@ -361,7 +387,12 @@ class LanBridge {
     const peerSocket = this.hostPeerSocket;
     this.hostPeerSocket = undefined;
     this.hostPeerConnectionId = undefined;
-    await closeWebSocket(peerSocket);
+    const pendingSockets = [...this.hostPendingConnections.values()].map(({ socket, timer }) => {
+      this.clearTimeoutFn(timer);
+      return socket;
+    });
+    this.hostPendingConnections.clear();
+    await Promise.all([closeWebSocket(peerSocket), ...pendingSockets.map((socket) => closeWebSocket(socket))]);
 
     const server = this.roomServer;
     this.roomServer = undefined;
@@ -477,6 +508,41 @@ class LanBridge {
     });
   }
 
+  async acceptConnection(connectionId) {
+    if (typeof connectionId !== "string" || !connectionId) throw new Error("connection-not-found");
+    if (connectionId === this.hostPeerConnectionId
+      && this.hostPeerSocket?.readyState === this.WebSocketClass.OPEN) return;
+    const pending = this.hostPendingConnections.get(connectionId);
+    if (!pending || pending.socket.readyState !== this.WebSocketClass.OPEN) throw new Error("connection-not-found");
+    if (this.hostPeerSocket?.readyState === this.WebSocketClass.OPEN) throw new Error("room-full");
+    this.clearTimeoutFn(pending.timer);
+    this.hostPendingConnections.delete(connectionId);
+    this.hostPeerSocket = pending.socket;
+    this.hostPeerConnectionId = connectionId;
+  }
+
+  async closeConnection(connectionId, reason = "connection-rejected") {
+    if (typeof connectionId !== "string" || !connectionId) throw new Error("connection-not-found");
+    let socket;
+    if (connectionId === this.hostPeerConnectionId) {
+      socket = this.hostPeerSocket;
+      this.hostPeerSocket = undefined;
+      this.hostPeerConnectionId = undefined;
+    } else {
+      const pending = this.hostPendingConnections.get(connectionId);
+      if (pending) {
+        this.clearTimeoutFn(pending.timer);
+        this.hostPendingConnections.delete(connectionId);
+        socket = pending.socket;
+      }
+    }
+    if (!socket) throw new Error("connection-not-found");
+    const safeReason = typeof reason === "string" && reason.length > 0
+      ? reason.slice(0, 80)
+      : "connection-rejected";
+    await closeWebSocketWithReason(socket, 1008, safeReason);
+  }
+
   async dispose() {
     await this.stopDiscovery();
     await this.disconnect();
@@ -503,14 +569,21 @@ class LanBridge {
       const onListening = () => {
         server.off("error", onError);
         server.on("connection", (socket, request = { socket: {} }) => {
-          if (this.hostPeerSocket?.readyState === this.WebSocketClass.OPEN) {
+          const hasPendingConnection = [...this.hostPendingConnections.values()]
+            .some(({ socket: pendingSocket }) => pendingSocket.readyState === this.WebSocketClass.OPEN);
+          if (this.hostPeerSocket?.readyState === this.WebSocketClass.OPEN || hasPendingConnection) {
             try { socket.close(1013, "room-full"); } catch { /* ignore */ }
             return;
           }
           const connectionId = this.allocateHostConnectionId();
-          this.hostPeerSocket = socket;
-          this.hostPeerConnectionId = connectionId;
           this.attachSocket(socket, { role: "host", connectionId });
+          const timer = this.setTimeoutFn(() => {
+            const pending = this.hostPendingConnections.get(connectionId);
+            if (!pending || pending.socket !== socket) return;
+            this.hostPendingConnections.delete(connectionId);
+            void closeWebSocketWithReason(socket, 1008, "handshake-timeout");
+          }, this.pendingHandshakeMs);
+          this.hostPendingConnections.set(connectionId, { socket, timer });
           this.emit({
             type: "connected",
             role: "host",
@@ -526,10 +599,14 @@ class LanBridge {
   }
 
   resolveHostSocketTarget(target) {
-    if (this.hostPeerSocket?.readyState !== this.WebSocketClass.OPEN) return undefined;
-    if (!target?.connectionId) return this.hostPeerSocket;
-    if (target.connectionId !== this.hostPeerConnectionId) throw new Error("connection-not-found");
-    return this.hostPeerSocket;
+    if (!target?.connectionId) {
+      return this.hostPeerSocket?.readyState === this.WebSocketClass.OPEN ? this.hostPeerSocket : undefined;
+    }
+    if (target.connectionId === this.hostPeerConnectionId
+      && this.hostPeerSocket?.readyState === this.WebSocketClass.OPEN) return this.hostPeerSocket;
+    const pending = this.hostPendingConnections.get(target.connectionId);
+    if (pending?.socket.readyState === this.WebSocketClass.OPEN) return pending.socket;
+    throw new Error("connection-not-found");
   }
 
   allocateHostConnectionId() {
@@ -577,6 +654,13 @@ class LanBridge {
       if (metadata.role === "host" && this.hostPeerSocket === socket) {
         this.hostPeerSocket = undefined;
         this.hostPeerConnectionId = undefined;
+      }
+      if (metadata.role === "host" && metadata.connectionId) {
+        const pending = this.hostPendingConnections.get(metadata.connectionId);
+        if (pending?.socket === socket) {
+          this.clearTimeoutFn(pending.timer);
+          this.hostPendingConnections.delete(metadata.connectionId);
+        }
       }
       this.emit({
         type: "disconnected",
@@ -716,6 +800,8 @@ function createLanIpcController({ bridge, ipcMain, getWindowFromSender }) {
   registerHandler(CHANNELS.stopDiscovery, async () => await bridge.stopDiscovery());
   registerHandler(CHANNELS.connect, async (_sender, url) => await bridge.connect(url));
   registerHandler(CHANNELS.disconnect, async () => await bridge.disconnect());
+  registerHandler(CHANNELS.acceptConnection, async (_sender, connectionId) => await bridge.acceptConnection(connectionId));
+  registerHandler(CHANNELS.closeConnection, async (_sender, connectionId, reason) => await bridge.closeConnection(connectionId, reason));
   registerHandler(CHANNELS.send, async (_sender, messageJson, target) => await bridge.send(messageJson, target));
 
   return {
@@ -736,6 +822,7 @@ module.exports = {
   DISCOVERY_PROBE,
   LAN_DISCOVERY_PORT,
   LAN_GAME_PORTS,
+  PENDING_HANDSHAKE_MS,
   LanBridge,
   UDP_MAX_BYTES,
   WS_MAX_BYTES,

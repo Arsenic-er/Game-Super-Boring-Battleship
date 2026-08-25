@@ -6,7 +6,7 @@ import { type AuthoritativeBattleSession, type BattleStepOptions, type BattleSte
 import { LocalBattleSession } from "../session/localBattleSession";
 import type { FleetSize } from "../sim/battleSetup";
 import { getShipClass } from "../ships/classes";
-import type { SecondaryGunId } from "../ships/secondaryGuns";
+import { battleLoadoutFromSlots } from "../profile/localProfile";
 import { normalizeLanBuildDescriptor } from "./lobbyState";
 import type { InputFramePayload, LanBuildDescriptor, PlayerSnapshotPayload } from "./protocol";
 import { validateRemoteCommand } from "./protocol";
@@ -72,10 +72,6 @@ function cloneInstalledEquipment(build: LanBuildDescriptor): InstalledEquipmentI
     engine: [...build.slots.engine],
     steering: [...build.slots.steering],
   };
-}
-
-function countInstalled(entries: readonly (string | null)[]): number {
-  return entries.filter((entry): entry is string => entry !== null).length;
 }
 
 function idleCommandFor(ship: Readonly<ShipState>): ControlCommand {
@@ -169,20 +165,30 @@ function buildState(config: NormalizedHostConfig): {
   state.ships = scenario.ships.map((slot) => {
     const build = slot.humanPeerId ? humanBuilds.get(slot.humanPeerId) : undefined;
     const definition = getShipClass(slot.shipClassId);
+    const loadout = build ? battleLoadoutFromSlots(build.shipClassId, build.slots) : undefined;
     return createDeveloperShipState({
       id: slot.id,
       team: slot.team,
       shipClassId: slot.shipClassId,
       position: slot.position,
       heading: slot.heading,
-      mainGunMounts: build ? Math.max(1, countInstalled(build.slots.mainGun)) : definition.starterSlots.mainGun,
-      torpedoLauncherMounts: build ? countInstalled(build.slots.torpedo) : definition.starterSlots.torpedo,
-      depthChargeMounts: build ? countInstalled(build.slots.depthCharge) : definition.starterSlots.depthCharge,
-      antiAirMounts: build ? countInstalled(build.slots.antiAir) : definition.starterSlots.antiAir,
-      secondaryGunIds: build
-        ? build.slots.sideGun.filter((entry): entry is string => entry !== null) as SecondaryGunId[]
-        : Array.from({ length: definition.starterSlots.sideGun }, () => "sideGun-common"),
-      installedEquipment: build ? cloneInstalledEquipment(build) : slot.installedEquipment,
+      mainGunId: loadout?.mainGunId,
+      torpedoId: loadout?.torpedoId,
+      mainGunMounts: loadout ? Math.max(1, loadout.mainGunMounts) : definition.starterSlots.mainGun,
+      torpedoLauncherMounts: loadout?.torpedoLauncherMounts ?? definition.starterSlots.torpedo,
+      depthChargeMounts: loadout?.depthChargeMounts ?? definition.starterSlots.depthCharge,
+      antiAirMounts: loadout?.antiAirMounts ?? definition.starterSlots.antiAir,
+      antiAirEfficiencyMultiplier: loadout?.antiAirEfficiencyMultiplier,
+      secondaryGunIds: loadout?.secondaryGunIds
+        ?? Array.from({ length: definition.starterSlots.sideGun }, () => "sideGun-common"),
+      installedEquipment: loadout?.installedEquipment ?? slot.installedEquipment,
+      performance: loadout ? {
+        maxSpeedMultiplier: loadout.maxSpeedMultiplier,
+        accelerationMultiplier: loadout.accelerationMultiplier,
+        turnMultiplier: loadout.turnMultiplier,
+        reloadMultiplier: loadout.reloadMultiplier,
+        magazineRiskMultiplier: loadout.magazineRiskMultiplier,
+      } : undefined,
       aiControlled: slot.aiControlled,
       countsForVictory: slot.countsForVictory,
     });
@@ -203,6 +209,7 @@ export class HostBattleSession implements AuthoritativeBattleSession {
   private readonly lastProcessedByPeer = new Map<string, number>();
   private readonly acceptedTimestampsByPeer = new Map<string, number[]>();
   private readonly lastReceivedAtByPeer = new Map<string, number>();
+  private readonly pendingVisualEventsByPeer = new Map<string, Record<string, unknown>[]>();
 
   constructor(config: HostBattleSessionConfig) {
     this.config = normalizeConfig(config);
@@ -286,6 +293,7 @@ export class HostBattleSession implements AuthoritativeBattleSession {
     const consumedGuestInput = this.guestInput;
     const output = this.localSession.step(commands, dt, options);
     const completedTicks = this.consumeTicks(dt);
+    this.accumulateVisualEvents();
     const crossedSnapshotBoundary = Math.floor(previousTick / SNAPSHOT_INTERVAL_TICKS)
       < Math.floor(this.serverTickValue / SNAPSHOT_INTERVAL_TICKS);
     if (consumedGuestInput && this.activeAssignments.has(this.config.guestPeerId)) {
@@ -310,6 +318,7 @@ export class HostBattleSession implements AuthoritativeBattleSession {
     this.guestInput = undefined;
     this.guestCommand = undefined;
     this.acceptedTimestampsByPeer.delete(this.config.guestPeerId);
+    this.pendingVisualEventsByPeer.delete(this.config.guestPeerId);
   }
 
   reset(state: BattleState): void {
@@ -323,6 +332,7 @@ export class HostBattleSession implements AuthoritativeBattleSession {
     this.guestCommand = undefined;
     this.acceptedTimestampsByPeer.clear();
     this.lastReceivedAtByPeer.clear();
+    this.pendingVisualEventsByPeer.clear();
     this.lastProcessedByPeer.set(this.config.hostPeerId, 0);
     this.lastProcessedByPeer.set(this.config.guestPeerId, 0);
   }
@@ -378,16 +388,33 @@ export class HostBattleSession implements AuthoritativeBattleSession {
   private publishSnapshots(): ReadonlyMap<string, PlayerSnapshotPayload> {
     const snapshots = new Map<string, PlayerSnapshotPayload>();
     for (const [peerId, shipId] of this.activeAssignments.entries()) {
-      snapshots.set(
-        peerId,
-        replicationViewFor(
-          this.state,
-          shipId,
-          this.serverTickValue,
-          this.lastProcessedByPeer.get(peerId) ?? 0,
-        ),
+      const snapshot = replicationViewFor(
+        this.state,
+        shipId,
+        this.serverTickValue,
+        this.lastProcessedByPeer.get(peerId) ?? 0,
       );
+      snapshots.set(peerId, {
+        ...snapshot,
+        events: structuredClone(this.pendingVisualEventsByPeer.get(peerId) ?? []),
+      });
     }
+    this.pendingVisualEventsByPeer.clear();
     return snapshots;
+  }
+
+  private accumulateVisualEvents(): void {
+    for (const [peerId, shipId] of this.activeAssignments.entries()) {
+      const events = replicationViewFor(
+        this.state,
+        shipId,
+        this.serverTickValue,
+        this.lastProcessedByPeer.get(peerId) ?? 0,
+      ).events;
+      if (events.length === 0) continue;
+      const pending = this.pendingVisualEventsByPeer.get(peerId) ?? [];
+      pending.push(...structuredClone(events));
+      this.pendingVisualEventsByPeer.set(peerId, pending);
+    }
   }
 }

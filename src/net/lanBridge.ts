@@ -34,6 +34,8 @@ export interface BattleshipLanApi {
   stopDiscovery(): Promise<void>;
   connect(url: string): Promise<void>;
   disconnect(): Promise<void>;
+  acceptConnection(connectionId: string): Promise<void>;
+  closeConnection(connectionId: string, reason?: string): Promise<void>;
   send(messageJson: string, target?: LanSendTarget): Promise<void>;
   subscribe(listener: (event: LanBridgeEvent) => void): () => void;
 }
@@ -68,6 +70,8 @@ export function createLanBridgeClient(): BattleshipLanApi {
     stopDiscovery: async () => requireNativeLanBridge().stopDiscovery(),
     connect: async (url) => requireNativeLanBridge().connect(url),
     disconnect: async () => requireNativeLanBridge().disconnect(),
+    acceptConnection: async (connectionId) => requireNativeLanBridge().acceptConnection(connectionId),
+    closeConnection: async (connectionId, reason) => requireNativeLanBridge().closeConnection(connectionId, reason),
     send: async (messageJson, target) => requireNativeLanBridge().send(messageJson, target),
     subscribe: (listener) => requireNativeLanBridge().subscribe(listener),
   };

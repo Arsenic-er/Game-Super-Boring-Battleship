@@ -294,6 +294,60 @@ describe("HostBattleSession", () => {
     expect(resettable.step(zeroCommand(), FIXED_STEP).snapshots.size).toBe(0);
   });
 
+  it("applies the validated historical equipment model instead of only copying slot labels", () => {
+    const session = createSession(3, {
+      hostBuild: build({
+        buildId: "host-purple-battery",
+        buildName: "Twin battery and long-range torpedoes",
+        slots: {
+          mainGun: ["mainGun-purple", "mainGun-purple", null, null, null],
+          torpedo: ["torpedo-gold", null],
+          antiAir: ["antiAir-purple", null, null, null],
+          sideGun: [],
+          depthCharge: ["depthCharge-purple", null],
+          magazine: ["magazine-gold"],
+          engine: ["engine-gold"],
+          steering: ["steering-purple"],
+        },
+      }),
+    });
+    const ship = session.state.ships.find(({ id }) => id === session.assignments.get("peer-host-1"))!;
+
+    expect(ship.mainGunId).toBe("mk2-twin");
+    expect(ship.mainGunMounts).toBe(2);
+    expect(ship.torpedoId).toBe("mk-15-mod-3");
+    expect(ship.torpedoLauncherMounts).toBe(1);
+    expect(ship.installedEquipment.mainGun).toEqual(["mainGun-purple", "mainGun-purple", null, null, null]);
+    expect(ship.performance.maxSpeedMultiplier).toBeGreaterThan(1);
+    expect(ship.performance.turnMultiplier).toBeGreaterThan(1);
+    expect(ship.performance.reloadMultiplier).toBeLessThan(1);
+  });
+
+  it("publishes visual events accumulated since the previous 10 Hz snapshot exactly once", () => {
+    const session = createSession();
+    const ship = session.state.ships.find(({ id }) => id === "player")!;
+    ship.reloadRemaining = 0;
+    const first = session.step({
+      ...zeroCommand({ x: ship.position.x, y: ship.position.y, z: ship.position.z + 3_000 }),
+      fire: true,
+    }, FIXED_STEP);
+    expect(first.snapshots.size).toBe(0);
+    expect(first.state.shots.length).toBeGreaterThan(0);
+    const shotId = first.state.shots[0]!.id;
+
+    for (let tick = 2; tick < 6; tick += 1) {
+      expect(session.step(zeroCommand(), FIXED_STEP).snapshots.size).toBe(0);
+    }
+    const published = session.step(zeroCommand(), FIXED_STEP);
+    expect(published.snapshots.get("peer-host-1")?.events).toEqual(expect.arrayContaining([
+      expect.objectContaining({ id: shotId, kind: "shot" }),
+    ]));
+
+    let nextPublished = published;
+    for (let tick = 7; tick <= 12; tick += 1) nextPublished = session.step(zeroCommand(), FIXED_STEP);
+    expect(nextPublished.snapshots.get("peer-host-1")?.events.some(({ id }) => id === shotId)).toBe(false);
+  });
+
   it("restores guest assignment and input acceptance after disconnect then reset, and rejects states with fewer than two allies", () => {
     const session = createSession();
     session.disconnectGuest(0);

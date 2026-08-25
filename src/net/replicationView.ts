@@ -48,6 +48,30 @@ function cloneSelf(ship: Readonly<ShipState>): PlayerSnapshotPayload["self"] {
     torpedoReloadRemaining: ship.torpedoReloadRemaining,
     smokeCharges: ship.smokeCharges,
     hydroCharges: ship.hydroCharges,
+    ...cloneVisibleLoadout(ship),
+  };
+}
+
+function cloneVisibleLoadout(ship: Readonly<ShipState>): Record<string, unknown> {
+  return {
+    mainGunId: ship.mainGunId,
+    torpedoId: ship.torpedoId,
+    mainGunMounts: ship.mainGunMounts,
+    torpedoLauncherMounts: ship.torpedoLauncherMounts,
+    depthChargeMounts: ship.depthChargeMounts,
+    antiAirMounts: ship.antiAirMounts,
+    antiAirEfficiencyMultiplier: ship.antiAirEfficiencyMultiplier,
+    installedEquipment: {
+      mainGun: [...ship.installedEquipment.mainGun],
+      torpedo: [...ship.installedEquipment.torpedo],
+      antiAir: [...ship.installedEquipment.antiAir],
+      sideGun: [...ship.installedEquipment.sideGun],
+      depthCharge: [...ship.installedEquipment.depthCharge],
+      magazine: [...ship.installedEquipment.magazine],
+      engine: [...ship.installedEquipment.engine],
+      steering: [...ship.installedEquipment.steering],
+    },
+    performance: { ...ship.performance },
   };
 }
 
@@ -172,6 +196,7 @@ export function replicationViewFor(
         projectileKind: shot.kind,
         ammoType: shot.ammoType,
         weaponSource: shot.weaponSource,
+        airWeapon: shot.airWeapon,
       })),
     ...state.impacts
       .filter((impact) => visibleImpact(impact, self, friendlyIds, visibleEnemyIds))
@@ -189,6 +214,8 @@ export function replicationViewFor(
         damage: impact.damage,
         projectileKind: impact.projectileKind,
         ammoType: impact.ammoType,
+        weaponSource: impact.weaponSource,
+        airWeapon: impact.airWeapon,
       })),
     ...state.airEvents
       .filter((event) => visibleAirEvent(event, self, friendlyIds, visibleEnemyIds))
@@ -200,11 +227,16 @@ export function replicationViewFor(
         return [{
           id: event.id,
           kind: event.kind,
+          team: event.team,
           ...(sourceVisible ? { controllerId: event.controllerId, squadronId: event.squadronId } : {}),
           ...(targetVisible && event.targetId ? { targetId: event.targetId } : {}),
           ...(event.position && (sourceVisible || positionVisible || targetVisible)
             ? { position: cloneVec(event.position) }
             : {}),
+          weapon: event.weapon,
+          damage: event.damage,
+          aircraftLost: event.aircraftLost,
+          lossCause: event.lossCause,
         }];
       }),
   ];
@@ -215,14 +247,19 @@ export function replicationViewFor(
     lastProcessedInputSequence,
     time: state.time,
     self: cloneSelf(self),
-    friendlies: observation.friendlies.map((ship) => ({
-      id: ship.id,
-      shipClassId: ship.shipClassId,
-      position: cloneVec(ship.position),
-      heading: ship.heading,
-      speedKnots: ship.speedKnots,
-      hullRatio: ship.hullRatio,
-    })),
+    friendlies: observation.friendlies.flatMap((ship) => {
+      const fullShip = state.ships.find(({ id }) => id === ship.id);
+      if (!fullShip || fullShip.team !== self.team) return [];
+      return [{
+        id: ship.id,
+        shipClassId: ship.shipClassId,
+        position: cloneVec(ship.position),
+        heading: ship.heading,
+        speedKnots: ship.speedKnots,
+        hullRatio: ship.hullRatio,
+        ...cloneVisibleLoadout(fullShip),
+      }];
+    }),
     contacts,
     projectiles,
     torpedoes,

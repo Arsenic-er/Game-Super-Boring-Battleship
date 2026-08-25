@@ -247,4 +247,72 @@ describe("replicationViewFor", () => {
       expect(freshContact.position).not.toBe(mutatedContact?.position);
     }
   });
+
+  it("replicates friendly visible loadouts and complete filtered visual event metadata", () => {
+    const state = createInitialState(404, "battle");
+    const player = state.ships.find(({ id }) => id === "player")!;
+    const friendly = state.ships.find(({ team, id }) => team === "player" && id !== player.id)!;
+    player.mainGunId = "mk2-twin";
+    player.torpedoId = "mk-15-mod-3";
+    player.mainGunMounts = 2;
+    player.installedEquipment.mainGun = ["mainGun-purple", "mainGun-purple"];
+    player.performance.maxSpeedMultiplier = 1.1;
+    friendly.mainGunId = "mk2-twin";
+    friendly.torpedoId = "mk-15-mod-3";
+    friendly.mainGunMounts = 2;
+    friendly.installedEquipment.mainGun = ["mainGun-purple", "mainGun-purple"];
+    friendly.performance.maxSpeedMultiplier = 1.1;
+    state.shots = [{
+      id: 950,
+      ownerId: player.id,
+      team: "player",
+      kind: "depthCharge",
+      weaponSource: "secondary",
+      position: { ...player.position },
+    }];
+    state.impacts = [{
+      id: 951,
+      kind: "underwater-explosion",
+      position: { ...player.position },
+      sourceId: player.id,
+      sourceTeam: "player",
+      projectileKind: "depthCharge",
+      weaponSource: "aircraft",
+      airWeapon: "heBomb",
+      ammoType: "he",
+    }];
+    state.airEvents = [{
+      id: 952,
+      time: state.time,
+      kind: "weaponReleased",
+      team: "enemy",
+      controllerId: "hidden-air-controller",
+      squadronId: "hidden-air-squadron",
+      position: { x: player.position.x + 100, y: 90, z: player.position.z + 100 },
+      weapon: "aerialTorpedo",
+    }];
+
+    const view = replicationViewFor(state, player.id, 6, 0);
+    expect(view.self).toMatchObject({
+      mainGunId: "mk2-twin",
+      torpedoId: "mk-15-mod-3",
+      mainGunMounts: 2,
+      performance: expect.objectContaining({ maxSpeedMultiplier: 1.1 }),
+      installedEquipment: expect.objectContaining({ mainGun: ["mainGun-purple", "mainGun-purple"] }),
+    });
+    expect(view.friendlies.find(({ id }) => id === friendly.id)).toMatchObject({
+      mainGunId: "mk2-twin",
+      torpedoId: "mk-15-mod-3",
+      mainGunMounts: 2,
+      performance: expect.objectContaining({ maxSpeedMultiplier: 1.1 }),
+    });
+    expect(view.events).toEqual(expect.arrayContaining([
+      expect.objectContaining({ id: 950, projectileKind: "depthCharge", weaponSource: "secondary", team: "player" }),
+      expect.objectContaining({ id: 951, projectileKind: "depthCharge", weaponSource: "aircraft", airWeapon: "heBomb", ammoType: "he" }),
+      expect.objectContaining({ id: 952, kind: "weaponReleased", team: "enemy", weapon: "aerialTorpedo" }),
+    ]));
+    const air = view.events.find(({ id }) => id === 952)!;
+    expect(air).not.toHaveProperty("controllerId");
+    expect(air).not.toHaveProperty("squadronId");
+  });
 });

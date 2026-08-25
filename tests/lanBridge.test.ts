@@ -41,6 +41,8 @@ interface TestBridge {
   stopDiscovery(): Promise<void>;
   connect(url: string): Promise<void>;
   disconnect(): Promise<void>;
+  acceptConnection(connectionId: string): Promise<void>;
+  closeConnection(connectionId: string, reason?: string): Promise<void>;
   send(messageJson: string, target?: { connectionId?: string }): Promise<void>;
   subscribe(listener: (event: LanBridgeEvent) => void): () => void;
   dispose(): Promise<void>;
@@ -55,6 +57,8 @@ interface FakeBridge {
   stopDiscovery: ReturnType<typeof vi.fn>;
   connect: ReturnType<typeof vi.fn>;
   disconnect: ReturnType<typeof vi.fn>;
+  acceptConnection: ReturnType<typeof vi.fn>;
+  closeConnection: ReturnType<typeof vi.fn>;
   send: ReturnType<typeof vi.fn>;
   dispose: ReturnType<typeof vi.fn>;
   subscribe: (listener: (event: LanBridgeEvent) => void) => () => void;
@@ -171,6 +175,8 @@ function createFakeBridge(): FakeBridge {
     stopDiscovery: vi.fn(async () => undefined),
     connect: vi.fn(async () => undefined),
     disconnect: vi.fn(async () => undefined),
+    acceptConnection: vi.fn(async () => undefined),
+    closeConnection: vi.fn(async () => undefined),
     send: vi.fn(async () => undefined),
     dispose: vi.fn(async () => undefined),
     subscribe(assigned) {
@@ -647,6 +653,7 @@ describe("Electron LAN bridge", () => {
     const first = trackWsClient(new WebSocket(`ws://127.0.0.1:${room.port}`));
     const connected = await waitForEvent(host, (event) => event.type === "connected" && event.role === "host");
     if (connected.type !== "connected" || !connected.connectionId) throw new Error("expected-host-connection-id");
+    await host.acceptConnection(connected.connectionId);
     await new Promise<void>((resolve, reject) => {
       if (first.readyState === WebSocket.OPEN) resolve();
       else {
@@ -678,6 +685,57 @@ describe("Electron LAN bridge", () => {
     );
     first.send("original-guest");
     await expect(originalMessage).resolves.toMatchObject({ connectionId: connected.connectionId });
+  });
+
+  it("keeps websocket clients pending until accepted and closes an unaccepted handshake on deadline", async () => {
+    const host = trackBridge(createLanBridge({ pendingHandshakeMs: 80 }));
+    const room = await host.createRoom({ announcementJson: buildAnnouncementJson() });
+    const pending = trackWsClient(new WebSocket(`ws://127.0.0.1:${room.port}`));
+    const connected = await waitForEvent(host, (event) => event.type === "connected" && event.role === "host");
+    if (connected.type !== "connected" || !connected.connectionId) throw new Error("expected-pending-connection");
+    await new Promise<void>((resolve, reject) => {
+      if (pending.readyState === WebSocket.OPEN) resolve();
+      else {
+        pending.once("open", () => resolve());
+        pending.once("error", reject);
+      }
+    });
+
+    const newcomer = trackWsClient(new WebSocket(`ws://127.0.0.1:${room.port}`));
+    await new Promise<void>((resolve) => {
+      newcomer.once("close", () => resolve());
+      newcomer.once("error", () => resolve());
+    });
+    const disconnected = waitForEvent(
+      host,
+      (event) => event.type === "disconnected" && event.connectionId === connected.connectionId,
+    );
+    await expect(disconnected).resolves.toMatchObject({ type: "disconnected", role: "host" });
+    await expect(host.acceptConnection(connected.connectionId)).rejects.toThrow(/connection-not-found/i);
+  });
+
+  it("promotes only the validated pending connection and can close a rejected connection by id", async () => {
+    const host = trackBridge(createLanBridge({ pendingHandshakeMs: 4_500 }));
+    const room = await host.createRoom({ announcementJson: buildAnnouncementJson() });
+    const acceptedClient = trackWsClient(new WebSocket(`ws://127.0.0.1:${room.port}`));
+    const connected = await waitForEvent(host, (event) => event.type === "connected" && event.role === "host");
+    if (connected.type !== "connected" || !connected.connectionId) throw new Error("expected-pending-connection");
+    await host.acceptConnection(connected.connectionId);
+
+    const received = new Promise<string>((resolve, reject) => {
+      acceptedClient.once("message", (payload) => resolve(payload.toString("utf8")));
+      acceptedClient.once("error", reject);
+      void host.send("accepted-only", { connectionId: connected.connectionId }).catch(reject);
+    });
+    await expect(received).resolves.toBe("accepted-only");
+
+    const rejected = trackWsClient(new WebSocket(`ws://127.0.0.1:${room.port}`));
+    await new Promise<void>((resolve) => {
+      rejected.once("close", () => resolve());
+      rejected.once("error", () => resolve());
+    });
+    await expect(host.closeConnection(connected.connectionId, "protocol-violation")).resolves.toBeUndefined();
+    expect(acceptedClient.readyState).toBe(WebSocket.CLOSED);
   });
 
   it("emits error then one disconnected event when a raw websocket server sends an oversized frame to the guest bridge", async () => {
@@ -832,6 +890,8 @@ describe("Electron LAN bridge", () => {
 
     const [, api] = contextBridge.exposeInMainWorld.mock.calls[0] as [string, {
       send: (messageJson: string, target?: { connectionId?: string }) => Promise<void>;
+      acceptConnection: (connectionId: string) => Promise<void>;
+      closeConnection: (connectionId: string, reason?: string) => Promise<void>;
       subscribe: (listener: (payload: unknown) => void) => () => void;
     }];
     const received: unknown[] = [];
@@ -848,6 +908,10 @@ describe("Electron LAN bridge", () => {
     expect(received).toEqual([{ id: 1 }]);
     await api.send("payload", { connectionId: "host-connection-1" });
     expect(ipcRenderer.invoke).toHaveBeenCalledWith(preload.CHANNELS?.send ?? "battleship-lan:send", "payload", { connectionId: "host-connection-1" });
+    await api.acceptConnection("host-connection-1");
+    expect(ipcRenderer.invoke).toHaveBeenCalledWith(preload.CHANNELS?.acceptConnection ?? "battleship-lan:accept-connection", "host-connection-1");
+    await api.closeConnection("host-connection-1", "invalid-request");
+    expect(ipcRenderer.invoke).toHaveBeenCalledWith(preload.CHANNELS?.closeConnection ?? "battleship-lan:close-connection", "host-connection-1", "invalid-request");
     expect(ipcRenderer.off).toHaveBeenCalledOnce();
   });
 
