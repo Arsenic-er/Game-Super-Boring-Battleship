@@ -39,7 +39,8 @@
   "dependencies": {
     "@babylonjs/core": "9.16.1",
     "@babylonjs/loaders": "^9.16.1",
-    "@fortawesome/fontawesome-free": "^7.1.0"
+    "@fortawesome/fontawesome-free": "^7.1.0",
+    "ws": "^8.21.3"
   },
   "devDependencies": {
     "electron": "latest",
