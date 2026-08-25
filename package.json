@@ -15,7 +15,14 @@
   "bugs": {
     "url": "https://github.com/Arsenic-er/Game-Super-Boring-Battleship/issues"
   },
-  "keywords": ["wwii", "naval-combat", "battleship", "babylonjs", "electron", "single-player"],
+  "keywords": [
+    "wwii",
+    "naval-combat",
+    "battleship",
+    "babylonjs",
+    "electron",
+    "single-player"
+  ],
   "type": "module",
   "main": "desktop/main.cjs",
   "scripts": {
@@ -30,8 +37,9 @@
     "desktop:dist": "npm run build && electron-builder --win portable --x64"
   },
   "dependencies": {
-    "@fortawesome/fontawesome-free": "^7.1.0",
-    "@babylonjs/core": "9.16.1"
+    "@babylonjs/core": "9.16.1",
+    "@babylonjs/loaders": "^9.16.1",
+    "@fortawesome/fontawesome-free": "^7.1.0"
   },
   "devDependencies": {
     "electron": "latest",
@@ -57,7 +65,9 @@
       "target": [
         {
           "target": "portable",
-          "arch": ["x64"]
+          "arch": [
+            "x64"
+          ]
         }
       ]
     }
