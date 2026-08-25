@@ -1,5 +1,16 @@
 import { createDeveloperShipState, createInitialState } from "../sim/simulation";
-import type { BattleState, ControlCommand, PlayerTargetView, ShipState, Vec3 } from "../sim/types";
+import type {
+  AirCombatEvent,
+  AirSquadronState,
+  BattleState,
+  ControlCommand,
+  ImpactEvent,
+  PlayerTargetView,
+  ProjectileState,
+  ShipState,
+  ShotEvent,
+  Vec3,
+} from "../sim/types";
 import { LAN_PROTOCOL_VERSION, validateRemoteCommand, type InputFrame, type LanPeerDisconnectedReason, type PlayerSnapshotPayload } from "./protocol";
 import { SnapshotBuffer } from "./snapshotBuffer";
 import {
@@ -81,6 +92,11 @@ interface InterpolatedSnapshot {
   readonly friendlies: readonly InterpolatedFriendly[];
   readonly contacts: readonly PlayerTargetView[];
   readonly objective: BattleState["objective"];
+  readonly projectiles: readonly ProjectileState[];
+  readonly airSquadrons: readonly AirSquadronState[];
+  readonly shots: readonly ShotEvent[];
+  readonly impacts: readonly ImpactEvent[];
+  readonly airEvents: readonly AirCombatEvent[];
 }
 
 function asNumber(value: unknown): number | undefined {
@@ -221,6 +237,129 @@ function cloneObjective(source: Record<string, unknown>, fallback: BattleState["
   };
 }
 
+function cloneReplicatedProjectile(
+  source: Record<string, unknown>,
+  fallbackIndex: number,
+  forcedKind?: "torpedo",
+): ProjectileState | undefined {
+  const position = asVec3(source.position);
+  const velocity = asVec3(source.velocity);
+  const id = asNumber(source.id);
+  const kind = forcedKind ?? (source.kind === "shell" || source.kind === "torpedo"
+    ? source.kind : undefined);
+  if (!position || !velocity || id === undefined || !kind) return undefined;
+  return {
+    id,
+    ownerId: asString(source.ownerId) ?? `replicated-hidden-${fallbackIndex}`,
+    team: source.team === "enemy" ? "enemy" : "player",
+    kind,
+    ...(source.ammoType === "he" || source.ammoType === "ap" ? { ammoType: source.ammoType } : {}),
+    position: { ...position },
+    previousPosition: asVec3(source.previousPosition) ?? { ...position },
+    velocity: { ...velocity },
+    damage: asNumber(source.damage) ?? 0,
+    age: asNumber(source.age) ?? 0,
+    ...(asNumber(source.detectionRange) !== undefined ? { detectionRange: asNumber(source.detectionRange) } : {}),
+  };
+}
+
+function cloneReplicatedAircraft(source: Record<string, unknown>, index: number): AirSquadronState | undefined {
+  const position = asVec3(source.position);
+  const heading = asNumber(source.heading);
+  const operational = asNumber(source.aircraftOperational);
+  if (!position || heading === undefined || operational === undefined) return undefined;
+  const role = source.role === "fighter" || source.role === "diveBomber" || source.role === "torpedoBomber"
+    ? source.role : "fighter";
+  const phase = source.phase === "ready" || source.phase === "launching" || source.phase === "outbound"
+    || source.phase === "searching" || source.phase === "attackRun" || source.phase === "intercepting"
+    || source.phase === "patrolling" || source.phase === "returning" || source.phase === "landing"
+    || source.phase === "rearming" || source.phase === "destroyed"
+    ? source.phase : "patrolling";
+  return {
+    id: asString(source.id) ?? `replicated-air-${index}`,
+    controllerId: asString(source.controllerId) ?? `replicated-hidden-air-${index}`,
+    team: source.team === "enemy" ? "enemy" : "player",
+    role,
+    recoverySource: { kind: "mapEdge", position: { ...position } },
+    contactsByTeam: {},
+    phase,
+    position: { ...position },
+    previousPosition: { ...position },
+    heading,
+    aircraftCapacity: operational,
+    aircraftOperational: operational,
+    airframeHealth: Math.max(1, operational),
+    maxAirframeHealth: Math.max(1, operational),
+    ammoRemaining: 0,
+    ordnanceRemaining: 0,
+    cohesion: 1,
+    fuelRemainingSeconds: 1,
+    phaseStartedAt: 0,
+    lastUpdatedAt: 0,
+    attackRunReleased: false,
+  };
+}
+
+const IMPACT_KINDS = new Set(["hit", "splash", "collision", "terrain-hit", "underwater-explosion"]);
+
+function cloneReplicatedEvents(events: readonly Record<string, unknown>[]): {
+  shots: ShotEvent[];
+  impacts: ImpactEvent[];
+  airEvents: AirCombatEvent[];
+} {
+  const shots: ShotEvent[] = [];
+  const impacts: ImpactEvent[] = [];
+  const airEvents: AirCombatEvent[] = [];
+  for (const source of events) {
+    const id = asNumber(source.id);
+    if (id === undefined) continue;
+    if (source.kind === "shot") {
+      const position = asVec3(source.position);
+      const ownerId = asString(source.ownerId);
+      const projectileKind = source.projectileKind;
+      if (!position || !ownerId || (projectileKind !== "shell" && projectileKind !== "torpedo")) continue;
+      shots.push({
+        id,
+        ownerId,
+        team: source.team === "enemy" ? "enemy" : "player",
+        kind: projectileKind,
+        position: { ...position },
+        ...(source.ammoType === "he" || source.ammoType === "ap" ? { ammoType: source.ammoType } : {}),
+      });
+      continue;
+    }
+    if (typeof source.kind === "string" && IMPACT_KINDS.has(source.kind)) {
+      const position = asVec3(source.position);
+      if (!position) continue;
+      impacts.push({
+        id,
+        kind: source.kind as ImpactEvent["kind"],
+        position: { ...position },
+        ...(asString(source.sourceId) ? { sourceId: asString(source.sourceId) } : {}),
+        ...(source.sourceTeam === "player" || source.sourceTeam === "enemy" ? { sourceTeam: source.sourceTeam } : {}),
+        ...(asString(source.targetId) ? { targetId: asString(source.targetId) } : {}),
+        ...(asNumber(source.damage) !== undefined ? { damage: asNumber(source.damage) } : {}),
+      });
+      continue;
+    }
+    if (typeof source.kind !== "string") continue;
+    const controllerId = asString(source.controllerId);
+    const squadronId = asString(source.squadronId);
+    if (!controllerId || !squadronId) continue;
+    airEvents.push({
+      id,
+      time: asNumber(source.time) ?? 0,
+      kind: source.kind as AirCombatEvent["kind"],
+      team: source.team === "enemy" ? "enemy" : "player",
+      controllerId,
+      squadronId,
+      ...(asString(source.targetId) ? { targetId: asString(source.targetId) } : {}),
+      ...(asVec3(source.position) ? { position: asVec3(source.position) } : {}),
+    });
+  }
+  return { shots, impacts, airEvents };
+}
+
 export class ClientBattleSession {
   readonly role = "client" as const;
 
@@ -296,11 +435,11 @@ export class ClientBattleSession {
     state.time = sampled.time;
     state.ships = [predictedSelf, ...sampled.friendlies.map(makeFriendly)];
     state.objective = sampled.objective;
-    state.projectiles = [];
-    state.airSquadrons = [];
-    state.airEvents = [];
-    state.shots = [];
-    state.impacts = [];
+    state.projectiles = sampled.projectiles.map((entry) => structuredClone(entry));
+    state.airSquadrons = sampled.airSquadrons.map((entry) => structuredClone(entry));
+    state.airEvents = sampled.airEvents.map((entry) => structuredClone(entry));
+    state.shots = sampled.shots.map((entry) => structuredClone(entry));
+    state.impacts = sampled.impacts.map((entry) => structuredClone(entry));
     state.smokeClouds = [];
     state.depthCharges = [];
     state.underwaterTargets = [];
@@ -321,12 +460,38 @@ export class ClientBattleSession {
   private sampleSnapshot(now: number): InterpolatedSnapshot | undefined {
     const latest = this.snapshots.latest();
     if (!latest) return undefined;
-    const targetReceivedAt = now - INTERPOLATION_DELAY_MS;
-    const stale = latest.receivedAt + FREEZE_AFTER_MS < targetReceivedAt;
-    const sampled = stale
-      ? { previous: latest, next: latest, alpha: 0 }
-      : this.snapshots.sample(targetReceivedAt) ?? { previous: latest, next: latest, alpha: 0 };
-    return this.interpolate(sampled.previous.snapshot, sampled.next.snapshot, sampled.alpha);
+    const targetReceivedAt = Math.min(now, latest.receivedAt + FREEZE_AFTER_MS) - INTERPOLATION_DELAY_MS;
+    if (targetReceivedAt <= latest.receivedAt) {
+      const sampled = this.snapshots.sample(targetReceivedAt) ?? { previous: latest, next: latest, alpha: 0 };
+      return this.interpolate(sampled.previous.snapshot, sampled.next.snapshot, sampled.alpha);
+    }
+    const entries = this.snapshots.list();
+    if (entries.length >= 2) {
+      const previous = entries[entries.length - 2]!;
+      const span = Math.max(1, latest.receivedAt - previous.receivedAt);
+      const alpha = (targetReceivedAt - previous.receivedAt) / span;
+      return this.interpolate(previous.snapshot, latest.snapshot, alpha);
+    }
+    const sampled = this.interpolate(latest.snapshot, latest.snapshot, 0);
+    const dt = Math.max(0, targetReceivedAt - latest.receivedAt) / 1_000;
+    const advance = (position: Vec3, heading: number, speedKnots: number): Vec3 => ({
+      x: position.x + Math.sin(heading) * speedKnots * KNOTS_TO_METERS_PER_SECOND * dt,
+      y: position.y,
+      z: position.z + Math.cos(heading) * speedKnots * KNOTS_TO_METERS_PER_SECOND * dt,
+    });
+    return {
+      ...sampled,
+      time: sampled.time + dt,
+      self: { ...sampled.self, position: advance(sampled.self.position, sampled.self.heading, sampled.self.speedKnots) },
+      friendlies: sampled.friendlies.map((ship) => ({
+        ...ship,
+        position: advance(ship.position, ship.heading, ship.speedKnots),
+      })),
+      contacts: sampled.contacts.map((contact) => ({
+        ...contact,
+        position: advance(contact.position, contact.heading, contact.speedKnots),
+      })),
+    };
   }
 
   private interpolate(previous: PlayerSnapshotPayload, next: PlayerSnapshotPayload, alpha: number): InterpolatedSnapshot {
@@ -353,6 +518,7 @@ export class ClientBattleSession {
         hullRatio: lerpNumber(asNumber(previousFriendly.hullRatio) ?? 1, asNumber(nextFriendly.hullRatio) ?? 1, alpha),
       };
     });
+    const replicatedEvents = cloneReplicatedEvents(next.events);
     return {
       controlledShipId: next.controlledShipId,
       serverTick: next.serverTick,
@@ -375,6 +541,21 @@ export class ClientBattleSession {
       friendlies,
       contacts: interpolateTargets(previous.contacts, next.contacts, alpha),
       objective: cloneObjective(next.objective, this.templateState.objective),
+      projectiles: [
+        ...next.projectiles.flatMap((entry, index) => {
+          const projectile = cloneReplicatedProjectile(entry, index);
+          return projectile ? [projectile] : [];
+        }),
+        ...next.torpedoes.flatMap((entry, index) => {
+          const projectile = cloneReplicatedProjectile(entry, next.projectiles.length + index, "torpedo");
+          return projectile ? [projectile] : [];
+        }),
+      ],
+      airSquadrons: next.aircraft.flatMap((entry, index) => {
+        const squadron = cloneReplicatedAircraft(entry, index);
+        return squadron ? [squadron] : [];
+      }),
+      ...replicatedEvents,
     };
   }
 
@@ -398,8 +579,6 @@ export class ClientBattleSession {
     ship.smokeCharges = authoritative.smokeCharges;
     ship.hydroCharges = authoritative.hydroCharges;
 
-    if (this.pendingInputs.length === 0) return ship;
-
     for (let index = 0; index < this.pendingInputs.length; index += 1) {
       const pending = this.pendingInputs[index]!;
       const nextAt = index + 1 < this.pendingInputs.length
@@ -417,8 +596,6 @@ export class ClientBattleSession {
       };
       ship.previousPosition = { ...ship.position };
     }
-
-    if (this.pendingInputs.length > 0) return ship;
 
     const positionError = distanceMeters(ship.position, authoritative.position);
     const headingError = headingErrorDegrees(ship.heading, authoritative.heading);

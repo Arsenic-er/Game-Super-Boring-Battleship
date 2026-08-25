@@ -36,6 +36,7 @@ import { Hud } from "./ui/hud";
 import { auxiliaryHudVisible } from "./ui/auxiliaryHud";
 import { TacticalMap } from "./ui/tacticalMap";
 import { DeveloperPanel } from "./ui/developerPanel";
+import { translateGameText } from "./i18n/gameLocale";
 
 const root = document.querySelector<HTMLElement>("#app");
 if (!root) throw new Error("Missing #app root");
@@ -74,6 +75,10 @@ let battleRewarded = false;
 const CLIENT_INPUT_INTERVAL_MS = 1_000 / 30;
 let lastClientInputSentAt = -Infinity;
 let lanRuntime: LanMultiplayerRuntime;
+const consumedClientEvents = new Set<string>();
+
+const localizedMultiplayerNotice = (source: string): string =>
+  translateGameText(source, settings.locale);
 
 function enterActiveBattle(nextState: BattleState): void {
   gameShell?.classList.remove("hud-details-held");
@@ -221,22 +226,25 @@ hud.setWeaponSelectHandler((slot) => {
 });
 lanRuntime = new LanMultiplayerRuntime(lanBridge, profile, {
   onHostMatchStarted: (hostSession) => {
+    consumedClientEvents.clear();
     currentMode = "battle";
     battleRewarded = false;
     enterActiveBattle(hostSession.state);
   },
   onClientMatchStarted: (clientSession) => {
+    consumedClientEvents.clear();
     currentMode = "battle";
     battleRewarded = false;
     enterActiveBattle(clientSession.renderState(performance.now()).state);
   },
   onReturnToMenu: (notice) => {
-    hud.showMultiplayerNotice(notice);
+    hud.showMultiplayerNotice(localizedMultiplayerNotice(notice));
     returnToMainMenu();
   },
   onNotice: (notice) => {
-    hud.showMultiplayerNotice(notice);
+    hud.showMultiplayerNotice(localizedMultiplayerNotice(notice));
   },
+  onLobbyUpdated: (snapshot, localPeerId) => menus?.setMultiplayerLobby(snapshot, localPeerId),
 });
 menus = new GameMenus(gameShell, settings, profile, view.getQuality(), {
   onStart: startMode,
@@ -374,7 +382,7 @@ window.addEventListener("keydown", (event) => {
   if (event.code === "F3") {
     event.preventDefault();
     if (lanRuntime.role !== "none") {
-      hud.showMultiplayerNotice("多人联机已禁用开发者改动。");
+      hud.showMultiplayerNotice(localizedMultiplayerNotice("多人联机已禁用开发者改动。"));
       return;
     }
     developerPanel?.toggle();
@@ -449,6 +457,7 @@ function finishFrame(
       omniscient: true,
     } : undefined,
     contactViews,
+    lanRuntime.role === "client",
   );
   if (activeState.status !== "running") {
     gameShell?.classList.remove("hud-details-held");
@@ -535,6 +544,18 @@ function renderClientFrame(frameSeconds: number): void {
   const observerShipId = replicated.controlledShipId ?? observerShipIdForState(state);
   const contacts = replicated.contacts;
   const perceivedTarget = primaryContact(contacts);
+  const newShots = state.shots.filter((event) => !consumedClientEvents.has(`shot:${event.id}`));
+  const newImpacts = state.impacts.filter((event) => !consumedClientEvents.has(`impact:${event.id}`));
+  const newAirEvents = state.airEvents.filter((event) => !consumedClientEvents.has(`air:${event.id}`));
+  for (const event of newShots) consumedClientEvents.add(`shot:${event.id}`);
+  for (const event of newImpacts) consumedClientEvents.add(`impact:${event.id}`);
+  for (const event of newAirEvents) consumedClientEvents.add(`air:${event.id}`);
+  view.consumeShots(newShots);
+  view.consumeImpacts(newImpacts);
+  audio.consumeShots(newShots);
+  audio.consumeImpacts(newImpacts);
+  hud.consumeImpacts(newImpacts);
+  tacticalMap.handleAirEvents(newAirEvents);
 
   if (started && state.status === "running" && now - lastClientInputSentAt >= CLIENT_INPUT_INTERVAL_MS) {
     const controlledShip = state.ships.find(({ id, hull }) => id === observerShipId && hull > 0);

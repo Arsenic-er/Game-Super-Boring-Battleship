@@ -641,6 +641,45 @@ describe("Electron LAN bridge", () => {
     await expect(host.send("bad-target", { connectionId: "host-connection-missing" })).rejects.toThrow(/connection-not-found/i);
   });
 
+  it("rejects a second websocket client without evicting the active guest or breaking targeted sends", async () => {
+    const host = trackBridge(createLanBridge());
+    const room = await host.createRoom({ announcementJson: buildAnnouncementJson() });
+    const first = trackWsClient(new WebSocket(`ws://127.0.0.1:${room.port}`));
+    const connected = await waitForEvent(host, (event) => event.type === "connected" && event.role === "host");
+    if (connected.type !== "connected" || !connected.connectionId) throw new Error("expected-host-connection-id");
+    await new Promise<void>((resolve, reject) => {
+      if (first.readyState === WebSocket.OPEN) resolve();
+      else {
+        first.once("open", () => resolve());
+        first.once("error", reject);
+      }
+    });
+
+    const newcomer = trackWsClient(new WebSocket(`ws://127.0.0.1:${room.port}`));
+    await new Promise<void>((resolve) => {
+      newcomer.once("close", () => resolve());
+      newcomer.once("error", () => resolve());
+    });
+
+    const originalReceived = new Promise<string>((resolve, reject) => {
+      first.once("message", (payload, isBinary) => {
+        if (isBinary) reject(new Error("expected-text-message"));
+        else resolve(payload.toString("utf8"));
+      });
+      void host.send("still-active", { connectionId: connected.connectionId }).catch(reject);
+    });
+    await expect(originalReceived).resolves.toBe("still-active");
+
+    const originalMessage = waitForEvent(
+      host,
+      (event) => event.type === "message"
+        && event.connectionId === connected.connectionId
+        && event.messageJson === "original-guest",
+    );
+    first.send("original-guest");
+    await expect(originalMessage).resolves.toMatchObject({ connectionId: connected.connectionId });
+  });
+
   it("emits error then one disconnected event when a raw websocket server sends an oversized frame to the guest bridge", async () => {
     const oversized = "x".repeat(64 * 1_024 + 1);
     const { port } = await listenWsOnAllowedPort((server) => {

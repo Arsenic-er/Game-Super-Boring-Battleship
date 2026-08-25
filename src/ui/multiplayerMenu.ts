@@ -65,6 +65,27 @@ export const MULTIPLAYER_MENU_SOURCE_STRINGS = [
   "房主",
   "访客",
   "准备状态",
+  "联机已关闭。",
+  "房间已满。",
+  "游戏版本不一致，无法加入。",
+  "内容哈希不一致，无法加入。",
+  "当前方案未通过联机校验。",
+  "该联机实例已在房间中。",
+  "加入请求被拒绝。",
+  "联机消息超出允许大小。",
+  "联机连接已断开。",
+  "联机操作失败。",
+  "联机消息处理失败。",
+  "收到无效的联机消息。",
+  "加入房间超时。",
+  "尚未加入联机房间。",
+  "仅房主可启动。",
+  "房主已断开。",
+  "客席已断开 · AI 已接管。",
+  "客席已离开 · AI 已接管。",
+  "房主已断开 · 已返回主菜单。",
+  "房间已关闭 · 已返回主菜单。",
+  "多人联机已禁用开发者改动。",
 ] as const;
 
 const GAME_PORT_SET = new Set<number>(LAN_GAME_PORTS);
@@ -356,6 +377,12 @@ export class MultiplayerMenu {
     this.render();
   }
 
+  setLobby(snapshot: LobbySnapshot, localPeerId: string): void {
+    this.controller.setLobby(snapshot, localPeerId);
+    this.screen = "lobby";
+    this.render();
+  }
+
   async show(): Promise<void> {
     this.root.hidden = false;
     if (!this.capabilitiesLoaded && !this.loadingCapabilities) await this.loadCapabilities();
@@ -637,7 +664,4 @@ export class MultiplayerMenu {
     this.render();
   }
 }
-
-
-
 

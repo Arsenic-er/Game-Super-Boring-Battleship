@@ -767,6 +767,10 @@ export class GameMenus {
     document.body.dataset.locale = this.settings.locale;
   }
 
+  setMultiplayerLobby(snapshot: import("../net/lobbyState").LobbySnapshot, localPeerId: string): void {
+    this.multiplayerMenu.setLobby(snapshot, localPeerId);
+  }
+
   private setArmoryView(view: "catalog" | "inventory"): void {
     this.armoryView = view;
     for (const panel of this.startOverlay.querySelectorAll<HTMLElement>("[data-armory-view]")) {

@@ -503,8 +503,11 @@ class LanBridge {
       const onListening = () => {
         server.off("error", onError);
         server.on("connection", (socket, request = { socket: {} }) => {
+          if (this.hostPeerSocket?.readyState === this.WebSocketClass.OPEN) {
+            try { socket.close(1013, "room-full"); } catch { /* ignore */ }
+            return;
+          }
           const connectionId = this.allocateHostConnectionId();
-          const previousSocket = this.hostPeerSocket;
           this.hostPeerSocket = socket;
           this.hostPeerConnectionId = connectionId;
           this.attachSocket(socket, { role: "host", connectionId });
@@ -514,9 +517,6 @@ class LanBridge {
             url: `ws://${request.socket.remoteAddress || "127.0.0.1"}:${request.socket.remotePort || 0}`,
             connectionId,
           });
-          if (previousSocket && previousSocket !== socket) {
-            void closeWebSocket(previousSocket);
-          }
         });
         resolve(server);
       };

@@ -52,3 +52,67 @@ Result:
 - 13 test files passed
 - 160 tests passed
 - Production build passed
+
+## Independent-review remediation (2026-08-26)
+
+Two independent reviews of `f4005fe` found client prediction, snapshot-stall,
+runtime validation, lobby refresh, replicated-effects, localization, and bridge
+connection-ownership gaps. The remediation was implemented test-first.
+
+### Client/render corrections
+- Reconciliation now runs while local inputs remain unacknowledged; the 5 m /
+  20 m / 10 degree blend, converge, and snap thresholds are no longer bypassed.
+- Snapshot playback uses the 120 ms interpolation delay, bounded dead reckoning
+  through 500 ms after the newest receive time, heading wrap, single-snapshot
+  velocity projection, and a stable freeze at the 500 ms boundary.
+- Replicated projectiles, torpedoes, aircraft, shots, impacts, and air events are
+  cloned into the guest battle view. Anonymous render-safe identifiers/defaults
+  replace fields intentionally redacted by the server; no hidden source state is
+  reconstructed.
+- GameView accepts server-filtered guest projectiles, while main routes newly
+  replicated shot/impact/air events once to GameView, audio, HUD, and tactical map.
+
+### Runtime/transport corrections
+- Lobby snapshots are pushed from the runtime into GameMenus/MultiplayerMenu for
+  both host and guest changes, causing an immediate localized rerender without a
+  local button action.
+- A second raw websocket client is closed with `room-full` while the active guest
+  socket and its targeted-send connection ID remain intact.
+- Incoming messages now require the exact protocol/game/content fingerprint,
+  valid room binding, monotonic per-connection sequence, and an allowed message
+  type for the current join/lobby/match state. Host guest identity stays bound to
+  the bridge connection ID.
+- Manual IPv4 join uses a constrained pending-room request and can rebind only on
+  a valid `join-accepted` containing the local guest identity and a valid lobby.
+  `start-match` is ignored until join acceptance and an ordered in-match lobby.
+- Malformed JSON and rejected asynchronous subscribers are contained without an
+  unhandled rejection.
+- Runtime/HUD multiplayer notices use stable Simplified-Chinese source strings
+  translated for Simplified/Traditional Chinese, English, Japanese, Spanish,
+  German, and Russian.
+
+### Added/expanded tests
+- `tests/lanMultiplayerRuntime.test.ts`: host connection identity, room/fingerprint/
+  sequence/state gates, secure manual join, pushed lobbies, malformed frames.
+- `tests/clientBattleSession.test.ts`: pending-input reconciliation modes,
+  two-snapshot and single-snapshot extrapolation/freeze, replicated visual state.
+- `tests/lanBridge.test.ts`: real two-client active-guest preservation.
+- `tests/multiplayerMenu.test.ts`: external lobby rerender and seven-locale notices.
+
+### Verification after review remediation (2026-08-26)
+
+```bash
+npm test -- --run tests/clientBattleSession.test.ts tests/networkReconciliation.test.ts tests/lanMultiplayerRuntime.test.ts tests/lanBridge.test.ts tests/multiplayerMenu.test.ts tests/netProtocol.test.ts tests/lobbyState.test.ts tests/hostBattleSession.test.ts tests/replicationView.test.ts tests/gameLocaleHud.test.ts tests/i18n.test.ts
+npm test
+node --check desktop/lanBridge.cjs
+npm run build
+git diff --check
+```
+
+Result:
+- Focused regression: 11 files, 94 tests passed.
+- Full suite: 63 files passed, 2 report suites skipped; 511 tests passed,
+  2 report tests skipped.
+- CommonJS syntax check passed.
+- Production TypeScript/Vite build passed (existing large-chunk advisory only).
+- Whitespace diff check passed.

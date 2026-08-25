@@ -14,6 +14,7 @@ import {
   deriveLobbyControls,
   parseManualJoinTarget,
 } from "../src/ui/multiplayerMenu";
+import { SUPPORTED_GAME_LOCALES, translateGameText } from "../src/i18n/gameLocale";
 
 function savedBuildToLan(build: SavedShipBuild): LanBuildDescriptor {
   return {
@@ -354,12 +355,44 @@ describe("multiplayer menu helpers", () => {
     expect(render).toHaveBeenCalledTimes(1);
   });
 
+  it("accepts an externally pushed lobby snapshot and rerenders immediately", () => {
+    const profile = createDefaultLocalProfile();
+    const snapshot = createHostSnapshot(profile, profile.savedShipBuilds[0]!.id, false);
+    const setLobby = vi.fn();
+    const render = vi.fn();
+    const fakeMenu = {
+      controller: { setLobby },
+      screen: "directory" as "directory" | "lobby",
+      render,
+    };
+
+    (MultiplayerMenu.prototype as unknown as {
+      setLobby(this: typeof fakeMenu, next: LobbySnapshot, peerId: string): void;
+    }).setLobby.call(fakeMenu, snapshot, "peer-host");
+
+    expect(setLobby).toHaveBeenCalledWith(snapshot, "peer-host");
+    expect(fakeMenu.screen).toBe("lobby");
+    expect(render).toHaveBeenCalledTimes(1);
+  });
+
   it("tracks the full multiplayer source-string surface for locale coverage", () => {
     expect(MULTIPLAYER_MENU_SOURCE_STRINGS).toContain("多人联机");
     expect(MULTIPLAYER_MENU_SOURCE_STRINGS).toContain("手动加入也需要桌面版联机桥。");
     expect(MULTIPLAYER_MENU_SOURCE_STRINGS).toContain("搜索尚未连接到对战会话");
     expect(MULTIPLAYER_MENU_SOURCE_STRINGS).toContain("近似延迟（最近广播）");
     expect(new Set(MULTIPLAYER_MENU_SOURCE_STRINGS).size).toBe(MULTIPLAYER_MENU_SOURCE_STRINGS.length);
+    for (const source of [
+      "客席已断开 · AI 已接管。",
+      "客席已离开 · AI 已接管。",
+      "房主已断开 · 已返回主菜单。",
+      "房间已关闭 · 已返回主菜单。",
+      "收到无效的联机消息。",
+      "多人联机已禁用开发者改动。",
+    ]) {
+      for (const locale of SUPPORTED_GAME_LOCALES.filter((value) => value !== "zh-CN")) {
+        expect(translateGameText(source, locale), `${source} -> ${locale}`).not.toBe(source);
+      }
+    }
   });
 });
 

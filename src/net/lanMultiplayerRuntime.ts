@@ -41,6 +41,7 @@ export interface LanMultiplayerRuntimeHooks {
   onClientMatchStarted: (session: ClientBattleSession) => void;
   onReturnToMenu: (notice: string) => void;
   onNotice: (notice: string) => void;
+  onLobbyUpdated?: (snapshot: LobbySnapshot, localPeerId: string) => void;
   now?: () => number;
 }
 
@@ -72,7 +73,7 @@ function savedBuildToLan(build: SavedShipBuild): LanBuildDescriptor {
   };
 }
 
-function joinRejectedSource(reason: LanJoinRejectedReason, detail?: string): string {
+function joinRejectedSource(reason: LanJoinRejectedReason, _detail?: string): string {
   switch (reason) {
     case "room-full":
       return "房间已满。";
@@ -86,14 +87,20 @@ function joinRejectedSource(reason: LanJoinRejectedReason, detail?: string): str
       return "该联机实例已在房间中。";
     case "invalid-request":
     default:
-      return detail ? `加入请求被拒绝：${detail}` : "加入请求被拒绝。";
+      return "加入请求被拒绝。";
   }
 }
 
-function bridgeErrorSource(code: string, message: string): string {
+function bridgeErrorSource(code: string, _message: string): string {
   if (code === "message-too-large") return "联机消息超出允许大小。";
-  if (code === "socket-error") return message || "联机连接已断开。";
-  return message || `联机错误：${code}`;
+  if (code === "socket-error") return "联机连接已断开。";
+  return "联机操作失败。";
+}
+
+function operationErrorSource(error: unknown): string {
+  return error instanceof Error && /message-too-large/i.test(error.message)
+    ? "联机消息超出允许大小。"
+    : "联机操作失败。";
 }
 
 function wait(ms: number): Promise<void> {
@@ -118,6 +125,9 @@ export class LanMultiplayerRuntime {
   private clientSessionValue?: ClientBattleSession;
   private pendingJoin?: PendingJoin;
   private guestConnectionId?: string;
+  private readonly hostInboundSequences = new Map<string, number>();
+  private guestInboundSequence = 0;
+  private guestJoinAccepted = false;
 
   constructor(
     private readonly bridge: BattleshipLanApi,
@@ -127,7 +137,9 @@ export class LanMultiplayerRuntime {
     this.profile = profile;
     this.now = hooks.now ?? (() => performance.now());
     this.unsubscribeBridge = bridge.subscribe((event) => {
-      void this.handleBridgeEvent(event);
+      void this.handleBridgeEvent(event).catch(() => {
+        this.hooks.onNotice("联机消息处理失败。");
+      });
     });
     this.callbacks = {
       capabilities: async () => await this.bridge.capabilities(),
@@ -253,6 +265,11 @@ export class LanMultiplayerRuntime {
     resolve(result);
   }
 
+  private publishLobby(): void {
+    if (!this.lobby) return;
+    this.hooks.onLobbyUpdated?.(cloneLobby(this.lobby), this.peerId);
+  }
+
   private async cleanupTransport(): Promise<void> {
     await Promise.allSettled([
       this.bridge.stopDiscovery(),
@@ -267,6 +284,9 @@ export class LanMultiplayerRuntime {
     this.hostSessionValue = undefined;
     this.clientSessionValue = undefined;
     this.guestConnectionId = undefined;
+    this.hostInboundSequences.clear();
+    this.guestInboundSequence = 0;
+    this.guestJoinAccepted = false;
     this.roleValue = "none";
   }
 
@@ -299,10 +319,11 @@ export class LanMultiplayerRuntime {
       const created = await this.bridge.createRoom({ announcementJson: encodeLanMessage(announcement, 1_024) });
       this.roomPort = created.port as LanGamePort;
       await this.refreshAnnouncement();
+      this.publishLobby();
       return { ok: true, lobby: this.lobby, localPeerId: this.peerId };
     } catch (error) {
       await this.cleanupTransport();
-      return { ok: false, errorSource: error instanceof Error ? error.message : String(error) };
+      return { ok: false, errorSource: operationErrorSource(error) };
     }
   }
 
@@ -313,7 +334,7 @@ export class LanMultiplayerRuntime {
       this.discoveredRooms.expire(this.now());
       return { ok: true, rooms: this.discoveredRooms.list() };
     } catch (error) {
-      return { ok: false, errorSource: error instanceof Error ? error.message : String(error), rooms: this.discoveredRooms.list() };
+      return { ok: false, errorSource: operationErrorSource(error), rooms: this.discoveredRooms.list() };
     }
   }
 
@@ -341,15 +362,15 @@ export class LanMultiplayerRuntime {
           expectedContentHash: LAN_CONTENT_HASH,
           build: savedBuildToLan(build),
         }, targetRoomId)).catch((error) => {
-          this.resolvePendingJoin({ ok: false, errorSource: error instanceof Error ? error.message : String(error) });
+          this.resolvePendingJoin({ ok: false, errorSource: operationErrorSource(error) });
         });
       });
       if (!result.ok) await this.bridge.disconnect();
       return result;
     } catch (error) {
-      this.resolvePendingJoin({ ok: false, errorSource: error instanceof Error ? error.message : String(error) });
+      this.resolvePendingJoin({ ok: false, errorSource: operationErrorSource(error) });
       await this.bridge.disconnect();
-      return { ok: false, errorSource: error instanceof Error ? error.message : String(error) };
+      return { ok: false, errorSource: operationErrorSource(error) };
     }
   }
 
@@ -388,6 +409,7 @@ export class LanMultiplayerRuntime {
       const readyResult = this.hostLobby.setReady(this.peerId, ready);
       if (!readyResult.ok) return { ok: false, errorSource: "当前方案未通过联机校验。" };
       this.lobby = cloneLobby(readyResult.lobby);
+      this.publishLobby();
       await this.refreshAnnouncement();
       await this.broadcastLobbyUpdate();
       return { ok: true, lobby: this.lobby, localPeerId: this.peerId };
@@ -404,9 +426,10 @@ export class LanMultiplayerRuntime {
         player.ready = ready;
         player.build = savedBuildToLan(build);
       }
+      this.publishLobby();
       return { ok: true, lobby: this.lobby, localPeerId: this.peerId };
     } catch (error) {
-      return { ok: false, errorSource: error instanceof Error ? error.message : String(error) };
+      return { ok: false, errorSource: operationErrorSource(error) };
     }
   }
 
@@ -415,6 +438,7 @@ export class LanMultiplayerRuntime {
     const started = this.hostLobby.start();
     if (!started.ok) return { ok: false, errorSource: "等待客席加入并准备。" };
     this.lobby = cloneLobby(started.lobby);
+    this.publishLobby();
     const host = this.lobby.players.find((player) => player.role === "host");
     const guest = this.lobby.players.find((player) => player.role === "guest");
     if (!host?.build || !guest?.build) return { ok: false, errorSource: "当前方案未通过联机校验。" };
@@ -454,8 +478,13 @@ export class LanMultiplayerRuntime {
   }
 
   private async handleBridgeEvent(event: LanBridgeEvent): Promise<void> {
+    if (event.type === "connected") {
+      if (event.role === "host" && event.connectionId) this.hostInboundSequences.set(event.connectionId, 0);
+      if (event.role === "guest") this.guestInboundSequence = 0;
+      return;
+    }
     if (event.type === "announcement") {
-      const message = parseLanMessage(JSON.parse(event.announcementJson));
+      const message = this.safeParse(event.announcementJson);
       if (message?.type !== "room-announcement") return;
       this.discoveredRooms.ingest({
         roomId: message.roomId,
@@ -474,8 +503,9 @@ export class LanMultiplayerRuntime {
     }
 
     if (event.type === "message") {
-      const parsed = parseLanMessage(JSON.parse(event.messageJson));
+      const parsed = this.safeParse(event.messageJson);
       if (!parsed) return;
+      if (!this.acceptInboundMessage(parsed, event)) return;
       await this.handleLanMessage(parsed, event);
       return;
     }
@@ -491,6 +521,7 @@ export class LanMultiplayerRuntime {
       if (event.role === "host" && event.connectionId && event.connectionId === this.guestConnectionId) {
         const guestPeerId = this.currentGuestPeerId();
         this.guestConnectionId = undefined;
+        this.hostInboundSequences.delete(event.connectionId);
         if (this.hostSessionValue) {
           this.hostSessionValue.disconnectGuest(this.now());
           this.hooks.onNotice("客席已断开 · AI 已接管。");
@@ -499,6 +530,7 @@ export class LanMultiplayerRuntime {
         if (this.hostLobby && guestPeerId) {
           this.hostLobby.leave(guestPeerId);
           this.lobby = cloneLobby(this.hostLobby.snapshot());
+          this.publishLobby();
           await this.refreshAnnouncement();
           await this.broadcastLobbyUpdate();
         }
@@ -510,6 +542,43 @@ export class LanMultiplayerRuntime {
         this.hooks.onReturnToMenu("房主已断开 · 已返回主菜单。") ;
       }
     }
+  }
+
+  private safeParse(json: string): LanMessage | undefined {
+    try {
+      const parsed = parseLanMessage(JSON.parse(json));
+      if (!parsed) this.hooks.onNotice("收到无效的联机消息。");
+      return parsed;
+    } catch {
+      this.hooks.onNotice("收到无效的联机消息。");
+      return undefined;
+    }
+  }
+
+  private acceptInboundMessage(
+    message: LanMessage,
+    event: Extract<LanBridgeEvent, { type: "message" }>,
+  ): boolean {
+    if (message.protocolVersion !== LAN_PROTOCOL_VERSION
+      || message.gameVersion !== LAN_GAME_VERSION
+      || message.contentHash !== LAN_CONTENT_HASH) return false;
+    if (event.role === "host") {
+      const connectionId = event.connectionId;
+      if (!connectionId || !this.roomId) return false;
+      const manualJoinRoom = message.type === "join-request"
+        && /^manual-(?:\d{1,3}-){3}\d{1,3}-477(?:7[89]|8[0-8])$/.test(message.roomId);
+      if (message.roomId !== this.roomId && !manualJoinRoom) return false;
+      const last = this.hostInboundSequences.get(connectionId) ?? 0;
+      if (message.sequence <= last) return false;
+      this.hostInboundSequences.set(connectionId, message.sequence);
+      return true;
+    }
+    const pendingResponse = Boolean(this.pendingJoin)
+      && (message.type === "join-accepted" || message.type === "join-rejected");
+    if (!pendingResponse && (!this.roomId || message.roomId !== this.roomId)) return false;
+    if (message.sequence <= this.guestInboundSequence) return false;
+    this.guestInboundSequence = message.sequence;
+    return true;
   }
 
   private async handleLanMessage(message: LanMessage, event: Extract<LanBridgeEvent, { type: "message" }>): Promise<void> {
@@ -529,18 +598,20 @@ export class LanMultiplayerRuntime {
     const guestPeerId = this.guestIdentityFor(connectionId);
     switch (message.type) {
       case "join-request": {
-        if (!this.hostLobby || !connectionId) return;
+        if (!this.hostLobby || this.hostSessionValue || !connectionId || this.guestConnectionId) return;
         const result = this.hostLobby.join(message.payload);
         this.lobby = cloneLobby(result.lobby);
         await this.refreshAnnouncement();
         if (result.accepted) {
           this.guestConnectionId = connectionId;
+          this.hostInboundSequences.set(connectionId, message.sequence);
           await this.send(this.nextEnvelope("join-accepted", {
             peerId: message.payload.peerId,
             assignedRole: "guest",
             lobby: lobbyPayload(this.lobby),
           }), { connectionId });
           await this.broadcastLobbyUpdate();
+          this.publishLobby();
         } else {
           await this.send(this.nextEnvelope("join-rejected", {
             reason: result.reason ?? "invalid-request",
@@ -550,13 +621,14 @@ export class LanMultiplayerRuntime {
         return;
       }
       case "ready-request": {
-        if (!this.hostLobby || !guestPeerId) return;
+        if (!this.hostLobby || this.hostSessionValue || this.lobby?.phase !== "lobby" || !guestPeerId) return;
         if (message.payload.build) {
           const buildResult = this.hostLobby.setBuild(guestPeerId, message.payload.build);
           if (!buildResult.ok) return;
         }
         const readyResult = this.hostLobby.setReady(guestPeerId, message.payload.ready);
         this.lobby = cloneLobby(readyResult.lobby);
+        this.publishLobby();
         await this.refreshAnnouncement();
         await this.broadcastLobbyUpdate();
         return;
@@ -579,6 +651,7 @@ export class LanMultiplayerRuntime {
         }
         this.hostLobby?.leave(guestPeerId);
         this.lobby = this.hostLobby ? cloneLobby(this.hostLobby.snapshot()) : this.lobby;
+        this.publishLobby();
         await this.refreshAnnouncement();
         await this.broadcastLobbyUpdate();
         return;
@@ -591,19 +664,34 @@ export class LanMultiplayerRuntime {
   private async handleGuestMessage(message: LanMessage): Promise<void> {
     switch (message.type) {
       case "join-accepted": {
+        if (!this.pendingJoin || this.guestJoinAccepted || message.payload.peerId !== this.peerId
+          || message.payload.assignedRole !== "guest"
+          || message.payload.lobby.phase !== "lobby"
+          || !message.payload.lobby.players.some((player) => player.peerId === this.peerId && player.role === "guest")) return;
+        this.roomId = message.roomId;
+        this.guestJoinAccepted = true;
         this.lobby = cloneLobby(message.payload.lobby);
+        this.publishLobby();
         this.resolvePendingJoin({ ok: true, lobby: this.lobby, localPeerId: this.peerId });
         return;
       }
       case "join-rejected": {
+        if (!this.pendingJoin || this.guestJoinAccepted) return;
         this.resolvePendingJoin({ ok: false, errorSource: joinRejectedSource(message.payload.reason, message.payload.detail) });
         return;
       }
       case "lobby-update": {
+        if (!this.guestJoinAccepted || this.clientSessionValue
+          || message.payload.lobby.hostPeerId !== this.lobby?.hostPeerId
+          || !message.payload.lobby.players.some((player) => player.peerId === this.peerId && player.role === "guest")) return;
         this.lobby = cloneLobby(message.payload.lobby);
+        this.publishLobby();
         return;
       }
       case "start-match": {
+        if (!this.guestJoinAccepted || this.clientSessionValue || this.roleValue !== "none"
+          || this.lobby?.phase !== "in-match"
+          || !this.lobby.players.some((player) => player.peerId === this.peerId && player.role === "guest")) return;
         this.clientSessionValue = new ClientBattleSession({
           roomId: message.roomId,
           peerId: this.peerId,
@@ -615,6 +703,7 @@ export class LanMultiplayerRuntime {
         return;
       }
       case "player-snapshot": {
+        if (!this.guestJoinAccepted || this.roleValue !== "client") return;
         this.clientSessionValue?.receiveSnapshot(message.payload, this.now());
         return;
       }

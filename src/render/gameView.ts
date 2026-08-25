@@ -1096,10 +1096,10 @@ export class GameView implements AimProvider {
   }
 
   private syncProjectiles(
-    state: BattleState, perceivedTarget?: PlayerTargetView, omniscient = false,
+    state: BattleState, perceivedTarget?: PlayerTargetView, omniscient = false, serverFiltered = false,
   ): void {
     const player = state.ships.find((ship) => ship.team === "player");
-    const visibleProjectiles = omniscient ? state.projectiles : state.projectiles.filter(
+    const visibleProjectiles = omniscient || serverFiltered ? state.projectiles : state.projectiles.filter(
       (projectile) => isProjectileVisibleToPlayer(projectile, player, perceivedTarget),
     );
     const activeIds = new Set(visibleProjectiles.map((projectile) => projectile.id));
@@ -1927,6 +1927,7 @@ export class GameView implements AimProvider {
     torpedoSpread: TorpedoSpreadMode = "narrow",
     developerView?: Readonly<DeveloperViewOptions>,
     contactViews: readonly PlayerTargetView[] = perceivedTarget ? [perceivedTarget] : [],
+    serverFilteredProjectiles = false,
   ): void {
     this.syncWeather(state.weatherId);
     const steppedTime = Math.floor(state.time * 6) / 6;
@@ -1943,7 +1944,7 @@ export class GameView implements AimProvider {
     this.syncShips(state, perceivedTarget, developerView?.omniscient, cameraShip?.id);
     this.syncContacts(contactViews, state.time);
     this.syncAirSquadrons(state, dt, developerView);
-    this.syncProjectiles(state, perceivedTarget, developerView?.omniscient);
+    this.syncProjectiles(state, perceivedTarget, developerView?.omniscient, serverFilteredProjectiles);
     this.syncUnderwaterEntities(state);
     this.syncSmokeClouds(state);
     this.objectiveRing.visibility = state.mode === "battle"
