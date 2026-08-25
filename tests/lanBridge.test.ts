@@ -68,10 +68,12 @@ class FakeUdpSocket extends EventEmitter {
   setBroadcastCalls = 0;
   closeCalls = 0;
   boundPort?: number;
+  readonly bindHistory: number[] = [];
 
   bind(port: number) {
     this.bindCalls += 1;
     this.boundPort = port;
+    this.bindHistory.push(port);
     this.listening = true;
     queueMicrotask(() => this.emit("listening"));
   }
@@ -410,7 +412,9 @@ describe("Electron LAN bridge", () => {
     }
   });
 
-  it("sends discovery probes to LAN broadcast without duplicating the socket and ignores malformed announcements", async () => {
+  it("uses an ephemeral probe socket for active discovery and reuses it until stop", async () => {
+    vi.useFakeTimers();
+
     const sockets: FakeUdpSocket[] = [];
     const bridge = trackBridge(createLanBridge({
       createUdpSocket: () => {
@@ -425,26 +429,36 @@ describe("Electron LAN bridge", () => {
     await bridge.startDiscovery();
     await bridge.startDiscovery();
 
-    expect(sockets).toHaveLength(1);
-    expect(sockets[0]?.bindCalls).toBe(1);
-    expect(sockets[0]?.setBroadcastCalls).toBe(1);
-    expect(sockets[0]?.sent.map((entry) => entry.address)).toContain("255.255.255.255");
-    expect(sockets[0]?.sent.map((entry) => entry.address)).toContain("127.0.0.1");
+    expect(sockets).toHaveLength(2);
+    expect(sockets[0]?.bindHistory).toEqual([LAN_DISCOVERY_PORT]);
+    expect(sockets[1]?.bindHistory).toEqual([0]);
+    expect(sockets[1]?.setBroadcastCalls).toBe(1);
+    expect(sockets[1]?.sent.map((entry) => entry.address)).toContain("255.255.255.255");
+    expect(sockets[1]?.sent.map((entry) => entry.address)).toContain("127.0.0.1");
 
     sockets[0]?.emit("message", Buffer.from("not-json"), { address: "127.0.0.1", port: LAN_DISCOVERY_PORT });
     await Promise.resolve();
     expect(collected.events.filter((event) => event.type === "announcement")).toEqual([]);
 
     const valid = buildAnnouncementJson();
-    sockets[0]?.emit("message", Buffer.from(valid), { address: "127.0.0.1", port: LAN_DISCOVERY_PORT });
+    sockets[1]?.emit("message", Buffer.from(valid), { address: "127.0.0.1", port: 49001 });
     await Promise.resolve();
     expect(collected.events.filter((event) => event.type === "announcement")).toMatchObject([
       { type: "announcement", announcementJson: valid },
     ]);
 
+    vi.advanceTimersByTime(1_600);
+    await Promise.resolve();
+    expect(sockets[1]?.closeCalls).toBe(1);
+
+    await bridge.startDiscovery();
+    expect(sockets).toHaveLength(3);
+    expect(sockets[2]?.bindHistory).toEqual([0]);
+
     await bridge.stopDiscovery();
     await bridge.stopDiscovery();
     expect(sockets[0]?.closeCalls).toBe(1);
+    expect(sockets[2]?.closeCalls).toBe(1);
     collected.stop();
   });
 
@@ -503,6 +517,40 @@ describe("Electron LAN bridge", () => {
     await closeNetServer(occupied);
 
     await expect(bridge.createRoom({ announcementJson: bravo })).resolves.toEqual({ port: LAN_GAME_PORTS[0] });
+  });
+
+  it("normalizes announcement payload ports to the actual hosted room port", async () => {
+    const occupied = await occupyPort(LAN_GAME_PORTS[0]);
+    const host = trackBridge(createLanBridge());
+    const guest = trackBridge(createLanBridge());
+
+    await guest.startDiscovery();
+
+    const firstAnnouncement = waitForEvent(
+      guest,
+      (event) => event.type === "announcement" && JSON.parse(event.announcementJson).payload.roomName === "Alpha Room",
+    );
+    await expect(host.createRoom({
+      announcementJson: buildAnnouncementJson({ payload: { roomName: "Alpha Room", port: LAN_GAME_PORTS[0] } }),
+    })).resolves.toEqual({ port: LAN_GAME_PORTS[1] });
+
+    const firstResolved = await firstAnnouncement;
+    if (firstResolved.type !== "announcement") throw new Error("expected-announcement");
+    const firstPayload = JSON.parse(firstResolved.announcementJson) as { payload: { port: number } };
+    expect(firstPayload.payload.port).toBe(LAN_GAME_PORTS[1]);
+
+    const secondAnnouncement = waitForEvent(
+      guest,
+      (event) => event.type === "announcement" && JSON.parse(event.announcementJson).payload.roomName === "Bravo Room",
+    );
+    await host.updateAnnouncement(buildAnnouncementJson({ payload: { roomName: "Bravo Room", port: LAN_GAME_PORTS[0] } }));
+
+    const secondResolved = await secondAnnouncement;
+    if (secondResolved.type !== "announcement") throw new Error("expected-announcement");
+    const secondPayload = JSON.parse(secondResolved.announcementJson) as { payload: { port: number } };
+    expect(secondPayload.payload.port).toBe(LAN_GAME_PORTS[1]);
+
+    await closeNetServer(occupied);
   });
 
   it("broadcasts valid announcements, emits probe events, and relays exact-64KiB websocket payloads", async () => {

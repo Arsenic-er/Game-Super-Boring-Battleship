@@ -91,3 +91,45 @@
 
 ### Commit
 - Review fix commit message: `Harden LAN bridge ownership and transport errors`
+
+
+## Review round 3 (2026-08-25)
+
+### Red
+- Added two new focused regressions to `tests/lanBridge.test.ts` before changing code.
+- Verified the failing state first with:
+  - `npx vitest run tests/lanBridge.test.ts --reporter=verbose`
+- The first new red proved stale fallback announcements: when `47778` was occupied and the room actually bound `47779`, the emitted room-announcement JSON still advertised `payload.port: 47778`.
+- The second new red proved the Windows discovery design gap: `startDiscovery()` created only the long-lived `47777` listener socket, so there was no separate `bind(0)` probe socket to receive unicast replies on an ephemeral source port.
+- One follow-up red appeared after the first fix: repeated `startDiscovery()` calls reused the existing probe window but stopped sending a fresh probe packet, which broke the real loopback host/guest probe regression until the resend logic was restored.
+- During verification, `npm run build` also went red once because the new announcement-port regression test read `announcementJson` from the union-typed `LanBridgeEvent` result without a local `type === "announcement"` narrowing.
+
+### Green
+- Updated `desktop/lanBridge.cjs` so hosting normalizes every validated room-announcement through a serializer that overrides `payload.port` with the actual bound room port before storing or broadcasting it.
+- `updateAnnouncement(...)` now validates strictly in all cases, but when a room is live it rewrites `payload.port` to the current room port before broadcasting, so callers cannot advertise a stale or forged port.
+- Refactored active probing to use a separate ephemeral UDP socket:
+  - long-lived discovery listener still binds `47777` for periodic room broadcasts,
+  - active probe socket binds `0`, sets broadcast, sends to `255.255.255.255:47777` (plus loopback),
+  - unicast announcement replies received on that ephemeral socket run through the same strict parser/event path as broadcast announcements,
+  - the probe socket closes automatically after a bounded `1500 ms` window,
+  - repeated `startDiscovery()` calls resend the probe while keeping exactly one probe socket and one timer alive,
+  - `stopDiscovery()` / `dispose()` close both the listener and any active probe socket immediately.
+- Added test coverage for:
+  - real fallback-hosting announcement normalization (`47778` occupied -> advertised `47779`),
+  - `updateAnnouncement(...)` overriding stale caller-supplied ports while the room is active,
+  - injected probe-socket lifecycle proving `bind(0)`, bounded reuse, reply parsing, timer expiry, and idempotent stop behavior.
+- Verified with:
+  - `npx vitest run tests/lanBridge.test.ts --reporter=verbose`
+  - `node -c desktop/lanBridge.cjs`
+  - `node -c desktop/main.cjs`
+  - `node -c desktop/preload.cjs`
+  - `npm run build`
+
+### Self-review
+- Kept the room-announcement envelope exact while only normalizing the authoritative `payload.port` field; all other validated fields remain caller-provided protocol data.
+- Preserved the prior Linux/loopback discovery behavior while moving the active-probe source port off `47777`, which is the piece Windows needs for same-machine reply routing.
+- Reused the existing strict discovery parser for both periodic broadcasts and probe replies so malformed packets still drop at one boundary.
+- Re-ran the full focused suite after restoring repeated-probe sends on an already-open ephemeral socket, so the final green state covers both the Windows-motivated socket design and the pre-existing real host/guest flow.
+
+### Commit
+- Review fix commit message: `Normalize LAN announcements and ephemeral probes`

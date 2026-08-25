@@ -23,6 +23,7 @@ const CHANNELS = Object.freeze({
 const UDP_MAX_BYTES = 1_024;
 const WS_MAX_BYTES = 64 * 1_024;
 const ANNOUNCEMENT_INTERVAL_MS = 1_000;
+const PROBE_WINDOW_MS = 1_500;
 const DISCOVERY_PROBE = "__BATTLESHIP_LAN_PROBE__";
 const BROADCAST_ADDRESSES = ["255.255.255.255", "127.0.0.1"];
 const SUPPORTED_CAPABILITIES = Object.freeze({ desktop: true, canHost: true, canDiscover: true });
@@ -95,6 +96,33 @@ function isCanonicalIpv4(value) {
 function assertLanBridgeStringPayload(value, maxBytes, kind) {
   if (typeof value !== "string") throw new TypeError(`${kind}-must-be-string`);
   if (Buffer.byteLength(value, "utf8") > maxBytes) throw new Error(`message-too-large:${maxBytes}`);
+}
+
+function serializeDiscoveryAnnouncement(announcement, roomPort) {
+  return JSON.stringify({
+    protocolVersion: LAN_PROTOCOL_VERSION,
+    gameVersion: announcement.gameVersion,
+    contentHash: announcement.contentHash,
+    roomId: announcement.roomId,
+    sequence: announcement.sequence,
+    sentAt: announcement.sentAt,
+    type: "room-announcement",
+    payload: {
+      roomName: announcement.payload.roomName,
+      hostName: announcement.payload.hostName,
+      discoveryPort: LAN_DISCOVERY_PORT,
+      port: roomPort ?? announcement.payload.port,
+      playerCount: announcement.payload.playerCount,
+      capacity: 2,
+      phase: announcement.payload.phase,
+    },
+  });
+}
+
+function normalizeDiscoveryAnnouncementJson(json, roomPort) {
+  const announcement = parseDiscoveryAnnouncementJson(json);
+  if (!announcement) return undefined;
+  return serializeDiscoveryAnnouncement(announcement, roomPort);
 }
 
 function parseDiscoveryAnnouncementJson(json) {
@@ -263,6 +291,11 @@ class LanBridge {
     this.clientUrl = undefined;
     this.connectPromise = undefined;
     this.announcementTimer = undefined;
+    this.probeSocket = undefined;
+    this.probeTimer = undefined;
+    this.probeWindowMs = options.probeWindowMs ?? PROBE_WINDOW_MS;
+    this.setTimeoutFn = options.setTimeout ?? setTimeout;
+    this.clearTimeoutFn = options.clearTimeout ?? clearTimeout;
     this.socketStates = new WeakMap();
   }
 
@@ -282,8 +315,7 @@ class LanBridge {
 
   async createRoom(request) {
     const announcementJson = request?.announcementJson;
-    const parsedAnnouncement = parseDiscoveryAnnouncementJson(announcementJson);
-    if (!parsedAnnouncement) throw new Error("invalid-announcement");
+    if (!parseDiscoveryAnnouncementJson(announcementJson)) throw new Error("invalid-announcement");
 
     if (this.roomServer && this.roomPort) {
       if (this.roomAnnouncementJson !== announcementJson) await this.updateAnnouncement(announcementJson);
@@ -298,7 +330,7 @@ class LanBridge {
         const server = await this.createRoomServer(port);
         this.roomServer = server;
         this.roomPort = port;
-        this.roomAnnouncementJson = announcementJson;
+        this.roomAnnouncementJson = normalizeDiscoveryAnnouncementJson(announcementJson, port);
         this.startAnnouncementTimer();
         await this.broadcastAnnouncement();
         return { port };
@@ -316,8 +348,8 @@ class LanBridge {
 
   async updateAnnouncement(announcementJson) {
     if (!parseDiscoveryAnnouncementJson(announcementJson)) throw new Error("invalid-announcement");
-    if (!this.roomServer) throw new Error("room-not-active");
-    this.roomAnnouncementJson = announcementJson;
+    if (!this.roomServer || this.roomPort === undefined) return;
+    this.roomAnnouncementJson = normalizeDiscoveryAnnouncementJson(announcementJson, this.roomPort);
     await this.broadcastAnnouncement();
   }
 
@@ -343,15 +375,29 @@ class LanBridge {
     if (!this.discoverySocket) {
       const socket = this.createUdpSocket();
       socket.on("message", (message, remote) => this.onDiscoveryMessage(message, remote));
+      socket.on("error", () => {});
       await waitForUdpBound(socket, LAN_DISCOVERY_PORT);
       socket.setBroadcast(true);
       this.discoverySocket = socket;
     }
 
-    await Promise.allSettled(BROADCAST_ADDRESSES.map((address) => sendUdp(this.discoverySocket, DISCOVERY_PROBE, LAN_DISCOVERY_PORT, address)));
+    const probeSocket = this.probeSocket ?? this.createUdpSocket();
+    if (!this.probeSocket) {
+      probeSocket.on("message", (message, remote) => this.onDiscoveryMessage(message, remote));
+      probeSocket.on("error", () => {
+        void this.stopProbeSocket();
+      });
+      await waitForUdpBound(probeSocket, 0);
+      probeSocket.setBroadcast(true);
+      this.probeSocket = probeSocket;
+    }
+
+    this.startProbeTimer(true);
+    await Promise.allSettled(BROADCAST_ADDRESSES.map((address) => sendUdp(probeSocket, DISCOVERY_PROBE, LAN_DISCOVERY_PORT, address)));
   }
 
   async stopDiscovery() {
+    await this.stopProbeSocket();
     const socket = this.discoverySocket;
     this.discoverySocket = undefined;
     await closeUdpSocket(socket);
@@ -440,6 +486,7 @@ class LanBridge {
     if (this.hostDiscoverySocket) return;
     const socket = this.createUdpSocket();
     socket.on("message", (message, remote) => this.onHostDiscoveryMessage(message, remote));
+    socket.on("error", () => {});
     await waitForUdpBound(socket, LAN_DISCOVERY_PORT);
     socket.setBroadcast(true);
     this.hostDiscoverySocket = socket;
@@ -558,6 +605,27 @@ class LanBridge {
     this.clearIntervalFn(this.announcementTimer);
     this.announcementTimer = undefined;
   }
+
+  startProbeTimer(reset = false) {
+    if (this.probeTimer && !reset) return;
+    if (this.probeTimer && reset) {
+      this.clearTimeoutFn(this.probeTimer);
+      this.probeTimer = undefined;
+    }
+    this.probeTimer = this.setTimeoutFn(() => {
+      void this.stopProbeSocket();
+    }, this.probeWindowMs);
+  }
+
+  async stopProbeSocket() {
+    if (this.probeTimer) {
+      this.clearTimeoutFn(this.probeTimer);
+      this.probeTimer = undefined;
+    }
+    const socket = this.probeSocket;
+    this.probeSocket = undefined;
+    await closeUdpSocket(socket);
+  }
 }
 
 function createLanBridge(options) {
@@ -638,6 +706,7 @@ module.exports = {
   assertLanBridgeStringPayload,
   createLanBridge,
   createLanIpcController,
+  normalizeDiscoveryAnnouncementJson,
   parseDiscoveryAnnouncementJson,
   validateLanWebSocketUrl,
 };
