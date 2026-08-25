@@ -115,3 +115,44 @@ Commit: final HEAD commit with message `Define validated LAN multiplayer protoco
 - Fixed silent loss of remote aircraft mission commands.
 - Enforced exact-key protocol validation instead of permissive object acceptance.
 - Broadened the deterministic LAN fingerprint to track the actual protocol-visible equipment and loadout schema.
+
+## Re-review fix-up (2026-08-25)
+
+### Red
+
+- Added another focused red pass in `tests/netProtocol.test.ts` for:
+  - rejecting forged `perception`
+  - rejecting forged `aiDecision`
+  - rejecting semantically invalid air-mission leftovers (`patrolArea` + target, `strikeShip` + area, `defendShip` + area)
+  - accepting one legal example for every supported air-mission kind
+- Re-ran:
+  - `npx vitest run tests/netProtocol.test.ts --reporter=verbose`
+- Observed expected failures:
+  - remote commands still accepted forged telemetry fields
+  - `patrolArea` still accepted leftover target fields
+
+### Green
+
+- Removed `perception` and `aiDecision` entirely from remote-command validation and reconstruction.
+- Deleted the now-unneeded telemetry parsers from `src/net/messageValidation.ts`.
+- Tightened air-mission semantics to exactly:
+  - `moveTo`: requires `area`, rejects `targetId` / `targetIds`
+  - `patrolArea`: requires `area`, rejects `targetId` / `targetIds`
+  - `recall`: rejects `area`, `targetId`, and `targetIds`
+  - `defendShip`: requires target, rejects `area`
+  - `strikeShip`: requires target, rejects `area`
+  - `interceptSquadron`: requires target, rejects `area`
+
+### Re-review verification
+
+- `npx vitest run tests/netProtocol.test.ts --reporter=verbose`
+  - Result: 1 file passed, 25 tests passed
+- `npx vitest run tests/netProtocol.test.ts --reporter=verbose && npm run build`
+  - Result: focused suite passed and production build succeeded
+- `git diff --check -- src/net tests/netProtocol.test.ts .superpowers/sdd/2026-08-25-lan-coop-multiplayer/task-2-report.md`
+  - Result: clean
+
+### Re-review summary
+
+- Remote players can no longer inject authoritative perception or AI telemetry.
+- Air-mission validation now enforces kind-specific field semantics instead of merely checking structural shape.

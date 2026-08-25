@@ -112,9 +112,6 @@ const AIR_MISSION_KINDS = [
   "strikeShip",
   "recall",
 ] as const;
-const PERCEPTION_MODES = ["unaware", "acquiring", "tracking", "lost", "searching"] as const;
-const FLEET_AI_ROLES = ["screen", "escort", "line"] as const;
-const FLEET_AI_PHASES = ["forming", "securing", "engaging", "evading", "withdrawing", "searching"] as const;
 
 const SHIP_CLASS_ID_SET = new Set<string>(SHIP_CLASS_IDS);
 const GAME_PORT_SET = new Set<number>(LAN_GAME_PORTS);
@@ -382,10 +379,10 @@ function readAirMissionCommand(value: unknown): NonNullable<ControlCommand["airM
   if (value.targetIds !== undefined && !targetIds) return undefined;
   if (value.area !== undefined && !area) return undefined;
 
-  const requiresTarget = kind === "strikeShip" || kind === "interceptSquadron";
+  const requiresTarget = kind === "defendShip" || kind === "strikeShip" || kind === "interceptSquadron";
   const requiresArea = kind === "moveTo" || kind === "patrolArea";
-  const forbidsTarget = kind === "moveTo" || kind === "recall";
-  const forbidsArea = kind === "recall";
+  const forbidsTarget = kind === "moveTo" || kind === "patrolArea" || kind === "recall";
+  const forbidsArea = kind === "defendShip" || kind === "strikeShip" || kind === "interceptSquadron" || kind === "recall";
 
   if (requiresTarget && !targetId && (!targetIds || targetIds.length === 0)) return undefined;
   if (requiresArea && !area) return undefined;
@@ -398,50 +395,6 @@ function readAirMissionCommand(value: unknown): NonNullable<ControlCommand["airM
     ...(targetId ? { targetId } : {}),
     ...(targetIds ? { targetIds } : {}),
     ...(area ? { area } : {}),
-  };
-}
-
-function readPerceptionTelemetry(value: unknown): NonNullable<ControlCommand["perception"]> | undefined {
-  if (!isRecord(value)) return undefined;
-  if (!hasAllowedKeys(value, ["mode", "confidence", "lastObservedAt", "estimatedPosition"])) return undefined;
-  const mode = readEnum(value.mode, PERCEPTION_MODES);
-  const confidence = readFiniteNumber(value.confidence, { min: 0, max: 1 });
-  const lastObservedAt = value.lastObservedAt === undefined
-    ? undefined
-    : readFiniteNumber(value.lastObservedAt, { min: 0 });
-  const estimatedPosition = value.estimatedPosition === undefined ? undefined : readVec3(value.estimatedPosition);
-  if (!mode || confidence === undefined) return undefined;
-  if (value.lastObservedAt !== undefined && lastObservedAt === undefined) return undefined;
-  if (value.estimatedPosition !== undefined && !estimatedPosition) return undefined;
-  return {
-    mode,
-    confidence,
-    ...(lastObservedAt !== undefined ? { lastObservedAt } : {}),
-    ...(estimatedPosition ? { estimatedPosition } : {}),
-  };
-}
-
-function readAiDecisionTelemetry(value: unknown): NonNullable<ControlCommand["aiDecision"]> | undefined {
-  if (!isRecord(value)) return undefined;
-  if (!hasAllowedKeys(value, ["role", "phase", "targetId", "desiredHeading", "throttle", "fireIntent", "avoidanceReason"])) return undefined;
-  const role = readEnum(value.role, FLEET_AI_ROLES);
-  const phase = readEnum(value.phase, FLEET_AI_PHASES);
-  const targetId = value.targetId === undefined ? undefined : readNonEmptyString(value.targetId, 64);
-  const desiredHeading = readFiniteNumber(value.desiredHeading);
-  const throttle = readFiniteNumber(value.throttle, { min: -1, max: 1 });
-  const fireIntent = readBoolean(value.fireIntent);
-  const avoidanceReason = value.avoidanceReason === undefined ? undefined : readNonEmptyString(value.avoidanceReason, 96);
-  if (!role || !phase || desiredHeading === undefined || throttle === undefined || fireIntent === undefined) return undefined;
-  if (value.targetId !== undefined && !targetId) return undefined;
-  if (value.avoidanceReason !== undefined && !avoidanceReason) return undefined;
-  return {
-    role,
-    phase,
-    desiredHeading,
-    throttle,
-    fireIntent,
-    ...(targetId ? { targetId } : {}),
-    ...(avoidanceReason ? { avoidanceReason } : {}),
   };
 }
 
@@ -473,8 +426,6 @@ export function validateRemoteCommand(value: unknown): ControlCommand | undefine
     "deployDepthCharge",
     "airMission",
     "airMissions",
-    "perception",
-    "aiDecision",
   ])) return undefined;
   const throttle = readFiniteNumber(value.throttle);
   const rudder = readFiniteNumber(value.rudder);
@@ -498,8 +449,6 @@ export function validateRemoteCommand(value: unknown): ControlCommand | undefine
     : (Array.isArray(value.airMissions) && value.airMissions.length <= 16
         ? value.airMissions.map(readAirMissionCommand)
         : undefined);
-  const perception = value.perception === undefined ? undefined : readPerceptionTelemetry(value.perception);
-  const aiDecision = value.aiDecision === undefined ? undefined : readAiDecisionTelemetry(value.aiDecision);
 
   if (
     (value.weaponSlot !== undefined && !weaponSlot)
@@ -512,8 +461,6 @@ export function validateRemoteCommand(value: unknown): ControlCommand | undefine
     || (value.deployDepthCharge !== undefined && deployDepthCharge === undefined)
     || (value.airMission !== undefined && !airMission)
     || (value.airMissions !== undefined && (!airMissions || airMissions.some((entry) => !entry)))
-    || (value.perception !== undefined && !perception)
-    || (value.aiDecision !== undefined && !aiDecision)
   ) {
     return undefined;
   }
@@ -533,8 +480,6 @@ export function validateRemoteCommand(value: unknown): ControlCommand | undefine
     ...(deployDepthCharge !== undefined ? { deployDepthCharge } : {}),
     ...(airMission ? { airMission } : {}),
     ...(airMissions ? { airMissions: airMissions as NonNullable<ControlCommand["airMissions"]> } : {}),
-    ...(perception ? { perception } : {}),
-    ...(aiDecision ? { aiDecision } : {}),
   };
 }
 

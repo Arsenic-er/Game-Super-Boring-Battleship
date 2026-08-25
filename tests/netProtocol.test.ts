@@ -86,13 +86,57 @@ const validCommand: ControlCommand = {
 const validAirMission = {
   squadronId: "air-squadron-01",
   kind: "patrolArea" as const,
-  targetId: "target-alpha",
-  targetIds: ["target-alpha", "target-bravo"],
   area: {
     center: { x: 400, y: 120, z: -250 },
     radius: 800,
   },
 };
+
+const validAirMissionKinds = [
+  {
+    label: "moveTo",
+    mission: {
+      squadronId: "air-squadron-move",
+      kind: "moveTo" as const,
+      area: { center: { x: 0, y: 180, z: -2_000 }, radius: 90 },
+    },
+  },
+  {
+    label: "patrolArea",
+    mission: validAirMission,
+  },
+  {
+    label: "recall",
+    mission: {
+      squadronId: "air-squadron-recall",
+      kind: "recall" as const,
+    },
+  },
+  {
+    label: "defendShip",
+    mission: {
+      squadronId: "air-squadron-defend",
+      kind: "defendShip" as const,
+      targetIds: ["player"],
+    },
+  },
+  {
+    label: "strikeShip",
+    mission: {
+      squadronId: "air-squadron-strike",
+      kind: "strikeShip" as const,
+      targetId: "enemy-alpha",
+    },
+  },
+  {
+    label: "interceptSquadron",
+    mission: {
+      squadronId: "air-squadron-intercept",
+      kind: "interceptSquadron" as const,
+      targetIds: ["bogey-1", "bogey-2"],
+    },
+  },
+] as const;
 
 describe("LAN protocol", () => {
   it("round-trips a valid join request", () => {
@@ -210,6 +254,16 @@ describe("remote control command validation", () => {
     });
   });
 
+  it.each(validAirMissionKinds)("accepts a semantically valid $label air mission", ({ mission }) => {
+    expect(validateRemoteCommand({
+      ...validCommand,
+      airMission: mission,
+    })).toEqual({
+      ...validCommand,
+      airMission: mission,
+    });
+  });
+
   it("rejects malformed or oversized air mission payloads", () => {
     expect(validateRemoteCommand({
       ...validCommand,
@@ -228,6 +282,59 @@ describe("remote control command validation", () => {
         squadronId: `air-${index}`,
         kind: "recall" as const,
       })),
+    })).toBeUndefined();
+  });
+
+  it("rejects semantically invalid air mission leftovers", () => {
+    expect(validateRemoteCommand({
+      ...validCommand,
+      airMission: {
+        squadronId: "air-squadron-patrol",
+        kind: "patrolArea",
+        targetId: "enemy-alpha",
+        area: { center: { x: 10, y: 180, z: 20 }, radius: 500 },
+      },
+    })).toBeUndefined();
+
+    expect(validateRemoteCommand({
+      ...validCommand,
+      airMission: {
+        squadronId: "air-squadron-strike",
+        kind: "strikeShip",
+        targetId: "enemy-alpha",
+        area: { center: { x: 10, y: 180, z: 20 }, radius: 500 },
+      },
+    })).toBeUndefined();
+
+    expect(validateRemoteCommand({
+      ...validCommand,
+      airMission: {
+        squadronId: "air-squadron-defend",
+        kind: "defendShip",
+        targetIds: ["player"],
+        area: { center: { x: 10, y: 180, z: 20 }, radius: 500 },
+      },
+    })).toBeUndefined();
+  });
+
+  it("rejects forged perception and aiDecision telemetry", () => {
+    expect(validateRemoteCommand({
+      ...validCommand,
+      perception: {
+        mode: "tracking",
+        confidence: 1,
+      },
+    })).toBeUndefined();
+
+    expect(validateRemoteCommand({
+      ...validCommand,
+      aiDecision: {
+        role: "escort",
+        phase: "engaging",
+        desiredHeading: 0.4,
+        throttle: 1,
+        fireIntent: true,
+      },
     })).toBeUndefined();
   });
 
