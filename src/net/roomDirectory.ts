@@ -1,3 +1,5 @@
+import { LAN_GAME_PORTS } from "./protocol";
+
 export interface DiscoveredRoom {
   roomId: string;
   roomName: string;
@@ -19,6 +21,38 @@ const PHASE_RANK: Record<DiscoveredRoom["phase"], number> = {
   lobby: 0,
   "in-match": 1,
 };
+
+const PORT_SET = new Set<number>(LAN_GAME_PORTS);
+
+function hasBoundedText(value: unknown, maxLength: number): value is string {
+  return typeof value === "string" && value.trim().length > 0 && value.length <= maxLength;
+}
+
+function isIpv4Literal(value: unknown): value is string {
+  if (typeof value !== "string" || value.length < 7 || value.length > 15) return false;
+  const parts = value.split(".");
+  if (parts.length !== 4) return false;
+  return parts.every((part) => {
+    if (!/^\d{1,3}$/.test(part)) return false;
+    const number = Number(part);
+    return Number.isInteger(number) && number >= 0 && number <= 255;
+  });
+}
+
+function isDiscoveredRoom(room: DiscoveredRoom): boolean {
+  return hasBoundedText(room.roomId, 64)
+    && hasBoundedText(room.roomName, 48)
+    && hasBoundedText(room.hostName, 32)
+    && isIpv4Literal(room.address)
+    && Number.isInteger(room.port)
+    && PORT_SET.has(room.port)
+    && (room.playerCount === 1 || room.playerCount === 2)
+    && room.capacity === 2
+    && (room.phase === "lobby" || room.phase === "in-match")
+    && typeof room.lastSeenAt === "number"
+    && Number.isFinite(room.lastSeenAt)
+    && room.lastSeenAt >= 0;
+}
 
 function cloneRoom(room: DiscoveredRoom): DiscoveredRoom {
   return {
@@ -43,12 +77,14 @@ export class RoomDirectory {
 
   private nextOrder = 0;
 
-  ingest(room: DiscoveredRoom): void {
+  ingest(room: DiscoveredRoom): boolean {
+    if (!isDiscoveredRoom(room)) return false;
     const previous = this.rooms.get(room.roomId);
     this.rooms.set(room.roomId, {
       room: cloneRoom(room),
       order: previous?.order ?? this.nextOrder++,
     });
+    return true;
   }
 
   expire(now: number, maxAgeMs: number = 3_000): void {

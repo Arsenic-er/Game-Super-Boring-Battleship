@@ -144,4 +144,33 @@ describe("HostLobby", () => {
     expect(lobby.snapshot().phase).toBe("closing");
     expect(lobby.snapshot().players[0]?.connected).toBe(false);
   });
+
+  it("deep-freezes player build slots in snapshots", () => {
+    const lobby = createLobby();
+    const snapshot = lobby.snapshot();
+    const player = snapshot.players[0]!;
+    const frozenBuild = player.build!;
+
+    expect(Object.isFrozen(frozenBuild)).toBe(true);
+    expect(Object.isFrozen(frozenBuild.slots)).toBe(true);
+    expect(Object.isFrozen(frozenBuild.slots.mainGun)).toBe(true);
+    expect(Object.isFrozen(frozenBuild.slots.torpedo)).toBe(true);
+    expect(Object.isFrozen(frozenBuild.slots.antiAir)).toBe(true);
+    expect(Object.isFrozen(frozenBuild.slots.sideGun)).toBe(true);
+    expect(Object.isFrozen(frozenBuild.slots.depthCharge)).toBe(true);
+    expect(Object.isFrozen(frozenBuild.slots.magazine)).toBe(true);
+    expect(Object.isFrozen(frozenBuild.slots.engine)).toBe(true);
+    expect(Object.isFrozen(frozenBuild.slots.steering)).toBe(true);
+
+    expect(() => {
+      frozenBuild.slots.mainGun[0] = null;
+    }).toThrow();
+    expect(() => {
+      (frozenBuild.slots.antiAir as (string | null)[]).push("antiAir-common");
+    }).toThrow();
+
+    const fresh = lobby.snapshot();
+    expect(fresh.players[0]?.build?.slots.mainGun[0]).toBe("mainGun-common");
+    expect(fresh.players[0]?.build?.slots.antiAir).toEqual(["antiAir-common", null, null, null]);
+  });
 });

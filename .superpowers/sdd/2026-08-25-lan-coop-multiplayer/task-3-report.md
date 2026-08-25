@@ -35,3 +35,43 @@
 
 ## Commit
 - Commit message: `Add LAN room and lobby state machines`
+
+## Review round 2
+
+### Red
+- Added a new `HostLobby` regression test that proves `snapshot()` was only shallowly freezing `build`: the `build` object itself was frozen, but `build.slots` and its category arrays were still mutable.
+- Added a table-driven `RoomDirectory` regression test that proves invalid discovery payloads were being accepted into the directory: hostname/IPv6 addresses, non-allow-listed ports, out-of-range player counts, wrong capacity, invalid phase, empty/overlong text fields, and negative/non-finite `lastSeenAt`.
+- Verified the failing state first with:
+  - `npx vitest run tests/roomDirectory.test.ts tests/lobbyState.test.ts --reporter=verbose`
+- The expected failures were:
+  - `Object.isFrozen(frozenBuild.slots)` returning `false`, and
+  - `RoomDirectory.ingest(...)` returning `undefined` / accepting invalid records.
+
+### Green
+- Hardened `HostLobby` snapshot immutability by deep-cloning and freezing:
+  - `build`,
+  - `build.slots`, and
+  - each category array within `slots`.
+- Hardened `RoomDirectory.ingest()` to validate and reject invalid room records before storage. It now returns `boolean`:
+  - `true` when the room is accepted,
+  - `false` when the room is rejected.
+- Validation now enforces:
+  - IPv4-literal `address` only,
+  - `port` in `LAN_GAME_PORTS`,
+  - `playerCount` of `1 | 2`,
+  - `capacity === 2`,
+  - `phase` of `lobby | in-match`,
+  - bounded non-empty `roomId`/`roomName`/`hostName`,
+  - finite non-negative `lastSeenAt`.
+- Verified with:
+  - `npx vitest run tests/roomDirectory.test.ts tests/lobbyState.test.ts --reporter=verbose`
+  - `npx vitest run tests/roomDirectory.test.ts tests/lobbyState.test.ts tests/savedBuilds.test.ts tests/loadoutPolicy.test.ts --reporter=verbose`
+  - `npm run build`
+
+### Self-review
+- The new directory validation stays local to Task 3 and does not broaden trust assumptions elsewhere in the LAN stack.
+- Returning `boolean` from `ingest()` gives callers a diagnosable contract while remaining source-compatible with existing call sites that only rely on side effects.
+- Snapshot immutability is now deep enough to block both object-property assignment and array mutation (`push` / index writes) without leaking shared references back into host state.
+
+### Commit
+- Review fix commit message: `Harden LAN room validation and lobby snapshots`

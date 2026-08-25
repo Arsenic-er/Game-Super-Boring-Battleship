@@ -74,6 +74,26 @@ function cloneBuild(build: LanBuildDescriptor): LanBuildDescriptor {
   };
 }
 
+function freezeBuild(build: LanBuildDescriptor): LanBuildDescriptor {
+  const cloned = cloneBuild(build);
+  const slots = Object.freeze({
+    mainGun: Object.freeze([...cloned.slots.mainGun]),
+    torpedo: Object.freeze([...cloned.slots.torpedo]),
+    antiAir: Object.freeze([...cloned.slots.antiAir]),
+    sideGun: Object.freeze([...cloned.slots.sideGun]),
+    depthCharge: Object.freeze([...cloned.slots.depthCharge]),
+    magazine: Object.freeze([...cloned.slots.magazine]),
+    engine: Object.freeze([...cloned.slots.engine]),
+    steering: Object.freeze([...cloned.slots.steering]),
+  });
+  return Object.freeze({
+    buildId: cloned.buildId,
+    buildName: cloned.buildName,
+    shipClassId: cloned.shipClassId,
+    slots,
+  }) as LanBuildDescriptor;
+}
+
 function clonePlayer(player: LobbyPlayer): LobbyPlayer {
   return {
     peerId: player.peerId,
@@ -87,8 +107,12 @@ function clonePlayer(player: LobbyPlayer): LobbyPlayer {
 
 function freezePlayer(player: LobbyPlayer): LobbyPlayer {
   return Object.freeze({
-    ...clonePlayer(player),
-    build: player.build ? Object.freeze(cloneBuild(player.build)) : undefined,
+    peerId: player.peerId,
+    commanderName: player.commanderName,
+    role: player.role,
+    build: player.build ? freezeBuild(player.build) : undefined,
+    ready: player.ready,
+    connected: player.connected,
   });
 }
 
