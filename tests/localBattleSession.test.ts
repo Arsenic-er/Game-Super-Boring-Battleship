@@ -49,6 +49,40 @@ describe("LocalBattleSession", () => {
     expect(ally.aiDecision).toBeDefined();
   });
 
+  it("uses constructor developer-AI defaults unless a step explicitly overrides them", () => {
+    const defaultEnabled = createInitialState(17, "battle");
+    const defaultEnabledAlly = spawnDeveloperShip(defaultEnabled, "player", "cleveland")!;
+    defaultEnabledAlly.aiControlled = false;
+    const defaultEnabledSession = new LocalBattleSession(defaultEnabled, { includeDeveloperAi: true });
+    defaultEnabledSession.step(
+      new Map([["player", zeroCommandFor(defaultEnabled.ships[0]!)] ]),
+      FIXED_STEP,
+    );
+    expect(defaultEnabledAlly.aiDecision).toBeDefined();
+
+    const disabledByOverride = createInitialState(18, "battle");
+    const disabledAlly = spawnDeveloperShip(disabledByOverride, "player", "cleveland")!;
+    disabledAlly.aiControlled = false;
+    const disabledSession = new LocalBattleSession(disabledByOverride, { includeDeveloperAi: true });
+    disabledSession.step(
+      new Map([["player", zeroCommandFor(disabledByOverride.ships[0]!)] ]),
+      FIXED_STEP,
+      { includeDeveloperAi: false },
+    );
+    expect(disabledAlly.aiDecision).toBeUndefined();
+
+    const enabledByOverride = createInitialState(19, "battle");
+    const enabledAlly = spawnDeveloperShip(enabledByOverride, "player", "cleveland")!;
+    enabledAlly.aiControlled = false;
+    const enabledSession = new LocalBattleSession(enabledByOverride);
+    enabledSession.step(
+      new Map([["player", zeroCommandFor(enabledByOverride.ships[0]!)] ]),
+      FIXED_STEP,
+      { includeDeveloperAi: true },
+    );
+    expect(enabledAlly.aiDecision).toBeDefined();
+  });
+
   it("reset replaces the state and clears AI controllers between battles", () => {
     const initial = createInitialState(17, "battle");
     const initialAlly = spawnDeveloperShip(initial, "player", "cleveland")!;

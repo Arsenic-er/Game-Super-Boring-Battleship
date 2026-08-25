@@ -20,10 +20,12 @@ const actorSeed = (id: string): number => {
 export class LocalBattleSession implements AuthoritativeBattleSession {
   readonly role = "local" as const;
   private currentState: BattleState;
+  private readonly defaultIncludeDeveloperAi: boolean;
   private shipAiById = new Map<string, RuleBasedAi>();
 
-  constructor(state: BattleState, _options?: { includeDeveloperAi?: boolean }) {
+  constructor(state: BattleState, options?: { includeDeveloperAi?: boolean }) {
     this.currentState = state;
+    this.defaultIncludeDeveloperAi = options?.includeDeveloperAi ?? false;
   }
 
   get state(): BattleState {
@@ -36,7 +38,7 @@ export class LocalBattleSession implements AuthoritativeBattleSession {
     options?: Readonly<BattleStepOptions>,
   ): BattleStepOutput {
     const commands = new Map(humanCommands);
-    const includeDeveloperAi = options?.includeDeveloperAi ?? false;
+    const includeDeveloperAi = options?.includeDeveloperAi ?? this.defaultIncludeDeveloperAi;
     const aiShips = this.currentState.ships.filter((ship) =>
       ship.hull > 0
       && !ship.isTestTarget
