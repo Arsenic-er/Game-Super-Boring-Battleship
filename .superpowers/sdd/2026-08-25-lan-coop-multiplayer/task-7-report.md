@@ -270,3 +270,32 @@ Result:
   2 report tests skipped.
 - Production TypeScript/Vite build passed (existing large-chunk advisory only).
 - Whitespace diff check passed.
+
+## Final interpolation and event evidence expansion (2026-08-26)
+
+No production changes were required for this final evidence pass. The client
+session regression coverage now makes the two reviewed invariants explicit:
+
+- A friendly transition from `[A, B]` to `[B, C]` proves that missing ship `A`
+  disappears, continuing ship `B` interpolates only against its own ID-matched
+  history, and newly visible ship `C` starts at its authoritative state.
+- Two consecutive authoritative snapshots carrying different events prove that
+  the first event is released only at the first delayed boundary, the second
+  only at the second boundary, and neither is replayed by repeated rendering,
+  bounded extrapolation, or the post-500 ms frozen state.
+
+### Verification after final evidence expansion (2026-08-26)
+
+```bash
+npm test -- --run tests/clientBattleSession.test.ts tests/networkReconciliation.test.ts
+npm test -- --run
+npm run build
+git diff --check
+```
+
+Result:
+- Focused regression: 2 files, 20 tests passed.
+- Full suite: 63 files passed, 2 report suites skipped; 537 tests passed,
+  2 report tests skipped.
+- Production TypeScript/Vite build passed (existing large-chunk advisory only).
+- Whitespace diff check passed.
