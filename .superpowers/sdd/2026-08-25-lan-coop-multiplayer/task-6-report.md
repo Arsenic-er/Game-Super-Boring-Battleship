@@ -60,3 +60,30 @@
 
 ## Commit
 - Commit message: `Add authoritative two-player co-op battle session`
+
+
+## Blocker follow-up
+- Tightened `HostBattleSession.step(...)` so the `AuthoritativeBattleSession`-compatible map path only accepts the host-assigned ship key. Guest / AI / enemy / unknown keys now fail fast with `unauthorized-command-target`, and all accepted map commands are revalidated through `validateRemoteCommand()` before reaching simulation.
+- Hardened guest input admission:
+  - `inputSequence` must be a safe non-negative integer,
+  - `receivedAt` must be finite, non-negative, and monotonic per peer,
+  - rejected timestamps do not mutate the rolling rate window,
+  - the 30-msg/s rolling window now releases exactly at `oldest + 1000 ms`.
+- Reset now restores host/guest peer configuration, reassigns two distinct allied human ships from the new state, clears cached cadence / pending input / rate-limit history, and re-enables guest input after a disconnect-followed-by-reset. States with fewer than two allied ships now throw immediately.
+- Replication redaction now removes hidden hostile source identity from projectiles, torpedoes, aircraft, shot/impact/air events, and avoids leaking hidden-source origins through snapshot JSON. Visible hostile sources still retain their visible identity.
+- Exported the LAN build normalizer from `src/net/lobbyState.ts` so lobby admission and host-session scenario validation share the same catalog / slot-count / compatibility enforcement and cannot drift.
+- Kept the single-player-equivalent scenario path unchanged while preserving the explicit two-human validated-build path.
+
+## Blocker follow-up verification
+- Targeted blocker regression:
+  - `npx vitest run tests/hostBattleSession.test.ts tests/replicationView.test.ts tests/netProtocol.test.ts tests/lobbyState.test.ts --reporter=verbose`
+  - Result: 4 files passed, 44 tests passed.
+- Post-fix broader regression:
+  - `npx vitest run tests/hostBattleSession.test.ts tests/replicationView.test.ts tests/scenarios.test.ts tests/playerPerception.test.ts tests/simulation.test.ts tests/localBattleSession.test.ts tests/netProtocol.test.ts tests/lobbyState.test.ts --reporter=dot`
+  - Result: 8 files passed, 130 tests passed.
+- Production build after the final overload/type-narrowing fix:
+  - `npm run build`
+  - Result: success (`tsc && vite build`).
+- Diff hygiene after final edits:
+  - `git diff --check`
+  - Result: clean.

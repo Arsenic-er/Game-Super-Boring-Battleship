@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
   HostLobby,
+  normalizeLanBuildDescriptor,
   type HostLobbyConfig,
   type LobbySnapshot,
 } from "../src/net/lobbyState";
@@ -173,4 +174,28 @@ describe("HostLobby", () => {
     expect(fresh.players[0]?.build?.slots.mainGun[0]).toBe("mainGun-common");
     expect(fresh.players[0]?.build?.slots.antiAir).toEqual(["antiAir-common", null, null, null]);
   });
+
+  it("exports a reusable build normalizer that rejects category, slot-count, and compatibility attacks", () => {
+    expect(normalizeLanBuildDescriptor(build())).toEqual(build());
+    expect(normalizeLanBuildDescriptor(build({
+      slots: {
+        ...build().slots,
+        mainGun: ["engine-common", null, null, null, null],
+      },
+    }))).toBeUndefined();
+    expect(normalizeLanBuildDescriptor(build({
+      shipClassId: "cleveland",
+      slots: {
+        ...build().slots,
+        torpedo: ["torpedo-common", null],
+      },
+    }))).toBeUndefined();
+    expect(normalizeLanBuildDescriptor(build({
+      slots: {
+        ...build().slots,
+        antiAir: ["antiAir-common", null, null, null, null],
+      },
+    }))).toBeUndefined();
+  });
+
 });

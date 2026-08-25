@@ -191,6 +191,58 @@ describe("LAN protocol", () => {
   });
 });
 
+
+
+  it("round-trips player snapshots whose hostile source identity was redacted", () => {
+    const encoded = encodeLanMessage({
+      protocolVersion: LAN_PROTOCOL_VERSION,
+      gameVersion: LAN_GAME_VERSION,
+      contentHash: LAN_CONTENT_HASH,
+      roomId: "room-atoll-01",
+      sequence: 8,
+      sentAt: 1_725_000_000_222,
+      type: "player-snapshot",
+      payload: {
+        controlledShipId: "player",
+        serverTick: 6,
+        lastProcessedInputSequence: 3,
+        time: 1,
+        self: { id: "player" },
+        friendlies: [{ id: "ally-destroyer-1" }],
+        contacts: [],
+        projectiles: [{ id: 1, kind: "shell", position: { x: 1, y: 0, z: 2 }, velocity: { x: 0, y: 0, z: -1 } }],
+        torpedoes: [{ id: 2, kind: "torpedo", position: { x: 2, y: 0, z: 3 }, velocity: { x: 0, y: 0, z: -1 } }],
+        aircraft: [{ role: "fighter", position: { x: 3, y: 10, z: 4 } }],
+        objective: { center: { x: 0, y: 0, z: 0 }, radius: 500 },
+        events: [{ id: 9, kind: "hit", targetId: "player" }],
+      },
+    });
+
+    expect(parseLanMessage(JSON.parse(encoded))).toEqual({
+      protocolVersion: LAN_PROTOCOL_VERSION,
+      gameVersion: LAN_GAME_VERSION,
+      contentHash: LAN_CONTENT_HASH,
+      roomId: "room-atoll-01",
+      sequence: 8,
+      sentAt: 1_725_000_000_222,
+      type: "player-snapshot",
+      payload: {
+        controlledShipId: "player",
+        serverTick: 6,
+        lastProcessedInputSequence: 3,
+        time: 1,
+        self: { id: "player" },
+        friendlies: [{ id: "ally-destroyer-1" }],
+        contacts: [],
+        projectiles: [{ id: 1, kind: "shell", position: { x: 1, y: 0, z: 2 }, velocity: { x: 0, y: 0, z: -1 } }],
+        torpedoes: [{ id: 2, kind: "torpedo", position: { x: 2, y: 0, z: 3 }, velocity: { x: 0, y: 0, z: -1 } }],
+        aircraft: [{ role: "fighter", position: { x: 3, y: 10, z: 4 } }],
+        objective: { center: { x: 0, y: 0, z: 0 }, radius: 500 },
+        events: [{ id: 9, kind: "hit", targetId: "player" }],
+      },
+    });
+  });
+
 describe("remote control command validation", () => {
   it("accepts a well-formed remote command", () => {
     expect(validateRemoteCommand(validCommand)).toEqual(validCommand);

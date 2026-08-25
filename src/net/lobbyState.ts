@@ -126,7 +126,7 @@ function freezeSnapshot(snapshot: LobbySnapshot): LobbySnapshot {
   });
 }
 
-function normalizeBuild(build: LanBuildDescriptor): LanBuildDescriptor | undefined {
+export function normalizeLanBuildDescriptor(build: LanBuildDescriptor): LanBuildDescriptor | undefined {
   const slotCounts = SHIP_CLASS_SLOT_COUNTS[build.shipClassId];
   if (!slotCounts) return undefined;
   const slots = {} as LanBuildDescriptor["slots"];
@@ -176,7 +176,7 @@ export class HostLobby {
     this.hostPeerId = config.hostPeerId;
     this.gameVersion = config.gameVersion;
     this.contentHash = config.contentHash;
-    const hostBuild = config.hostBuild ? normalizeBuild(config.hostBuild) : undefined;
+    const hostBuild = config.hostBuild ? normalizeLanBuildDescriptor(config.hostBuild) : undefined;
     if (config.hostBuild && !hostBuild) throw new Error("invalid-host-build");
     this.host = {
       peerId: config.hostPeerId,
@@ -196,7 +196,7 @@ export class HostLobby {
       return this.reject("already-joined");
     }
     if (this.guest) return this.reject("room-full");
-    const build = request.build ? normalizeBuild(request.build) : undefined;
+    const build = request.build ? normalizeLanBuildDescriptor(request.build) : undefined;
     if (request.build && !build) return this.reject("invalid-build");
     this.guest = {
       peerId: request.peerId,
@@ -232,7 +232,7 @@ export class HostLobby {
     if (this.phase !== "lobby") return this.failure("invalid-phase");
     const player = this.findPlayer(peerId);
     if (!player) return this.failure("unknown-peer");
-    const normalized = normalizeBuild(build);
+    const normalized = normalizeLanBuildDescriptor(build);
     if (!normalized) return this.failure("invalid-build");
     const changed = JSON.stringify(player.build) !== JSON.stringify(normalized);
     player.build = normalized;
@@ -244,7 +244,7 @@ export class HostLobby {
     if (this.phase !== "lobby") return this.failure("invalid-phase");
     const player = this.findPlayer(peerId);
     if (!player) return this.failure("unknown-peer");
-    if (ready && (!player.connected || !player.build || !normalizeBuild(player.build))) {
+    if (ready && (!player.connected || !player.build || !normalizeLanBuildDescriptor(player.build))) {
       return this.failure("invalid-build");
     }
     player.ready = ready;
@@ -257,12 +257,12 @@ export class HostLobby {
       && this.host.connected
       && this.host.ready
       && !!this.host.build
-      && !!normalizeBuild(this.host.build)
+      && !!normalizeLanBuildDescriptor(this.host.build)
       && !!guest
       && guest.connected
       && guest.ready
       && !!guest.build
-      && !!normalizeBuild(guest.build);
+      && !!normalizeLanBuildDescriptor(guest.build);
   }
 
   start(): LobbyResult {

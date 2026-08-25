@@ -1,11 +1,21 @@
 import { isProjectileVisibleToPlayer } from "../sim/playerPerception";
 import { observe } from "../sim/simulation";
-import type { AirCombatEvent, BattleState, ImpactEvent, PlayerTargetView, ProjectileState, SensorContact, ShipState, ShotEvent, Vec3 } from "../sim/types";
+import type {
+  AirCombatEvent,
+  BattleState,
+  ImpactEvent,
+  PlayerTargetView,
+  ProjectileState,
+  SensorContact,
+  ShipState,
+  Vec3,
+} from "../sim/types";
 import type { PlayerSnapshotPayload } from "./protocol";
 
+const VISUAL_EVENT_RANGE_METERS = 1_200;
+
 const cloneVec = (value: Readonly<Vec3>): Vec3 => ({ ...value });
-const distanceTo = (a: Readonly<Vec3>, b: Readonly<Vec3>): number =>
-  Math.hypot(a.x - b.x, a.z - b.z);
+const distanceTo = (a: Readonly<Vec3>, b: Readonly<Vec3>): number => Math.hypot(a.x - b.x, a.z - b.z);
 
 function contactView(contact: Readonly<SensorContact>): PlayerTargetView {
   return {
@@ -50,16 +60,6 @@ function visibleProjectile(
   return isProjectileVisibleToPlayer(projectile, viewer, contactsById.get(projectile.ownerId));
 }
 
-function visibleShot(
-  shot: Readonly<ShotEvent>,
-  viewer: Readonly<ShipState>,
-  visibleEnemyIds: ReadonlySet<string>,
-): boolean {
-  return shot.team === viewer.team
-    || visibleEnemyIds.has(shot.ownerId)
-    || distanceTo(shot.position, viewer.position) <= 1_200;
-}
-
 function visibleImpact(
   impact: Readonly<ImpactEvent>,
   viewer: Readonly<ShipState>,
@@ -69,18 +69,20 @@ function visibleImpact(
   return Boolean(
     (impact.targetId && friendlyIds.has(impact.targetId))
     || (impact.sourceId && visibleEnemyIds.has(impact.sourceId))
-    || distanceTo(impact.position, viewer.position) <= 1_200,
+    || distanceTo(impact.position, viewer.position) <= VISUAL_EVENT_RANGE_METERS,
   );
 }
 
 function visibleAirEvent(
   event: Readonly<AirCombatEvent>,
+  viewer: Readonly<ShipState>,
   friendlyIds: ReadonlySet<string>,
   visibleEnemyIds: ReadonlySet<string>,
 ): boolean {
   return friendlyIds.has(event.controllerId)
     || visibleEnemyIds.has(event.controllerId)
-    || (event.targetId !== undefined && (friendlyIds.has(event.targetId) || visibleEnemyIds.has(event.targetId)));
+    || Boolean(event.targetId && (friendlyIds.has(event.targetId) || visibleEnemyIds.has(event.targetId)))
+    || Boolean(event.position && distanceTo(event.position, viewer.position) <= VISUAL_EVENT_RANGE_METERS);
 }
 
 export function replicationViewFor(
@@ -113,12 +115,14 @@ export function replicationViewFor(
     .filter((projectile) => visibleProjectile(projectile, self, contactsById))
     .map((projectile) => ({
       id: projectile.id,
-      ownerId: projectile.ownerId,
+      ...(projectile.team === self.team || visibleEnemyIds.has(projectile.ownerId) ? { ownerId: projectile.ownerId } : {}),
       team: projectile.team,
       kind: projectile.kind,
       ammoType: projectile.ammoType,
       position: cloneVec(projectile.position),
-      previousPosition: cloneVec(projectile.previousPosition),
+      ...(projectile.team === self.team || visibleEnemyIds.has(projectile.ownerId)
+        ? { previousPosition: cloneVec(projectile.previousPosition) }
+        : {}),
       velocity: cloneVec(projectile.velocity),
       age: projectile.age,
     }));
@@ -127,39 +131,47 @@ export function replicationViewFor(
     .filter((projectile) => visibleProjectile(projectile, self, contactsById))
     .map((projectile) => ({
       id: projectile.id,
-      ownerId: projectile.ownerId,
+      ...(projectile.team === self.team || visibleEnemyIds.has(projectile.ownerId) ? { ownerId: projectile.ownerId } : {}),
       team: projectile.team,
       kind: projectile.kind,
       position: cloneVec(projectile.position),
-      previousPosition: cloneVec(projectile.previousPosition),
+      ...(projectile.team === self.team || visibleEnemyIds.has(projectile.ownerId)
+        ? { previousPosition: cloneVec(projectile.previousPosition) }
+        : {}),
       velocity: cloneVec(projectile.velocity),
       age: projectile.age,
       detectionRange: projectile.detectionRange,
     }));
   const aircraft = state.airSquadrons
-    .filter((squadron) => squadron.team === self.team || visibleEnemyIds.has(squadron.controllerId))
-    .map((squadron) => ({
-      id: squadron.id,
-      controllerId: squadron.controllerId,
-      team: squadron.team,
-      role: squadron.role,
-      phase: squadron.phase,
-      position: cloneVec(squadron.position),
-      heading: squadron.heading,
-      aircraftOperational: squadron.aircraftOperational,
-    }));
+    .filter((squadron) =>
+      squadron.team === self.team
+      || distanceTo(squadron.position, self.position) <= VISUAL_EVENT_RANGE_METERS
+      || visibleEnemyIds.has(squadron.controllerId))
+    .map((squadron) => {
+      const sourceVisible = squadron.team === self.team || visibleEnemyIds.has(squadron.controllerId);
+      return {
+        ...(sourceVisible ? { id: squadron.id, controllerId: squadron.controllerId } : {}),
+        team: squadron.team,
+        role: squadron.role,
+        phase: squadron.phase,
+        position: cloneVec(squadron.position),
+        heading: squadron.heading,
+        aircraftOperational: squadron.aircraftOperational,
+      };
+    });
   const events = [
     ...state.shots
-      .filter((shot) => visibleShot(shot, self, visibleEnemyIds))
+      .filter((shot) => shot.team === self.team || visibleEnemyIds.has(shot.ownerId))
       .map((shot) => ({
         id: shot.id,
         kind: "shot",
         team: shot.team,
-        ownerId: shot.team === self.team || visibleEnemyIds.has(shot.ownerId) ? shot.ownerId : undefined,
+        ...(shot.team === self.team || visibleEnemyIds.has(shot.ownerId)
+          ? { ownerId: shot.ownerId, position: cloneVec(shot.position) }
+          : {}),
         projectileKind: shot.kind,
         ammoType: shot.ammoType,
         weaponSource: shot.weaponSource,
-        position: cloneVec(shot.position),
       })),
     ...state.impacts
       .filter((impact) => visibleImpact(impact, self, friendlyIds, visibleEnemyIds))
@@ -167,23 +179,34 @@ export function replicationViewFor(
         id: impact.id,
         kind: impact.kind,
         position: cloneVec(impact.position),
-        sourceId: impact.sourceId && (impact.sourceTeam === self.team || visibleEnemyIds.has(impact.sourceId)) ? impact.sourceId : undefined,
+        ...(impact.sourceId && (impact.sourceTeam === self.team || visibleEnemyIds.has(impact.sourceId))
+          ? { sourceId: impact.sourceId }
+          : {}),
         sourceTeam: impact.sourceTeam,
-        targetId: impact.targetId && (friendlyIds.has(impact.targetId) || visibleEnemyIds.has(impact.targetId)) ? impact.targetId : undefined,
+        ...(impact.targetId && (friendlyIds.has(impact.targetId) || visibleEnemyIds.has(impact.targetId))
+          ? { targetId: impact.targetId }
+          : {}),
         damage: impact.damage,
         projectileKind: impact.projectileKind,
         ammoType: impact.ammoType,
       })),
     ...state.airEvents
-      .filter((event) => visibleAirEvent(event, friendlyIds, visibleEnemyIds))
-      .map((event) => ({
-        id: event.id,
-        kind: event.kind,
-        controllerId: friendlyIds.has(event.controllerId) || visibleEnemyIds.has(event.controllerId) ? event.controllerId : undefined,
-        squadronId: event.squadronId,
-        targetId: event.targetId && (friendlyIds.has(event.targetId) || visibleEnemyIds.has(event.targetId)) ? event.targetId : undefined,
-        position: event.position ? cloneVec(event.position) : undefined,
-      })),
+      .filter((event) => visibleAirEvent(event, self, friendlyIds, visibleEnemyIds))
+      .flatMap((event) => {
+        const sourceVisible = friendlyIds.has(event.controllerId) || visibleEnemyIds.has(event.controllerId);
+        const targetVisible = Boolean(event.targetId && (friendlyIds.has(event.targetId) || visibleEnemyIds.has(event.targetId)));
+        const positionVisible = Boolean(event.position && distanceTo(event.position, self.position) <= VISUAL_EVENT_RANGE_METERS);
+        if (!sourceVisible && !targetVisible && !positionVisible) return [];
+        return [{
+          id: event.id,
+          kind: event.kind,
+          ...(sourceVisible ? { controllerId: event.controllerId, squadronId: event.squadronId } : {}),
+          ...(targetVisible && event.targetId ? { targetId: event.targetId } : {}),
+          ...(event.position && (sourceVisible || positionVisible || targetVisible)
+            ? { position: cloneVec(event.position) }
+            : {}),
+        }];
+      }),
   ];
 
   return {
