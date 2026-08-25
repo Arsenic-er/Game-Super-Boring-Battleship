@@ -100,3 +100,16 @@ describe("localized release guides", () => {
     expect(guide).not.toContain(obsolete);
   });
 });
+
+describe("active release documentation", () => {
+  it.each([
+    "docs/CONVERSATION_SUMMARY.md",
+    "docs/superpowers/plans/2026-08-25-external-ship-model-pipeline.md",
+    "docs/superpowers/specs/2026-08-25-external-ship-model-pipeline-design.md",
+  ])("uses the real ship asset validation command in %s", async (file) => {
+    const guide = await readRepositoryFile(file);
+
+    expect(guide).toContain("npm run assets:ships:validate -- public/assets/ships");
+    expect(guide).not.toContain("npm run assets:validate");
+  });
+});

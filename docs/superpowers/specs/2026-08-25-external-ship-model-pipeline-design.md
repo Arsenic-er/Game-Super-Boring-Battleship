@@ -98,7 +98,8 @@ The preferred atlas is 1024 px with point sampling. LOD thresholds are based on 
 - Lifecycle tests assert partial-load and ship disposal release nodes, meshes, materials, and textures.
 - Visual checks cover menu, dock, setup, battle, scope, tactical map, and developer view at 1440x900 and 1280x720.
 - Full gate: `git diff --check`, `npm test -- --run`, `npm run build`, and
-  `npm run assets:validate`, followed by a verified complete Windows directory build.
+  `npm run assets:ships:validate -- public/assets/ships`, followed by a verified
+  complete Windows directory build.
 
 ## Delivery order
 

@@ -181,7 +181,8 @@
 - [ ] Update balance defaults without making offline 100-seed reports part of every unit-test run.
 - [ ] Run at least 100 paired seeds for important matchups after model work no longer changes combat visibility.
 - [ ] Capture visual references at 1440x900 and 1280x720 for menu, dock, setup, combat, scope, tactical map, and developer view.
-- [ ] Run `git diff --check`, `npm test -- --run`, `npm run build`, and `npm run assets:validate`.
+- [ ] Run `git diff --check`, `npm test -- --run`, `npm run build`, and
+  `npm run assets:ships:validate -- public/assets/ships`.
 - [ ] Run `npm run desktop:dist` on the server, verify the complete directory, and replace
   the user's latest local directory; optionally run `npm run desktop:zip` for publication.
 - [ ] Commit; push only after explicit user instruction.

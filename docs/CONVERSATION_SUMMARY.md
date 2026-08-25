@@ -216,7 +216,8 @@ sub-agent transcripts, temporary patches, credentials, or repeated status update
 2. Install Node.js 24.x and run `npm install` in the game repository.
 3. Read this file, `docs/DEVELOPMENT_STATUS.md`, `docs/DEVELOPMENT_LOG.md`,
    `docs/ARCHITECTURE.md`, and the asset repository's `PAUSE_HANDOFF.md`.
-4. Run `npm test -- --run`, `npm run build`, `npm run assets:validate`, and
+4. Run `npm test -- --run`, `npm run build`,
+   `npm run assets:ships:validate -- public/assets/ships`, and
    `npm run desktop:dist`; verify the complete Windows directory before handoff.
 5. Confirm the seven-language menu, battle setup, dock/armory, battle, tactical map,
    scope and developer mode before changing systems.
