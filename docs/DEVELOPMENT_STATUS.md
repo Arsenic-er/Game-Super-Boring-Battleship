@@ -1,6 +1,6 @@
 # Condensed Development Status
 
-Last updated: 2026-08-22
+Last updated: 2026-08-25
 
 This is the current operational handoff. Product decisions are preserved in
 `CONVERSATION_SUMMARY.md`; milestone history is preserved in `DEVELOPMENT_LOG.md`.
@@ -35,7 +35,7 @@ testing, server access and short-lived transfer staging.
 
 ## Current archived baseline
 
-- Version: `0.6.12`
+- Version: `0.6.13`
 - Game commit before this documentation update: `96fcd51`
 - Asset baseline before this synchronization: `2d46fe1`, based on game commit `e4f51ab`.
 - Fifteen historical ship classes: five destroyers, five light cruisers, five battleships.
@@ -57,18 +57,22 @@ testing, server access and short-lived transfer staging.
 
 ## Quality baseline
 
-- Most recent complete verification before this archive: 386 tests passed and two offline
+- Most recent complete verification before this archive: 408 tests passed and two offline
   balance reports were intentionally skipped.
 - TypeScript/Vite production build passed.
 - Worst auxiliary-equipment fixture remains under the established 70-mesh guardrail.
 - Repeated loadout rebuild and projectile/torpedo-trail disposal paths have lifecycle tests.
 - Balance lab supports class loadouts, paired mirrors, batch matrices, citadel/contact telemetry
   and repeatable CLI reports.
+- External ship packages now have a versioned manifest, strict GLB/LOD/hardpoint/collision/
+  provenance validation, SHA-256 verification, a runtime catalog, Babylon GLB loading and
+  procedural fallback shared by combat and dockyard views.
 
 ## Known limitations
 
-- Procedural ship geometry is still visibly simplified; no external ship model has passed
-  the licence/provenance gate.
+- Procedural ship geometry is still visibly simplified. A CC BY 4.0 Fletcher source has passed
+  the licence/provenance review, but its official source archive requires an authenticated
+  Sketchfab download and therefore has not been imported or redistributed.
 - Dockyard preview does not yet show the complete installed external-quality loadout.
 - Terrain-cover behaviour, shared spotting delay and multi-objective fleet tactics need depth.
 - Kagero standard equipment is weak against Fletcher in the current balance snapshot.
@@ -79,8 +83,8 @@ testing, server access and short-lived transfer staging.
 
 1. Capture visual-regression baselines for menu, dock, setup, combat, scope, tactical map
    and developer mode at 1440x900 and 1280x720.
-2. Establish external-model, hardpoint, material and LOD pipelines using Fletcher,
-   Cleveland and Yamato as benchmark ships.
+2. Officially download, optimize and validate the approved Fletcher source, then repeat the
+   established external-model pipeline for Cleveland and Yamato.
 3. Run at least 100 paired seeds per important matchup and rebase Kagero/Fletcher plus
    heavy-ship hit/timeout behaviour.
 4. Calibrate mixed-fleet missions toward a 15–20 minute normal duration and at least 70% non-timeout endings.
