@@ -379,7 +379,7 @@ function readAirMissionCommand(value: unknown): NonNullable<ControlCommand["airM
   if (value.targetIds !== undefined && !targetIds) return undefined;
   if (value.area !== undefined && !area) return undefined;
 
-  const requiresTarget = kind === "defendShip" || kind === "strikeShip" || kind === "interceptSquadron";
+  const requiresTarget = kind === "strikeShip" || kind === "interceptSquadron";
   const requiresArea = kind === "moveTo" || kind === "patrolArea";
   const forbidsTarget = kind === "moveTo" || kind === "patrolArea" || kind === "recall";
   const forbidsArea = kind === "defendShip" || kind === "strikeShip" || kind === "interceptSquadron" || kind === "recall";

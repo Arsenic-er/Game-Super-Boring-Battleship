@@ -156,3 +156,36 @@ Commit: final HEAD commit with message `Define validated LAN multiplayer protoco
 
 - Remote players can no longer inject authoritative perception or AI telemetry.
 - Air-mission validation now enforces kind-specific field semantics instead of merely checking structural shape.
+
+## Final regressions fix-up (2026-08-25)
+
+### Red
+
+- Added a focused regression test proving `validateRemoteCommand(...)` must accept:
+  - `{ squadronId, kind: "defendShip" }`
+  - with no explicit target fields
+- Re-ran:
+  - `npx vitest run tests/netProtocol.test.ts --reporter=verbose`
+- Observed expected failure:
+  - `defendShip` was still treated as `requiresTarget`
+
+### Green
+
+- Applied the minimal fix in `src/net/messageValidation.ts`:
+  - removed `defendShip` from the `requiresTarget` rule
+- Kept the existing stricter rules intact:
+  - `defendShip` still rejects `area`
+  - explicit `targetId` / `targetIds` still validate type and length when present
+
+### Final regression verification
+
+- `npx vitest run tests/netProtocol.test.ts tests/airOperations.test.ts --reporter=verbose`
+  - Result: 2 files passed, 42 tests passed
+- `npx vitest run tests/netProtocol.test.ts tests/airOperations.test.ts --reporter=verbose && npm run build`
+  - Result: targeted suites passed and production build succeeded
+- `git diff --check -- src/net tests/netProtocol.test.ts .superpowers/sdd/2026-08-25-lan-coop-multiplayer/task-2-report.md`
+  - Result: clean
+
+### Final regression summary
+
+- `defendShip` now matches the existing simulation contract: no target is valid and defaults to the issuer/self path downstream.

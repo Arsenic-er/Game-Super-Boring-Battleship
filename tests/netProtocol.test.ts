@@ -254,6 +254,22 @@ describe("remote control command validation", () => {
     });
   });
 
+  it("accepts a defendShip air mission without an explicit target", () => {
+    expect(validateRemoteCommand({
+      ...validCommand,
+      airMission: {
+        squadronId: "air-squadron-defend-self",
+        kind: "defendShip",
+      },
+    })).toEqual({
+      ...validCommand,
+      airMission: {
+        squadronId: "air-squadron-defend-self",
+        kind: "defendShip",
+      },
+    });
+  });
+
   it.each(validAirMissionKinds)("accepts a semantically valid $label air mission", ({ mission }) => {
     expect(validateRemoteCommand({
       ...validCommand,
