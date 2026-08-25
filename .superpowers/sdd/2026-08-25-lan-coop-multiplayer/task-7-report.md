@@ -179,3 +179,58 @@ Result:
 - Both CommonJS entry points passed syntax checks.
 - Production TypeScript/Vite build passed (existing large-chunk advisory only).
 - Whitespace diff check passed.
+
+## Third independent-review remediation (2026-08-26)
+
+A third review of `f8b6153` found transactional join rollback gaps, incomplete
+guest socket cleanup, missing transport-level websocket rate accounting, and
+four omitted authoritative air-event fields. Each issue was first reproduced by
+a failing regression test.
+
+### Transactional lobby and connection lifecycle
+- Host joins are now transactional across announcement refresh, the targeted
+  `join-accepted` send, bridge promotion, and disconnect races. Any failure
+  removes the occupied guest seat, rebuilds and publishes the authoritative
+  lobby, refreshes the room announcement when possible, and clears all socket,
+  sequence, join, and violation state.
+- Guest `return-to-lobby` handling preserves the accepted connection ID long
+  enough to close that exact websocket before removing the lobby guest or
+  enabling in-match AI fallback. Repeated disconnect callbacks are idempotent,
+  and a real replacement websocket can join after the guest leaves without
+  relying on client-side socket closure.
+- Structurally valid messages that are illegal in the current lobby/match state
+  now count against the existing per-connection two-second violation window.
+  The counter resets outside the window and closes the offender at five.
+
+### Transport abuse limits and event fidelity
+- Every websocket connection now has an independent one-second sliding window
+  for inbound frame count and aggregate bytes. Exact count/byte boundaries are
+  accepted, expired entries reset, and excess traffic is closed with a targeted
+  `rate-limited` policy response.
+- Binary websocket messages participate in transport accounting but are never
+  exposed to the JSON protocol parser; they emit `protocol-violation` and close
+  only their originating connection.
+- Scoped air events now retain the already-filtered authoritative `time`,
+  `orderKind`, `rejectReason`, and `lossCause` fields. The client accepts only
+  enumerated combat event, mission, rejection, and loss-cause values, requires a
+  finite event time, and drops invalid events or optional values instead of
+  guessing replacements. Anonymous hostile events remain anonymous.
+
+### Verification after third review remediation (2026-08-26)
+
+```bash
+npm test -- --run tests/lanMultiplayerRuntime.test.ts tests/lanBridge.test.ts tests/replicationView.test.ts tests/clientBattleSession.test.ts
+npm test -- --run
+node --check desktop/lanBridge.cjs
+node --check desktop/preload.cjs
+npm run build
+git diff --check
+```
+
+Result:
+- Focused regression: 4 files, 49 tests passed.
+- Full suite: 63 files passed, 2 report suites skipped; 533 tests passed,
+  2 report tests skipped.
+- Both CommonJS entry points passed syntax checks.
+- Production TypeScript/Vite build passed (existing large-chunk advisory only).
+- Whitespace diff check passed.

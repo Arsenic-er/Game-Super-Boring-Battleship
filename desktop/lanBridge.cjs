@@ -27,6 +27,9 @@ const WS_MAX_BYTES = 64 * 1_024;
 const ANNOUNCEMENT_INTERVAL_MS = 1_000;
 const PROBE_WINDOW_MS = 1_500;
 const PENDING_HANDSHAKE_MS = 4_500;
+const WS_FRAME_WINDOW_MS = 1_000;
+const WS_MAX_FRAMES_PER_WINDOW = 120;
+const WS_MAX_BYTES_PER_WINDOW = 512 * 1_024;
 const DISCOVERY_PROBE = "__BATTLESHIP_LAN_PROBE__";
 const BROADCAST_ADDRESSES = ["255.255.255.255", "127.0.0.1"];
 const SUPPORTED_CAPABILITIES = Object.freeze({ desktop: true, canHost: true, canDiscover: true });
@@ -101,6 +104,14 @@ function isCanonicalIpv4(value) {
 function assertLanBridgeStringPayload(value, maxBytes, kind) {
   if (typeof value !== "string") throw new TypeError(`${kind}-must-be-string`);
   if (Buffer.byteLength(value, "utf8") > maxBytes) throw new Error(`message-too-large:${maxBytes}`);
+}
+
+function websocketDataByteLength(data) {
+  if (typeof data === "string") return Buffer.byteLength(data, "utf8");
+  if (Array.isArray(data)) {
+    return data.reduce((total, chunk) => total + (chunk?.byteLength ?? Buffer.byteLength(chunk)), 0);
+  }
+  return data?.byteLength ?? Buffer.byteLength(data);
 }
 
 function serializeDiscoveryAnnouncement(announcement, roomPort) {
@@ -290,6 +301,12 @@ function normalizeBridgeError(error) {
     return { code: "message-too-large", message: "message-too-large" };
   }
   const message = error instanceof Error ? error.message : String(error);
+  if (/protocol-violation/i.test(message)) {
+    return { code: "protocol-violation", message: "protocol-violation" };
+  }
+  if (/rate-limited/i.test(message)) {
+    return { code: "rate-limited", message: "rate-limited" };
+  }
   if (/max payload size exceeded/i.test(message) || /message-too-large/i.test(message)) {
     return { code: "message-too-large", message: "message-too-large" };
   }
@@ -323,6 +340,10 @@ class LanBridge {
     this.pendingHandshakeMs = options.pendingHandshakeMs ?? PENDING_HANDSHAKE_MS;
     this.setTimeoutFn = options.setTimeout ?? setTimeout;
     this.clearTimeoutFn = options.clearTimeout ?? clearTimeout;
+    this.nowFn = options.now ?? Date.now;
+    this.wsFrameWindowMs = options.wsFrameWindowMs ?? WS_FRAME_WINDOW_MS;
+    this.wsMaxFramesPerWindow = options.wsMaxFramesPerWindow ?? WS_MAX_FRAMES_PER_WINDOW;
+    this.wsMaxBytesPerWindow = options.wsMaxBytesPerWindow ?? WS_MAX_BYTES_PER_WINDOW;
     this.socketStates = new WeakMap();
     this.nextHostConnectionId = 0;
   }
@@ -619,11 +640,23 @@ class LanBridge {
       role: metadata.role,
       disconnected: false,
       connectionId: metadata.connectionId,
+      inboundFrames: [],
     };
     this.socketStates.set(socket, state);
 
     socket.on("message", (data, isBinary) => {
-      if (isBinary) return;
+      const byteLength = websocketDataByteLength(data);
+      const withinRateLimit = this.recordInboundFrame(state, byteLength);
+      if (isBinary) {
+        this.emitSocketError(socket, state, new Error("protocol-violation"));
+        void closeWebSocketWithReason(socket, 1008, "protocol-violation");
+        return;
+      }
+      if (!withinRateLimit) {
+        this.emitSocketError(socket, state, new Error("rate-limited"));
+        void closeWebSocketWithReason(socket, 1008, "rate-limited");
+        return;
+      }
       const text = typeof data === "string" ? data : data.toString("utf8");
       if (Buffer.byteLength(text, "utf8") > WS_MAX_BYTES) {
         this.emitSocketError(socket, state, new Error("message-too-large"));
@@ -669,6 +702,18 @@ class LanBridge {
         connectionId: metadata.connectionId,
       });
     });
+  }
+
+  recordInboundFrame(state, byteLength) {
+    const now = this.nowFn();
+    state.inboundFrames = state.inboundFrames
+      .filter(({ receivedAt }) => now - receivedAt < this.wsFrameWindowMs);
+    const bytesInWindow = state.inboundFrames
+      .reduce((total, frame) => total + frame.byteLength, 0);
+    if (state.inboundFrames.length + 1 > this.wsMaxFramesPerWindow
+      || bytesInWindow + byteLength > this.wsMaxBytesPerWindow) return false;
+    state.inboundFrames.push({ receivedAt: now, byteLength });
+    return true;
   }
 
   emitSocketError(socket, state, error) {

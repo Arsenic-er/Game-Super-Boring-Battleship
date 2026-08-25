@@ -41,6 +41,20 @@ const flush = async (): Promise<void> => {
   await Promise.resolve();
 };
 
+function deferred<T = void>(): {
+  promise: Promise<T>;
+  resolve: (value: T | PromiseLike<T>) => void;
+  reject: (reason?: unknown) => void;
+} {
+  let resolve!: (value: T | PromiseLike<T>) => void;
+  let reject!: (reason?: unknown) => void;
+  const promise = new Promise<T>((nextResolve, nextReject) => {
+    resolve = nextResolve;
+    reject = nextReject;
+  });
+  return { promise, resolve, reject };
+}
+
 function envelope<T extends LanMessage["type"]>(
   type: T,
   payload: Extract<LanMessage, { type: T }>["payload"],
@@ -64,6 +78,108 @@ afterEach(() => {
 });
 
 describe("LanMultiplayerRuntime receive validation", () => {
+  it("rolls back an occupied guest seat when the socket disconnects before join acceptance is sent", async () => {
+    const profile = createDefaultLocalProfile();
+    const build = profile.savedShipBuilds[0]!;
+    const bridge = new FakeLanBridge();
+    const lobbyUpdates = vi.fn();
+    const runtime = new LanMultiplayerRuntime(bridge, profile, {
+      onHostMatchStarted: vi.fn(), onClientMatchStarted: vi.fn(), onLobbyUpdated: lobbyUpdates,
+      onReturnToMenu: vi.fn(), onNotice: vi.fn(), now: () => 1_000,
+    });
+    await runtime.callbacks.createRoom({ roomName: "Transactional room", buildId: build.id });
+    const roomId = parseLanMessage(JSON.parse(String(bridge.updateAnnouncement.mock.calls.at(-1)?.[0])))!.roomId;
+    const refresh = deferred<void>();
+    bridge.updateAnnouncement.mockImplementationOnce(() => refresh.promise);
+    bridge.emit({ type: "connected", role: "host", connectionId: "connection-dropped" });
+    bridge.emit({
+      type: "message", role: "host", connectionId: "connection-dropped",
+      messageJson: encodeLanMessage(envelope("join-request", {
+        peerId: "peer-dropped", commanderName: "Dropped guest",
+        expectedGameVersion: LAN_GAME_VERSION, expectedContentHash: LAN_CONTENT_HASH,
+        build: { buildId: build.id, buildName: build.name, shipClassId: build.shipClassId, slots: structuredClone(build.slots) },
+      }, { roomId, sequence: 1 })),
+    });
+    await vi.waitFor(() => expect(runtime.currentGuestPeerId()).toBe("peer-dropped"));
+
+    bridge.emit({ type: "disconnected", role: "host", connectionId: "connection-dropped", hadError: true });
+    refresh.resolve();
+
+    await vi.waitFor(() => expect(runtime.currentGuestPeerId()).toBeUndefined());
+    expect(runtime.currentGuestConnectionId()).toBeUndefined();
+    expect(bridge.acceptConnection).not.toHaveBeenCalledWith("connection-dropped");
+    expect((lobbyUpdates.mock.calls.at(-1)?.[0] as LobbySnapshotPayload).players).toHaveLength(1);
+    await runtime.dispose();
+  });
+
+  it("rolls back the guest seat and socket state when bridge acceptance fails", async () => {
+    const profile = createDefaultLocalProfile();
+    const build = profile.savedShipBuilds[0]!;
+    const bridge = new FakeLanBridge();
+    const lobbyUpdates = vi.fn();
+    bridge.acceptConnection.mockRejectedValueOnce(new Error("accept-failed"));
+    const runtime = new LanMultiplayerRuntime(bridge, profile, {
+      onHostMatchStarted: vi.fn(), onClientMatchStarted: vi.fn(), onLobbyUpdated: lobbyUpdates,
+      onReturnToMenu: vi.fn(), onNotice: vi.fn(), now: () => 1_000,
+    });
+    await runtime.callbacks.createRoom({ roomName: "Transactional room", buildId: build.id });
+    const roomId = parseLanMessage(JSON.parse(String(bridge.updateAnnouncement.mock.calls.at(-1)?.[0])))!.roomId;
+    bridge.emit({ type: "connected", role: "host", connectionId: "connection-rejected" });
+    bridge.emit({
+      type: "message", role: "host", connectionId: "connection-rejected",
+      messageJson: encodeLanMessage(envelope("join-request", {
+        peerId: "peer-rejected", commanderName: "Rejected guest",
+        expectedGameVersion: LAN_GAME_VERSION, expectedContentHash: LAN_CONTENT_HASH,
+        build: { buildId: build.id, buildName: build.name, shipClassId: build.shipClassId, slots: structuredClone(build.slots) },
+      }, { roomId, sequence: 1 })),
+    });
+
+    await vi.waitFor(() => expect(bridge.acceptConnection).toHaveBeenCalledWith("connection-rejected"));
+    await vi.waitFor(() => expect(runtime.currentGuestPeerId()).toBeUndefined());
+    expect(runtime.currentGuestConnectionId()).toBeUndefined();
+    expect(bridge.closeConnection).toHaveBeenCalledWith("connection-rejected", "join-failed");
+    expect((lobbyUpdates.mock.calls.at(-1)?.[0] as LobbySnapshotPayload).players).toHaveLength(1);
+    await runtime.dispose();
+  });
+
+  it.each(["announcement-refresh", "join-accepted-send"] as const)(
+    "rolls back the guest seat when %s fails",
+    async (failurePoint) => {
+      const profile = createDefaultLocalProfile();
+      const build = profile.savedShipBuilds[0]!;
+      const bridge = new FakeLanBridge();
+      const lobbyUpdates = vi.fn();
+      const runtime = new LanMultiplayerRuntime(bridge, profile, {
+        onHostMatchStarted: vi.fn(), onClientMatchStarted: vi.fn(), onLobbyUpdated: lobbyUpdates,
+        onReturnToMenu: vi.fn(), onNotice: vi.fn(), now: () => 1_000,
+      });
+      await runtime.callbacks.createRoom({ roomName: "Transactional room", buildId: build.id });
+      const roomId = parseLanMessage(JSON.parse(String(bridge.updateAnnouncement.mock.calls.at(-1)?.[0])))!.roomId;
+      if (failurePoint === "announcement-refresh") {
+        bridge.updateAnnouncement.mockRejectedValueOnce(new Error("refresh-failed"));
+      } else {
+        bridge.send.mockRejectedValueOnce(new Error("send-failed"));
+      }
+      bridge.emit({ type: "connected", role: "host", connectionId: `connection-${failurePoint}` });
+      bridge.emit({
+        type: "message", role: "host", connectionId: `connection-${failurePoint}`,
+        messageJson: encodeLanMessage(envelope("join-request", {
+          peerId: `peer-${failurePoint}`, commanderName: "Failed guest",
+          expectedGameVersion: LAN_GAME_VERSION, expectedContentHash: LAN_CONTENT_HASH,
+          build: { buildId: build.id, buildName: build.name, shipClassId: build.shipClassId, slots: structuredClone(build.slots) },
+        }, { roomId, sequence: 1 })),
+      });
+
+      await vi.waitFor(() => expect(bridge.closeConnection).toHaveBeenCalledWith(
+        `connection-${failurePoint}`,
+        "join-failed",
+      ));
+      expect(runtime.currentGuestPeerId()).toBeUndefined();
+      expect((lobbyUpdates.mock.calls.at(-1)?.[0] as LobbySnapshotPayload).players).toHaveLength(1);
+      await runtime.dispose();
+    },
+  );
+
   it("binds the host-side guest identity to one connection and enforces room, sequence, and lobby state", async () => {
     const profile = createDefaultLocalProfile();
     const build = profile.savedShipBuilds[0]!;
@@ -352,6 +468,93 @@ describe("LanMultiplayerRuntime receive validation", () => {
       });
     }
     await vi.waitFor(() => expect(bridge.closeConnection).toHaveBeenCalledWith("connection-fast", "protocol-violation"));
+    await runtime.dispose();
+  });
+
+  it("closes and cleans up an accepted socket when the guest returns to the lobby", async () => {
+    const profile = createDefaultLocalProfile();
+    const build = profile.savedShipBuilds[0]!;
+    const buildPayload = {
+      buildId: build.id, buildName: build.name, shipClassId: build.shipClassId, slots: structuredClone(build.slots),
+    };
+    const bridge = new FakeLanBridge();
+    const runtime = new LanMultiplayerRuntime(bridge, profile, {
+      onHostMatchStarted: vi.fn(), onClientMatchStarted: vi.fn(), onLobbyUpdated: vi.fn(),
+      onReturnToMenu: vi.fn(), onNotice: vi.fn(), now: () => 1_000,
+    });
+    await runtime.callbacks.createRoom({ roomName: "Leave room", buildId: build.id });
+    const roomId = parseLanMessage(JSON.parse(String(bridge.updateAnnouncement.mock.calls.at(-1)?.[0])))!.roomId;
+    bridge.emit({ type: "connected", role: "host", connectionId: "connection-leaving" });
+    bridge.emit({
+      type: "message", role: "host", connectionId: "connection-leaving",
+      messageJson: encodeLanMessage(envelope("join-request", {
+        peerId: "peer-leaving", commanderName: "Leaving guest",
+        expectedGameVersion: LAN_GAME_VERSION, expectedContentHash: LAN_CONTENT_HASH, build: buildPayload,
+      }, { roomId, sequence: 1 })),
+    });
+    await vi.waitFor(() => expect(runtime.currentGuestConnectionId()).toBe("connection-leaving"));
+
+    bridge.emit({
+      type: "message", role: "host", connectionId: "connection-leaving",
+      messageJson: encodeLanMessage(envelope("return-to-lobby", { reason: "guest-request" }, { roomId, sequence: 2 })),
+    });
+
+    await vi.waitFor(() => expect(bridge.closeConnection).toHaveBeenCalledWith("connection-leaving", "guest-left"));
+    expect(runtime.currentGuestConnectionId()).toBeUndefined();
+    expect(runtime.currentGuestPeerId()).toBeUndefined();
+    bridge.emit({ type: "disconnected", role: "host", connectionId: "connection-leaving", hadError: false });
+    bridge.emit({ type: "disconnected", role: "host", connectionId: "connection-leaving", hadError: false });
+    await flush();
+    expect(runtime.currentGuestPeerId()).toBeUndefined();
+    expect(bridge.closeConnection).toHaveBeenCalledTimes(1);
+    await runtime.dispose();
+  });
+
+  it("counts valid protocol messages that are illegal for the current state and closes at the threshold", async () => {
+    const profile = createDefaultLocalProfile();
+    const build = profile.savedShipBuilds[0]!;
+    const buildPayload = {
+      buildId: build.id, buildName: build.name, shipClassId: build.shipClassId, slots: structuredClone(build.slots),
+    };
+    const bridge = new FakeLanBridge();
+    let now = 1_000;
+    const runtime = new LanMultiplayerRuntime(bridge, profile, {
+      onHostMatchStarted: vi.fn(), onClientMatchStarted: vi.fn(), onLobbyUpdated: vi.fn(),
+      onReturnToMenu: vi.fn(), onNotice: vi.fn(), now: () => now,
+    });
+    await runtime.callbacks.createRoom({ roomName: "State guarded", buildId: build.id });
+    const roomId = parseLanMessage(JSON.parse(String(bridge.updateAnnouncement.mock.calls.at(-1)?.[0])))!.roomId;
+    bridge.emit({ type: "connected", role: "host", connectionId: "connection-illegal" });
+    bridge.emit({
+      type: "message", role: "host", connectionId: "connection-illegal",
+      messageJson: encodeLanMessage(envelope("join-request", {
+        peerId: "peer-illegal", commanderName: "Illegal guest",
+        expectedGameVersion: LAN_GAME_VERSION, expectedContentHash: LAN_CONTENT_HASH, build: buildPayload,
+      }, { roomId, sequence: 1 })),
+    });
+    await vi.waitFor(() => expect(runtime.currentGuestConnectionId()).toBe("connection-illegal"));
+    bridge.closeConnection.mockClear();
+
+    const sendIllegalInput = (index: number) => {
+      bridge.emit({
+        type: "message", role: "host", connectionId: "connection-illegal",
+        messageJson: encodeLanMessage(envelope("input-frame", {
+          peerId: "peer-illegal", inputSequence: index + 1,
+          command: { throttle: 0, rudder: 0, aimPoint: { x: 0, y: 0, z: 1_000 }, fire: false },
+        }, { roomId, sequence: index + 2 })),
+      });
+    };
+    for (let index = 0; index < 4; index += 1) sendIllegalInput(index);
+    await flush();
+    expect(bridge.closeConnection).not.toHaveBeenCalled();
+
+    now += 2_001;
+    for (let index = 4; index < 8; index += 1) sendIllegalInput(index);
+    await flush();
+    expect(bridge.closeConnection).not.toHaveBeenCalled();
+    sendIllegalInput(8);
+
+    await vi.waitFor(() => expect(bridge.closeConnection).toHaveBeenCalledWith("connection-illegal", "protocol-violation"));
     await runtime.dispose();
   });
 

@@ -131,6 +131,7 @@ export class LanMultiplayerRuntime {
   private guestInboundSequence = 0;
   private guestJoinAccepted = false;
   private readonly pendingHostConnections = new Set<string>();
+  private readonly joiningHostPeers = new Map<string, string>();
   private readonly hostViolationTimestamps = new Map<string, number[]>();
 
   constructor(
@@ -290,6 +291,7 @@ export class LanMultiplayerRuntime {
     this.guestConnectionId = undefined;
     this.hostInboundSequences.clear();
     this.pendingHostConnections.clear();
+    this.joiningHostPeers.clear();
     this.hostViolationTimestamps.clear();
     this.guestInboundSequence = 0;
     this.guestJoinAccepted = false;
@@ -537,21 +539,29 @@ export class LanMultiplayerRuntime {
     }
 
     if (event.type === "disconnected") {
+      let disconnectedGuestPeerId: string | undefined;
+      let disconnectedActiveGuest = false;
       if (event.role === "host" && event.connectionId) {
-        this.hostInboundSequences.delete(event.connectionId);
-        this.hostViolationTimestamps.delete(event.connectionId);
-        this.pendingHostConnections.delete(event.connectionId);
+        const joiningPeerId = this.joiningHostPeers.get(event.connectionId);
+        if (event.connectionId === this.guestConnectionId) {
+          disconnectedActiveGuest = true;
+          disconnectedGuestPeerId = this.currentGuestPeerId();
+        }
+        this.clearHostConnectionState(event.connectionId);
+        if (joiningPeerId) {
+          await this.rollbackHostJoin(event.connectionId, joiningPeerId);
+          return;
+        }
       }
-      if (event.role === "host" && event.connectionId && event.connectionId === this.guestConnectionId) {
-        const guestPeerId = this.currentGuestPeerId();
+      if (event.role === "host" && event.connectionId && disconnectedActiveGuest) {
         this.guestConnectionId = undefined;
         if (this.hostSessionValue) {
           this.hostSessionValue.disconnectGuest(this.now());
           this.hooks.onNotice("客席已断开 · AI 已接管。");
           return;
         }
-        if (this.hostLobby && guestPeerId) {
-          this.hostLobby.leave(guestPeerId);
+        if (this.hostLobby && disconnectedGuestPeerId) {
+          this.hostLobby.leave(disconnectedGuestPeerId);
           this.lobby = cloneLobby(this.hostLobby.snapshot());
           this.publishLobby();
           await this.refreshAnnouncement();
@@ -642,10 +652,15 @@ export class LanMultiplayerRuntime {
     await this.closeHostConnection(connectionId, "protocol-violation");
   }
 
-  private async closeHostConnection(connectionId: string, reason: string): Promise<void> {
+  private clearHostConnectionState(connectionId: string): void {
     this.hostInboundSequences.delete(connectionId);
     this.hostViolationTimestamps.delete(connectionId);
     this.pendingHostConnections.delete(connectionId);
+    this.joiningHostPeers.delete(connectionId);
+  }
+
+  private async closeHostConnection(connectionId: string, reason: string): Promise<void> {
+    this.clearHostConnectionState(connectionId);
     try {
       await this.bridge.closeConnection(connectionId, reason);
     } catch {
@@ -653,9 +668,31 @@ export class LanMultiplayerRuntime {
     }
   }
 
+  private async rollbackHostJoin(
+    connectionId: string,
+    peerId: string,
+    closeReason?: string,
+  ): Promise<void> {
+    if (this.hostLobby && this.currentGuestPeerId() === peerId) {
+      this.hostLobby.leave(peerId);
+      this.lobby = cloneLobby(this.hostLobby.snapshot());
+      this.publishLobby();
+    }
+    if (closeReason) await this.closeHostConnection(connectionId, closeReason);
+    else this.clearHostConnectionState(connectionId);
+    try {
+      await this.refreshAnnouncement();
+    } catch {
+      // The room remains locally consistent even if its next UDP refresh fails.
+    }
+  }
+
   private async handleLanMessage(message: LanMessage, event: Extract<LanBridgeEvent, { type: "message" }>): Promise<void> {
     if (event.role === "host") {
-      await this.handleHostMessage(message, event.connectionId);
+      const handled = await this.handleHostMessage(message, event.connectionId);
+      if (!handled && event.connectionId && event.connectionId === this.guestConnectionId) {
+        await this.recordHostViolation(event.connectionId);
+      }
       return;
     }
     await this.handleGuestMessage(message);
@@ -665,54 +702,72 @@ export class LanMultiplayerRuntime {
     return connectionId && connectionId === this.guestConnectionId ? this.currentGuestPeerId() : undefined;
   }
 
-  private async handleHostMessage(message: LanMessage, connectionId: string | undefined): Promise<void> {
-    if (!this.hostLobby && !this.hostSessionValue) return;
+  private async handleHostMessage(message: LanMessage, connectionId: string | undefined): Promise<boolean> {
+    if (!this.hostLobby && !this.hostSessionValue) return false;
     const guestPeerId = this.guestIdentityFor(connectionId);
     switch (message.type) {
       case "join-request": {
         if (!this.hostLobby || this.hostSessionValue || !connectionId || this.guestConnectionId) {
           if (connectionId) await this.closeHostConnection(connectionId, "invalid-request");
-          return;
+          return true;
         }
         const result = this.hostLobby.join(message.payload);
         this.lobby = cloneLobby(result.lobby);
-        await this.refreshAnnouncement();
         if (result.accepted) {
-          await this.send(this.nextEnvelope("join-accepted", {
-            peerId: message.payload.peerId,
-            assignedRole: "guest",
-            lobby: lobbyPayload(this.lobby),
-          }), { connectionId });
-          await this.bridge.acceptConnection(connectionId);
-          this.pendingHostConnections.delete(connectionId);
-          this.guestConnectionId = connectionId;
-          this.hostInboundSequences.set(connectionId, message.sequence);
-          await this.broadcastLobbyUpdate();
-          this.publishLobby();
+          const joiningPeerId = message.payload.peerId;
+          this.joiningHostPeers.set(connectionId, joiningPeerId);
+          try {
+            await this.refreshAnnouncement();
+            if (this.joiningHostPeers.get(connectionId) !== joiningPeerId
+              || !this.pendingHostConnections.has(connectionId)) throw new Error("join-disconnected");
+            await this.send(this.nextEnvelope("join-accepted", {
+              peerId: joiningPeerId,
+              assignedRole: "guest",
+              lobby: lobbyPayload(this.lobby),
+            }), { connectionId });
+            if (this.joiningHostPeers.get(connectionId) !== joiningPeerId
+              || !this.pendingHostConnections.has(connectionId)) throw new Error("join-disconnected");
+            await this.bridge.acceptConnection(connectionId);
+            if (this.joiningHostPeers.get(connectionId) !== joiningPeerId
+              || !this.pendingHostConnections.has(connectionId)) throw new Error("join-disconnected");
+            this.pendingHostConnections.delete(connectionId);
+            this.joiningHostPeers.delete(connectionId);
+            this.guestConnectionId = connectionId;
+            this.hostInboundSequences.set(connectionId, message.sequence);
+            await this.broadcastLobbyUpdate();
+            this.publishLobby();
+          } catch {
+            await this.rollbackHostJoin(connectionId, joiningPeerId, "join-failed");
+          }
         } else {
-          await this.send(this.nextEnvelope("join-rejected", {
-            reason: result.reason ?? "invalid-request",
-            detail: result.detail,
-          }), { connectionId });
-          await this.closeHostConnection(connectionId, result.reason ?? "invalid-request");
+          try {
+            await this.refreshAnnouncement();
+            await this.send(this.nextEnvelope("join-rejected", {
+              reason: result.reason ?? "invalid-request",
+              detail: result.detail,
+            }), { connectionId });
+          } finally {
+            await this.closeHostConnection(connectionId, result.reason ?? "invalid-request");
+          }
         }
-        return;
+        return true;
       }
       case "ready-request": {
-        if (!this.hostLobby || this.hostSessionValue || this.lobby?.phase !== "lobby" || !guestPeerId) return;
+        if (!this.hostLobby || this.hostSessionValue || this.lobby?.phase !== "lobby" || !guestPeerId) return false;
         if (message.payload.build) {
           const buildResult = this.hostLobby.setBuild(guestPeerId, message.payload.build);
-          if (!buildResult.ok) return;
+          if (!buildResult.ok) return false;
         }
         const readyResult = this.hostLobby.setReady(guestPeerId, message.payload.ready);
+        if (!readyResult.ok) return false;
         this.lobby = cloneLobby(readyResult.lobby);
         this.publishLobby();
         await this.refreshAnnouncement();
         await this.broadcastLobbyUpdate();
-        return;
+        return true;
       }
       case "input-frame": {
-        if (!this.hostSessionValue || !guestPeerId) return;
+        if (!this.hostSessionValue || !guestPeerId) return false;
         const acceptance = this.hostSessionValue.acceptInput(guestPeerId, {
           ...message.payload,
           peerId: guestPeerId,
@@ -721,25 +776,26 @@ export class LanMultiplayerRuntime {
           || acceptance.reason === "invalid-command" || acceptance.reason === "invalid-sequence")) {
           if (connectionId) await this.recordHostViolation(connectionId);
         }
-        return;
+        return true;
       }
       case "return-to-lobby": {
-        if (!guestPeerId) return;
+        if (!guestPeerId || !connectionId) return false;
         this.guestConnectionId = undefined;
+        await this.closeHostConnection(connectionId, "guest-left");
         if (this.hostSessionValue) {
           this.hostSessionValue.disconnectGuest(this.now());
           this.hooks.onNotice("客席已离开 · AI 已接管。");
-          return;
+          return true;
         }
         this.hostLobby?.leave(guestPeerId);
         this.lobby = this.hostLobby ? cloneLobby(this.hostLobby.snapshot()) : this.lobby;
         this.publishLobby();
         await this.refreshAnnouncement();
         await this.broadcastLobbyUpdate();
-        return;
+        return true;
       }
       default:
-        return;
+        return false;
     }
   }
 

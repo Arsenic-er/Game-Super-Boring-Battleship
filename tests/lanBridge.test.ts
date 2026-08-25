@@ -738,6 +738,102 @@ describe("Electron LAN bridge", () => {
     expect(acceptedClient.readyState).toBe(WebSocket.CLOSED);
   });
 
+  it("releases an accepted guest by connection id so a replacement can join without client-side close", async () => {
+    const host = trackBridge(createLanBridge());
+    const room = await host.createRoom({ announcementJson: buildAnnouncementJson() });
+    const first = trackWsClient(new WebSocket(`ws://127.0.0.1:${room.port}`));
+    const firstConnected = await waitForEvent(host, (event) => event.type === "connected" && event.role === "host");
+    if (firstConnected.type !== "connected" || !firstConnected.connectionId) throw new Error("expected-first-connection");
+    await host.acceptConnection(firstConnected.connectionId);
+    const firstClosed = new Promise<void>((resolve) => first.once("close", () => resolve()));
+
+    await host.closeConnection(firstConnected.connectionId, "guest-left");
+    await firstClosed;
+
+    const second = trackWsClient(new WebSocket(`ws://127.0.0.1:${room.port}`));
+    const secondConnected = await waitForEvent(
+      host,
+      (event) => event.type === "connected" && event.role === "host" && event.connectionId !== firstConnected.connectionId,
+    );
+    if (secondConnected.type !== "connected" || !secondConnected.connectionId) throw new Error("expected-second-connection");
+    await host.acceptConnection(secondConnected.connectionId);
+    const received = new Promise<string>((resolve, reject) => {
+      second.once("message", (payload) => resolve(payload.toString("utf8")));
+      second.once("error", reject);
+      void host.send("replacement-active", { connectionId: secondConnected.connectionId }).catch(reject);
+    });
+    await expect(received).resolves.toBe("replacement-active");
+  });
+
+  it("enforces per-connection frame and byte sliding windows and resets them after the window", async () => {
+    let now = 1_000;
+    const host = trackBridge(createLanBridge({
+      now: () => now,
+      wsFrameWindowMs: 1_000,
+      wsMaxFramesPerWindow: 3,
+      wsMaxBytesPerWindow: 6,
+    }));
+    const room = await host.createRoom({ announcementJson: buildAnnouncementJson() });
+    const client = trackWsClient(new WebSocket(`ws://127.0.0.1:${room.port}`));
+    const connected = await waitForEvent(host, (event) => event.type === "connected" && event.role === "host");
+    if (connected.type !== "connected" || !connected.connectionId) throw new Error("expected-rate-connection");
+    await host.acceptConnection(connected.connectionId);
+    await new Promise<void>((resolve, reject) => {
+      if (client.readyState === WebSocket.OPEN) resolve();
+      else {
+        client.once("open", () => resolve());
+        client.once("error", reject);
+      }
+    });
+    const collected = collectEvents(host);
+
+    client.send("aa");
+    client.send("bb");
+    client.send("cc");
+    await vi.waitFor(() => expect(collected.events.filter((event) => event.type === "message")).toHaveLength(3));
+    now += 1_001;
+    client.send("aa");
+    client.send("bb");
+    client.send("cc");
+    await vi.waitFor(() => expect(collected.events.filter((event) => event.type === "message")).toHaveLength(6));
+
+    const disconnected = waitForEvent(
+      host,
+      (event) => event.type === "disconnected" && event.connectionId === connected.connectionId,
+    );
+    client.send("d");
+    await expect(disconnected).resolves.toMatchObject({ type: "disconnected", role: "host" });
+    expect(collected.events.some((event) => event.type === "error" && event.code === "rate-limited")).toBe(true);
+    collected.stop();
+  });
+
+  it("counts binary websocket frames as protocol violations and closes only that connection", async () => {
+    const host = trackBridge(createLanBridge());
+    const room = await host.createRoom({ announcementJson: buildAnnouncementJson() });
+    const client = trackWsClient(new WebSocket(`ws://127.0.0.1:${room.port}`));
+    const connected = await waitForEvent(host, (event) => event.type === "connected" && event.role === "host");
+    if (connected.type !== "connected" || !connected.connectionId) throw new Error("expected-binary-connection");
+    await host.acceptConnection(connected.connectionId);
+    await new Promise<void>((resolve, reject) => {
+      if (client.readyState === WebSocket.OPEN) resolve();
+      else {
+        client.once("open", () => resolve());
+        client.once("error", reject);
+      }
+    });
+    const collected = collectEvents(host);
+    const disconnected = waitForEvent(
+      host,
+      (event) => event.type === "disconnected" && event.connectionId === connected.connectionId,
+    );
+
+    client.send(Buffer.from([0, 1, 2, 3]));
+
+    await expect(disconnected).resolves.toMatchObject({ type: "disconnected", role: "host" });
+    expect(collected.events.some((event) => event.type === "error" && event.code === "protocol-violation")).toBe(true);
+    collected.stop();
+  });
+
   it("emits error then one disconnected event when a raw websocket server sends an oversized frame to the guest bridge", async () => {
     const oversized = "x".repeat(64 * 1_024 + 1);
     const { port } = await listenWsOnAllowedPort((server) => {

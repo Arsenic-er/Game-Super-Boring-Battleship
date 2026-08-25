@@ -345,6 +345,18 @@ function cloneReplicatedAircraft(source: Record<string, unknown>, index: number)
 }
 
 const IMPACT_KINDS = new Set(["hit", "splash", "collision", "terrain-hit", "underwater-explosion"]);
+const AIR_EVENT_KINDS = new Set([
+  "orderAccepted", "orderRejected", "launched", "attackStarted", "weaponReleased",
+  "attackHit", "attackMiss", "returning", "landed", "aircraftLost",
+]);
+const AIR_MISSION_KINDS = new Set([
+  "moveTo", "defendShip", "interceptSquadron", "patrolArea", "strikeShip", "recall",
+]);
+const AIR_MISSION_REJECT_REASONS = new Set([
+  "unknown-squadron", "unavailable", "target-required", "wrong-role",
+  "grounded", "committed", "invalid-target",
+]);
+const AIR_DAMAGE_CAUSES = new Set(["aaContinuous", "flak", "airCombat", "fuel", "debug"]);
 
 function cloneReplicatedEvents(events: readonly Record<string, unknown>[]): {
   shots: ShotEvent[];
@@ -399,24 +411,32 @@ function cloneReplicatedEvents(events: readonly Record<string, unknown>[]): {
       });
       continue;
     }
-    if (typeof source.kind !== "string") continue;
+    if (typeof source.kind !== "string" || !AIR_EVENT_KINDS.has(source.kind)) continue;
     const team = source.team === "player" || source.team === "enemy" ? source.team : undefined;
-    if (!team) continue;
+    const time = asNumber(source.time);
+    if (!team || time === undefined) continue;
     const controllerId = asString(source.controllerId) ?? `replicated-anonymous-air-${id}`;
     const squadronId = asString(source.squadronId) ?? `replicated-anonymous-squadron-${id}`;
+    const position = asVec3(source.position);
     airEvents.push({
       id,
-      time: asNumber(source.time) ?? 0,
+      time,
       kind: source.kind as AirCombatEvent["kind"],
       team,
       controllerId,
       squadronId,
       ...(asString(source.targetId) ? { targetId: asString(source.targetId) } : {}),
-      ...(asVec3(source.position) ? { position: asVec3(source.position) } : {}),
+      ...(position ? { position } : {}),
+      ...(typeof source.orderKind === "string" && AIR_MISSION_KINDS.has(source.orderKind)
+        ? { orderKind: source.orderKind as AirCombatEvent["orderKind"] } : {}),
+      ...(typeof source.rejectReason === "string" && AIR_MISSION_REJECT_REASONS.has(source.rejectReason)
+        ? { rejectReason: source.rejectReason as AirCombatEvent["rejectReason"] } : {}),
       ...(source.weapon === "machineGun" || source.weapon === "heBomb" || source.weapon === "aerialTorpedo"
         ? { weapon: source.weapon } : {}),
       ...(asNumber(source.damage) !== undefined ? { damage: asNumber(source.damage) } : {}),
       ...(asNumber(source.aircraftLost) !== undefined ? { aircraftLost: asNumber(source.aircraftLost) } : {}),
+      ...(typeof source.lossCause === "string" && AIR_DAMAGE_CAUSES.has(source.lossCause)
+        ? { lossCause: source.lossCause as AirCombatEvent["lossCause"] } : {}),
     });
   }
   return { shots, impacts, airEvents };

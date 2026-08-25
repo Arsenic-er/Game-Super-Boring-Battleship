@@ -226,6 +226,7 @@ export function replicationViewFor(
         if (!sourceVisible && !targetVisible && !positionVisible) return [];
         return [{
           id: event.id,
+          time: event.time,
           kind: event.kind,
           team: event.team,
           ...(sourceVisible ? { controllerId: event.controllerId, squadronId: event.squadronId } : {}),
@@ -233,6 +234,8 @@ export function replicationViewFor(
           ...(event.position && (sourceVisible || positionVisible || targetVisible)
             ? { position: cloneVec(event.position) }
             : {}),
+          orderKind: event.orderKind,
+          rejectReason: event.rejectReason,
           weapon: event.weapon,
           damage: event.damage,
           aircraftLost: event.aircraftLost,

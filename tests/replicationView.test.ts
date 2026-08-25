@@ -283,13 +283,25 @@ describe("replicationViewFor", () => {
     }];
     state.airEvents = [{
       id: 952,
-      time: state.time,
+      time: 3.25,
       kind: "weaponReleased",
       team: "enemy",
       controllerId: "hidden-air-controller",
       squadronId: "hidden-air-squadron",
       position: { x: player.position.x + 100, y: 90, z: player.position.z + 100 },
       weapon: "aerialTorpedo",
+      lossCause: "flak",
+    }, {
+      id: 953,
+      time: 3.5,
+      kind: "orderRejected",
+      team: "player",
+      controllerId: player.id,
+      squadronId: "friendly-air-squadron",
+      orderKind: "strikeShip",
+      rejectReason: "invalid-target",
+      targetId: "hidden-target",
+      position: { x: player.position.x, y: 90, z: player.position.z },
     }];
 
     const view = replicationViewFor(state, player.id, 6, 0);
@@ -309,7 +321,11 @@ describe("replicationViewFor", () => {
     expect(view.events).toEqual(expect.arrayContaining([
       expect.objectContaining({ id: 950, projectileKind: "depthCharge", weaponSource: "secondary", team: "player" }),
       expect.objectContaining({ id: 951, projectileKind: "depthCharge", weaponSource: "aircraft", airWeapon: "heBomb", ammoType: "he" }),
-      expect.objectContaining({ id: 952, kind: "weaponReleased", team: "enemy", weapon: "aerialTorpedo" }),
+      expect.objectContaining({ id: 952, time: 3.25, kind: "weaponReleased", team: "enemy", weapon: "aerialTorpedo", lossCause: "flak" }),
+      expect.objectContaining({
+        id: 953, time: 3.5, kind: "orderRejected", team: "player",
+        orderKind: "strikeShip", rejectReason: "invalid-target",
+      }),
     ]));
     const air = view.events.find(({ id }) => id === 952)!;
     expect(air).not.toHaveProperty("controllerId");

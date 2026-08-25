@@ -432,9 +432,14 @@ describe("ClientBattleSession", () => {
       events: [
         { id: 51, kind: "shot", team: "player", ownerId: "guest-ship", position: { x: 0, y: 3, z: 0 }, projectileKind: "shell", ammoType: "he", weaponSource: "aircraft", airWeapon: "heBomb" },
         { id: 52, kind: "splash", position: { x: 20, y: 0, z: 30 }, damage: 0, projectileKind: "shell", ammoType: "ap", weaponSource: "mainGun" },
-        { id: 53, kind: "mission-complete", team: "player", controllerId: "guest-ship", squadronId: "air-1", position: { x: 30, y: 70, z: 40 } },
+        { id: 53, time: 4, kind: "landed", team: "player", controllerId: "guest-ship", squadronId: "air-1", position: { x: 30, y: 70, z: 40 } },
         { id: 54, kind: "shot", team: "player", ownerId: "guest-ship", position: { x: 0, y: 0, z: 1 }, projectileKind: "depthCharge", weaponSource: "secondary" },
-        { id: 55, kind: "weaponReleased", team: "enemy", position: { x: 35, y: 80, z: 45 }, weapon: "aerialTorpedo" },
+        { id: 55, time: 4.5, kind: "aircraftLost", team: "enemy", position: { x: 35, y: 80, z: 45 }, aircraftLost: 2, lossCause: "flak" },
+        {
+          id: 56, time: 5, kind: "orderRejected", team: "player",
+          controllerId: "guest-ship", squadronId: "air-1", orderKind: "strikeShip",
+          rejectReason: "invalid-target", position: { x: 30, y: 70, z: 40 },
+        },
       ],
     });
     session.receiveSnapshot(replicated, 0);
@@ -449,9 +454,14 @@ describe("ClientBattleSession", () => {
     expect(state.shots[1]).toMatchObject({ kind: "depthCharge", weaponSource: "secondary" });
     expect(state.impacts.map(({ id }) => id)).toEqual([52]);
     expect(state.impacts[0]).toMatchObject({ projectileKind: "shell", ammoType: "ap", weaponSource: "mainGun" });
-    expect(state.airEvents.map(({ id }) => id)).toEqual([53, 55]);
-    expect(state.airEvents[1]).toMatchObject({ team: "enemy", weapon: "aerialTorpedo" });
+    expect(state.airEvents.map(({ id }) => id)).toEqual([53, 55, 56]);
+    expect(state.airEvents[1]).toMatchObject({
+      time: 4.5, kind: "aircraftLost", team: "enemy", aircraftLost: 2, lossCause: "flak",
+    });
     expect(state.airEvents[1]!.controllerId).toMatch(/^replicated-anonymous-air-/);
+    expect(state.airEvents[2]).toMatchObject({
+      time: 5, kind: "orderRejected", team: "player", orderKind: "strikeShip", rejectReason: "invalid-target",
+    });
     expect(state.projectiles[0]!.position).not.toEqual({ x: 999, y: 999, z: 999 });
   });
 
@@ -530,5 +540,29 @@ describe("ClientBattleSession", () => {
     expect(state.projectiles).toEqual([]);
     expect(state.airSquadrons).toEqual([]);
     expect(state.airEvents).toEqual([]);
+  });
+
+  it("enumerates replicated air event metadata instead of accepting or inventing invalid values", () => {
+    const session = new ClientBattleSession({
+      roomId: "room-alpha", peerId: "peer-guest", gameVersion: LAN_GAME_VERSION, contentHash: LAN_CONTENT_HASH,
+    });
+    session.receiveSnapshot(snapshot({
+      events: [
+        {
+          id: 93, time: 6, kind: "orderRejected", team: "player",
+          controllerId: "guest-ship", squadronId: "air-1",
+          orderKind: "scriptInjection", rejectReason: "made-up", lossCause: "unknown-cause",
+          position: { x: 0, y: 80, z: 0 },
+        },
+        { id: 94, time: 7, kind: "invented-event", team: "enemy", position: { x: 0, y: 80, z: 0 } },
+        { id: 95, kind: "landed", team: "enemy", position: { x: 0, y: 80, z: 0 } },
+      ],
+    }), 0);
+
+    const events = session.renderState(120).state.airEvents;
+    expect(events.map(({ id }) => id)).toEqual([93]);
+    expect(events[0]).not.toHaveProperty("orderKind");
+    expect(events[0]).not.toHaveProperty("rejectReason");
+    expect(events[0]).not.toHaveProperty("lossCause");
   });
 });
