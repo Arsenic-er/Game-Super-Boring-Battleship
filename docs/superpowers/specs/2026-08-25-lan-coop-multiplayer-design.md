@@ -19,7 +19,7 @@ The 0.7.0 slice includes:
 - host disconnect returns the guest to the multiplayer menu with an explicit reason;
 - multiplayer Escape menus never pause the host simulation;
 - Simplified Chinese, Traditional Chinese, English, Japanese, Spanish, German and Russian UI copy;
-- a Windows portable build. Browser builds expose the multiplayer UI but explain that LAN discovery and hosting require the desktop build.
+- an unpacked Windows directory build, optionally distributed as a ZIP. Browser builds expose the multiplayer UI but explain that LAN discovery and hosting require the desktop build.
 
 The 0.7.0 slice excludes PvP, more than two humans, Internet matchmaking, NAT traversal, host migration, mid-match joining, mid-match reconnection, spectators, chat, voice and dedicated servers.
 
@@ -65,4 +65,4 @@ The client predicts only the displayed movement of its own ship and immediate gu
 
 Pure protocol, lobby, session, snapshot and reconciliation code is exercised with Vitest. Transport tests use loopback sockets with dynamically allocated test ports; UDP discovery behavior is also covered by pure packet/directory tests so CI does not depend on broadcast routing. A manual two-instance desktop smoke checklist covers Windows firewall and real LAN behavior.
 
-At each completed development batch, the server builds the portable Windows executable and copies it to `C:\Users\jiang\Documents\战舰\release\battleship-latest-windows-x64.exe`, deleting older local game packages. The server preview service remains stopped and no browser test link is delivered.
+At each completed development batch, the server builds the complete Windows directory and copies it to `C:\Users\jiang\Documents\战舰\release\battleship-latest-windows-x64`, atomically replacing the previous local game directory after verification. A GitHub Release may carry a ZIP of that complete directory. The server preview service remains stopped and no browser test link is delivered.

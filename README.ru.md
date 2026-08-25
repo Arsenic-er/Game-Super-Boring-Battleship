@@ -4,7 +4,7 @@
 
 > Лёгкая одиночная 3D-игра о морских боях Второй мировой от **koko** с неторопливым управлением кораблём, наглядной баллистикой и модульной системой повреждений.
 
-[Скачать последнюю портативную версию для Windows](https://github.com/Arsenic-er/Game-Super-Boring-Battleship/releases/latest)
+[Скачать последнюю версию для Windows в виде каталога (ZIP)](https://github.com/Arsenic-er/Game-Super-Boring-Battleship/releases/latest)
 
 ## Об игре
 
@@ -39,7 +39,7 @@
 
 ## Запуск в Windows
 
-Скачайте последний ZIP для Windows x64 со страницы [Releases](https://github.com/Arsenic-er/Game-Super-Boring-Battleship/releases/latest), полностью распакуйте его и запустите `Super Boring Battleship Game.exe`. Установка не требуется. SmartScreen может предупредить о неподписанной независимой тестовой сборке.
+Скачайте последний ZIP для Windows x64 со страницы [Releases](https://github.com/Arsenic-er/Game-Super-Boring-Battleship/releases/latest), полностью распакуйте его в одну папку и запустите `Super Boring Battleship Game.exe`. Не перемещайте EXE отдельно от каталога `resources` и DLL-файлов. Установка не требуется. SmartScreen может предупредить о неподписанной независимой тестовой сборке.
 
 ## Сборка для разработки
 
@@ -50,7 +50,10 @@ npm install
 npm test
 npm run build
 npm run desktop:dist
+npm run desktop:zip
 ```
+
+`desktop:dist` создаёт каталог `release/win-unpacked`; `desktop:zip` создаёт ZIP для публикации со всем каталогом игры.
 
 ## Авторские права
 

@@ -19,8 +19,9 @@ sub-agent transcripts, temporary patches, credentials, or repeated status update
   the style of World of Warships.
 - Finish the complete single-player human-versus-AI loop before LAN multiplayer,
   online multiplayer, submarines, or reinforcement-learning training.
-- Windows x64 portable EXE is the release target. Players should be able to extract
-  a ZIP and launch the game without an installer.
+- An unpacked Windows x64 game directory is the release and local-test target. Players
+  extract its ZIP completely and launch the EXE without an installer; the EXE, `resources`
+  directory and DLL files must remain together.
 - Visual identity: detailed low-cost 3D/pixel hybrid, bold pixel UI, clear silhouettes,
   bright readable weather, and replaceable ship modules rather than permanent block models.
 - Monetization is out of scope. Progression, research, supply tickets, procurement,
@@ -42,7 +43,8 @@ sub-agent transcripts, temporary patches, credentials, or repeated status update
 
 - Browser test URL: `http://127.0.0.1:4174/`.
 - Every user-facing test handoff must include both the test URL and SSH command.
-- Only the latest local Windows test build should be retained; old builds may be overwritten.
+- Only the latest local `battleship-latest-windows-x64` game directory should be retained;
+  the previous directory may be atomically replaced after a new package is verified.
 - Git commits must use `Arsenic-er <302726993@qq.com>` so the public contributor list
   attributes project work only to the owner.
 - Push only when explicitly requested. Never commit tokens, credentials, caches,
@@ -208,8 +210,8 @@ sub-agent transcripts, temporary patches, credentials, or repeated status update
 - Run larger paired-seed balance matrices; current open balance concern is Kagero versus Fletcher.
 - Tune battles toward a 6–9 minute median with fewer timeout endings.
 - Capture visual-regression baselines at 1440x900 and 1280x720.
-- Produce and publish a fresh Windows portable build only after the current single-player
-  loop and asset pipeline are stable.
+- Produce and publish a fresh Windows directory build, optionally delivered as a ZIP, only
+  after the current single-player loop and asset pipeline are stable.
 
 ## 12. Resume checklist after server migration
 

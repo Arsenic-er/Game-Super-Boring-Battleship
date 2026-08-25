@@ -20,7 +20,7 @@
 - `contextIsolation: true`, `nodeIntegration: false`, and `sandbox: true` remain enabled.
 - Browser preview exposes disabled LAN hosting/search controls with a desktop-required explanation.
 - Multiplayer copy is translated for `zh-CN`, `zh-TW`, `en`, `ja`, `es`, `de`, and `ru`.
-- The server preview service remains stopped. Completed user-visible batches copy one portable EXE to `C:\Users\jiang\Documents\战舰\release\battleship-latest-windows-x64.exe` and remove older local game EXEs.
+- The server preview service remains stopped. Completed user-visible batches copy one complete Windows game directory to `C:\Users\jiang\Documents\战舰\release\battleship-latest-windows-x64` and atomically replace the previous local directory after verification.
 - Production behavior follows strict red-green-refactor TDD and each task is committed by `Arsenic-er <302726993@qq.com>`.
 
 ---
@@ -461,7 +461,7 @@ git commit -m "Integrate LAN client synchronization and recovery"
 
 **Interfaces:**
 - Consumes: complete lobby, host, client and transport interfaces from Tasks 1–7.
-- Produces: a versioned 0.7.0 portable build and a repeatable two-instance Windows smoke procedure.
+- Produces: a versioned 0.7.0 Windows directory build, an optional ZIP of that complete directory, and a repeatable two-instance Windows smoke procedure.
 
 - [ ] **Step 1: Write the failing end-to-end loopback test**
 
@@ -487,15 +487,15 @@ npm run assets:ships:validate -- public/assets/ships
 npm run desktop:dist
 ```
 
-Expected: zero test failures, a successful production build, a valid ship catalog, and `release/battleship-0.7.0-windows-x64.exe` with non-zero size.
+Expected: zero test failures, a successful production build, a valid ship catalog, and `release/win-unpacked/Super Boring Battleship Game.exe` plus `resources`, DLLs and unpacked game-asset directories with non-zero size.
 
-- [ ] **Step 5: Commit and copy only the latest package to the user's PC**
+- [ ] **Step 5: Commit and copy only the latest game directory to the user's PC**
 
 ```bash
 git add tests/lanCoopIntegration.test.ts docs README.md package.json package-lock.json
 git commit -m "Prepare LAN co-op 0.7.0 release"
 ```
 
-On the local PC, remove older `battleship-*-windows-x64.exe` and `battleship-latest-windows-x64.exe` only inside `C:\Users\jiang\Documents\战舰\release`, then copy the verified server artifact to:
+On the local PC, stage the verified directory beside the current package, then atomically replace the older `battleship-latest-windows-x64` directory only inside `C:\Users\jiang\Documents\战舰\release` with:
 
-`C:\Users\jiang\Documents\战舰\release\battleship-latest-windows-x64.exe`
+`C:\Users\jiang\Documents\战舰\release\battleship-latest-windows-x64`

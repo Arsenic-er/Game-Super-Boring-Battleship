@@ -36,7 +36,8 @@
     "assets:ships:validate": "node scripts/validate-ship-assets.ts",
     "test": "vitest run",
     "desktop:run": "npm run build && electron .",
-    "desktop:dist": "npm run build && electron-builder --win portable --x64"
+    "desktop:dist": "npm run build && electron-builder --win --x64 --dir",
+    "desktop:zip": "npm run build && electron-builder --win zip --x64"
   },
   "dependencies": {
     "@babylonjs/core": "9.16.1",
@@ -65,15 +66,12 @@
       "package.json"
     ],
     "asar": true,
-    "win": {
-      "target": [
-        {
-          "target": "portable",
-          "arch": [
-            "x64"
-          ]
-        }
-      ]
-    }
+    "asarUnpack": [
+      "dist/assets/ships/**/*",
+      "dist/assets/textures/**/*",
+      "dist/assets/equipment/**/*",
+      "dist/assets/cursors/**/*",
+      "dist/assets/audio/**/*"
+    ]
   }
 }

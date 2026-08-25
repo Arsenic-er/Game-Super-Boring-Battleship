@@ -6,13 +6,13 @@ Version 0.7.0 supports exactly two human players cooperating against the AI on t
 
 ## Requirements / 使用条件
 
-- Both computers must run the same `battleship-0.7.0-windows-x64.exe` build and be connected to the same private IPv4 network.
+- Both computers must fully extract and run the same Windows x64 directory build. Keep `Super Boring Battleship Game.exe`, `resources` and the DLL files together, and connect both computers to the same private IPv4 network.
 - When Windows Defender Firewall asks, allow the game on **Private networks**. Public-network access is not required.
 - The router or access point must not enable **AP isolation**, **client isolation** or a guest-network rule that prevents devices from reaching each other.
 - UDP `47777` is used for room discovery. The host chooses one WebSocket game port from TCP `47778`–`47788`.
 - The browser/Vite preview cannot create or join a LAN room. LAN transport is available only in the packaged Electron desktop game.
 
-- 两台电脑必须运行相同的 `battleship-0.7.0-windows-x64.exe`，并连接到同一个私有 IPv4 网络。
+- 两台电脑必须完整解压并运行相同的 Windows x64 目录版；`Super Boring Battleship Game.exe`、`resources` 与 DLL 文件必须保持在同一个游戏目录中，并连接到同一个私有 IPv4 网络。
 - Windows Defender 防火墙询问时，只需允许游戏访问**专用网络**，无需开放公用网络。
 - 路由器或无线接入点不能开启 **AP 隔离**、**客户端隔离**，也不能使用会阻止设备互访的访客网络。
 - UDP `47777` 用于搜索房间；房主会从 TCP `47778`–`47788` 中选择一个游戏端口。
@@ -74,13 +74,13 @@ Run this matrix with two packaged Windows instances before publishing a release.
 
 ## Troubleshooting / 故障排查
 
-1. Confirm both executables have the same version and content fingerprint.
+1. Confirm both extracted game directories have the same version and content fingerprint.
 2. Set the Windows network profile to **Private**, then allow the game through the firewall on Private networks.
 3. Disable AP/client isolation or move both computers off the guest Wi-Fi network.
 4. Retry with the host's private IPv4 address and shown TCP port.
 5. If discovery still fails but manual join works, UDP broadcast is being filtered; manual IPv4 is the supported fallback.
 
-1. 确认双方 EXE 的版本和内容指纹一致。
+1. 确认双方完整游戏目录的版本和内容指纹一致。
 2. 把 Windows 网络配置设为**专用**，并在防火墙中允许游戏访问专用网络。
 3. 关闭 AP/客户端隔离，或把两台电脑移出访客 Wi-Fi。
 4. 使用房主的私有 IPv4 和界面显示的 TCP 端口手动加入。

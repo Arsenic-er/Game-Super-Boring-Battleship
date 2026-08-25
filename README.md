@@ -51,7 +51,7 @@ This is an early prototype rather than a finished commercial game. Visuals, bala
 - Tactical minimap and full map, dedicated aiming scope, developer diagnostics and adjustable sensitivity.
 - Local captain profile with a non-cash Armory, research unlocks, transparent resource prices, free battle-earned supply tickets and deterministic direct procurement.
 - A standalone warehouse for owned/installed counts, protected baseline equipment, duplicate sales and parts salvaging; the dockyard remains focused on fitting components.
-- Portable Windows x64 build: extract the ZIP and launch the EXE; no installer is required.
+- Windows x64 directory build: extract the ZIP completely, keep the EXE, `resources` directory and DLL files together, then launch the game; no installer is required.
 
 ## Controls
 
@@ -77,8 +77,8 @@ This is an early prototype rather than a finished commercial game. Visuals, bala
 ## Windows quick start
 
 1. Open the repository's **Releases** page.
-2. Download `battleship-0.7.0-windows-x64.exe`.
-3. Double-click the portable EXE. No installation or extraction is required.
+2. Download `battleship-0.7.0-windows-x64.zip`.
+3. Extract the whole ZIP into one directory, then run `Super Boring Battleship Game.exe` inside it. Do not move the EXE away from its `resources` directory or DLL files.
 
 The build targets 64-bit Windows 10/11. Windows SmartScreen may warn about an unsigned indie build; only run a file downloaded from this repository's official Release page.
 
@@ -92,10 +92,16 @@ npm test
 npm run build
 ```
 
-Create the portable Windows executable:
+Create the unpacked Windows game directory at `release/win-unpacked`:
 
 ```bash
 npm run desktop:dist
+```
+
+Create the optional ZIP containing that complete directory for a GitHub Release:
+
+```bash
+npm run desktop:zip
 ```
 
 Architecture notes and game-design documents are available in [`docs/`](docs/).
@@ -149,7 +155,7 @@ Third-party libraries and the Fusion Pixel Font remain under their respective li
 - 小地图、大地图、专用瞄准镜、开发者调试面板与灵敏度设置。
 - 本地舰长档案与无氪金军械库：研发解锁、资源明码标价、战斗免费补给券和可确定获得的定向采购。
 - 独立舰队仓库：显示持有/安装数量，保护基础配装，并支持出售或拆解重复件；船坞继续专注舰船配装。
-- Windows x64 便携版：解压 ZIP 后直接运行 EXE，无需安装。
+- Windows x64 目录版：完整解压 ZIP，保留 EXE、`resources` 目录和 DLL 文件的相对位置，再启动游戏；无需安装。
 
 ## 操作方式
 
@@ -175,8 +181,8 @@ Third-party libraries and the Fusion Pixel Font remain under their respective li
 ## Windows 使用方法
 
 1. 打开仓库的 **Releases** 页面。
-2. 下载 `battleship-0.7.0-windows-x64.exe`。
-3. 双击便携 EXE 即可，无需安装或解压。
+2. 下载 `battleship-0.7.0-windows-x64.zip`。
+3. 把整个 ZIP 解压到同一个文件夹，再运行其中的 `Super Boring Battleship Game.exe`。不要把 EXE 单独移动出 `resources` 目录和 DLL 所在的游戏文件夹。
 
 目标系统为 64 位 Windows 10/11。由于目前是独立开发测试版，Windows SmartScreen 可能显示未知发布者提示；请只运行从本仓库官方 Release 下载的文件。
 
@@ -190,10 +196,16 @@ npm test
 npm run build
 ```
 
-生成 Windows 便携版：
+在 `release/win-unpacked` 生成 Windows 游戏目录：
 
 ```bash
 npm run desktop:dist
+```
+
+为 GitHub Release 生成包含完整游戏目录的可选 ZIP：
+
+```bash
+npm run desktop:zip
 ```
 
 架构与游戏设计文档位于 [`docs/`](docs/) 目录。

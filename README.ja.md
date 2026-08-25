@@ -4,7 +4,7 @@
 
 > **koko** 制作の軽量なシングルプレイ第二次世界大戦3D海戦ゲーム。現実寄りの艦艇操作、読みやすい弾道、モジュール式損傷を重視しています。
 
-[最新の Windows ポータブル版をダウンロード](https://github.com/Arsenic-er/Game-Super-Boring-Battleship/releases/latest)
+[最新の Windows ディレクトリ版（ZIP）をダウンロード](https://github.com/Arsenic-er/Game-Super-Boring-Battleship/releases/latest)
 
 ## ゲーム概要
 
@@ -39,7 +39,7 @@
 
 ## Windowsでの起動
 
-[Releases](https://github.com/Arsenic-er/Game-Super-Boring-Battleship/releases/latest) から最新のWindows x64 ZIPを取得し、完全に展開して `Super Boring Battleship Game.exe` を実行してください。インストールは不要です。未署名の開発版のためSmartScreenが警告する場合があります。
+[Releases](https://github.com/Arsenic-er/Game-Super-Boring-Battleship/releases/latest) から最新のWindows x64 ZIPを取得し、1つのフォルダーへ完全に展開して `Super Boring Battleship Game.exe` を実行してください。EXEを `resources` フォルダーやDLLから分離して移動しないでください。インストールは不要です。未署名の開発版のためSmartScreenが警告する場合があります。
 
 ## 開発ビルド
 
@@ -50,7 +50,10 @@ npm install
 npm test
 npm run build
 npm run desktop:dist
+npm run desktop:zip
 ```
+
+`desktop:dist` は `release/win-unpacked` にディレクトリ版を生成し、`desktop:zip` はその完全なディレクトリを配布用ZIPにします。
 
 ## 著作権
 

@@ -28,9 +28,9 @@ testing, server access and short-lived transfer staging.
 - World of Warships-style combat logic without paid monetization.
 - Players command aircraft groups but do not directly pilot aircraft.
 - Bold pixel UI; supported locales: zh-Hans, zh-Hant, en, ja, es, de and ru.
-- Portable Windows x64 build remains the release target.
+- An unpacked Windows x64 game directory is the default test and release target; a ZIP of that complete directory is the optional distribution artifact.
 - Single-player battles use a 20-minute hard limit and are tuned toward a 15–20 minute normal duration.
-- Windows portable packages are built on the server; only the latest verified package is copied to the local PC.
+- Windows directory packages are built on the server; only the latest verified `battleship-latest-windows-x64` directory is copied to the local PC.
 
 ## Current archived baseline
 
@@ -53,6 +53,7 @@ testing, server access and short-lived transfer staging.
 - Clear/cloud/rain/fog/storm weather profiles and bright clear-day visual reference.
 - Seven-language interface and repository guides.
 - Three selectable synthesized UI sound styles plus naval combat/ambient audio.
+- Current sound effects are synthesized with Web Audio, so no file-backed `audio` directory is emitted yet; the ASAR-unpack audio pattern is reserved for future clips.
 - Two-player LAN co-op lobby with UDP room discovery, manual IPv4 fallback, authoritative host simulation, scoped 10 Hz snapshots and 30 Hz guest input ceiling.
 - Host/guest lifecycle handling: guest dropout hands the ship to AI within five simulated seconds; host dropout returns the guest to the menu. Host migration and reconnect remain out of scope.
 - Terminal snapshots are forced on the exact authoritative transition tick; completed matches retain the socket and room, reset readiness, and return both players to the same lobby.
@@ -80,7 +81,7 @@ testing, server access and short-lived transfer staging.
 - Terrain-cover behaviour, shared spotting delay and multi-objective fleet tactics need depth.
 - Kagero standard equipment is weak against Fletcher in the current balance snapshot.
 - Heavy-ship and mixed-fleet matrices need larger paired samples to separate seed/team/spawn bias.
-- A current Windows portable build has not yet been archived for `0.6.12`.
+- The directory-format Windows 0.7.0 package still requires a real two-computer LAN smoke run.
 
 ## Resume priorities
 
@@ -101,6 +102,6 @@ testing, server access and short-lived transfer staging.
 2. `npm test -- --run`
 3. `npm run build`
 4. Run the desktop LAN loopback integration test and the two-instance Windows smoke matrix.
-5. Build `release/battleship-0.7.0-windows-x64.exe` and verify a non-zero size plus SHA-256.
+5. Build `release/win-unpacked`, verify its EXE, `resources`, DLLs and unpacked asset directories, then record a manifest and SHA-256 for the optional release ZIP.
 6. Commit as `Arsenic-er <302726993@qq.com>`.
 7. Push only when the user explicitly requests it.

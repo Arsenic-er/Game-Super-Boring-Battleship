@@ -4,7 +4,7 @@
 
 > **koko** 製作的輕量級單人二戰 3D 海戰遊戲，著重偏寫實的艦艇操縱、清楚可讀的彈道與模組化損傷。
 
-[下載最新 Windows 可攜版](https://github.com/Arsenic-er/Game-Super-Boring-Battleship/releases/latest)
+[下載最新 Windows 目錄版（ZIP）](https://github.com/Arsenic-er/Game-Super-Boring-Battleship/releases/latest)
 
 ## 遊戲簡介
 
@@ -39,7 +39,7 @@
 
 ## Windows 使用方式
 
-從 [Releases](https://github.com/Arsenic-er/Game-Super-Boring-Battleship/releases/latest) 下載最新 Windows x64 ZIP，完整解壓縮後雙擊 `Super Boring Battleship Game.exe`。程式無需安裝；SmartScreen 可能因獨立測試版未簽署而提示未知發行者。
+從 [Releases](https://github.com/Arsenic-er/Game-Super-Boring-Battleship/releases/latest) 下載最新 Windows x64 ZIP，完整解壓縮到同一個資料夾後雙擊 `Super Boring Battleship Game.exe`。請勿將 EXE 單獨移出 `resources` 目錄與 DLL 所在的遊戲資料夾。程式無需安裝；SmartScreen 可能因獨立測試版未簽署而提示未知發行者。
 
 ## 開發建置
 
@@ -50,7 +50,10 @@ npm install
 npm test
 npm run build
 npm run desktop:dist
+npm run desktop:zip
 ```
+
+`desktop:dist` 產生 `release/win-unpacked` 目錄版；`desktop:zip` 產生用於發佈、包含完整目錄的 ZIP。
 
 ## 版權
 
