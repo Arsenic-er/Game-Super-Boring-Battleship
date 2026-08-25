@@ -1065,7 +1065,7 @@ export class Hud {
     this.resultDetail.textContent = state.endReason === "score"
       ? `一方中央目标积分达到 ${OBJECTIVE.scoreToWin} 分，取得海域控制权。`
       : state.endReason === "time"
-        ? `十分钟结束：我方 ${Math.round(state.objective.scores.player)} 分，敌方 ${Math.round(state.objective.scores.enemy)} 分；同分时按舰体耐久判定。`
+        ? `${Math.round(BATTLE_DURATION_SECONDS / 60)} 分钟结束：我方 ${Math.round(state.objective.scores.player)} 分，敌方 ${Math.round(state.objective.scores.enemy)} 分；同分时按舰体耐久判定。`
       : state.status === "player-won"
         ? "敌舰已经失去战斗能力。"
         : state.status === "enemy-won" ? "本舰已经失去战斗能力。" : "双方均未取得决定性优势。";

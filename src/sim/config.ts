@@ -25,8 +25,9 @@ export const OBJECTIVE = {
   contestedScoreMultiplier: 0.35,
   dominanceHullDifference: 0.08,
   scorePerSecond: 2.5,
-  // 25 s to capture plus roughly 150 s of uncontested scoring.
-  scoreToWin: 375,
+  // Travel, capture and roughly 800 s of uncontested scoring target a
+  // representative 15–20 minute single-player battle.
+  scoreToWin: 2_000,
   destroyScore: 100,
 } as const;
 

@@ -21,6 +21,13 @@ describe("headless balance lab", () => {
     expect(result.endReason).toBeDefined();
   }, 10_000);
 
+  it("keeps a representative objective battle within the fifteen-to-twenty-minute target", () => {
+    const result = runHeadlessBattle(1);
+    expect(result.status).not.toBe("running");
+    expect(result.durationSeconds).toBeGreaterThanOrEqual(15 * 60);
+    expect(result.durationSeconds).toBeLessThanOrEqual(20 * 60);
+  }, 10_000);
+
   it("fingerprints equivalent initial states identically", () => {
     expect(battleStateFingerprint(createInitialState(73)))
       .toBe(battleStateFingerprint(createInitialState(73)));

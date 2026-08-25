@@ -186,7 +186,7 @@ export class GameMenus {
           <div class="menu-tab-panel mission-panel" data-menu-panel="mission">
             <p class="eyebrow">单人战术原型 · 1943</p><h1>灰海行动</h1>
             <p>从船坞保存舰船方案，再选择舰队规模、天气与旗舰出击；海试仍使用当前船坞配装。</p>
-            <div class="mission-brief">击沉敌舰，或控制中央 A 区率先达到 375 分。双方争夺时，舰体状态更好的一方会缓慢建立区域优势。当前本地配装会真实影响战斗性能。</div>
+            <div class="mission-brief">击沉敌舰，或控制中央 A 区率先达到 2000 分。双方争夺时，舰体状态更好的一方会缓慢建立区域优势。当前本地配装会真实影响战斗性能。</div>
             <div class="menu-controls">
               <span><kbd>W S</kbd> 航速</span><span><kbd>A D</kbd> 转向</span><span><kbd>移动鼠标</kbd> 视角</span>
               <span><kbd>R</kbd> 瞄准</span><span><kbd>Space</kbd> 开火</span><span><kbd>4</kbd> 损管优先</span><span><kbd>H</kbd> 舰体抢修</span>
