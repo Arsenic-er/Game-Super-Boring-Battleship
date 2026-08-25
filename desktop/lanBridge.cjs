@@ -2,16 +2,82 @@ const dgram = require("node:dgram");
 const { EventEmitter } = require("node:events");
 const { WebSocket, WebSocketServer } = require("ws");
 
+const LAN_PROTOCOL_VERSION = 1;
 const LAN_DISCOVERY_PORT = 47_777;
 const LAN_GAME_PORTS = [
   47_778, 47_779, 47_780, 47_781, 47_782, 47_783, 47_784, 47_785, 47_786, 47_787, 47_788,
 ];
+const LAN_ROOM_PHASES = ["advertising", "lobby", "starting", "in-match", "post-match", "closing"];
+const CHANNELS = Object.freeze({
+  capabilities: "battleship-lan:capabilities",
+  createRoom: "battleship-lan:create-room",
+  updateAnnouncement: "battleship-lan:update-announcement",
+  closeRoom: "battleship-lan:close-room",
+  startDiscovery: "battleship-lan:start-discovery",
+  stopDiscovery: "battleship-lan:stop-discovery",
+  connect: "battleship-lan:connect",
+  disconnect: "battleship-lan:disconnect",
+  send: "battleship-lan:send",
+  event: "battleship-lan:event",
+});
 const UDP_MAX_BYTES = 1_024;
 const WS_MAX_BYTES = 64 * 1_024;
+const ANNOUNCEMENT_INTERVAL_MS = 1_000;
 const DISCOVERY_PROBE = "__BATTLESHIP_LAN_PROBE__";
 const BROADCAST_ADDRESSES = ["255.255.255.255", "127.0.0.1"];
 const SUPPORTED_CAPABILITIES = Object.freeze({ desktop: true, canHost: true, canDiscover: true });
 const ALLOWED_PORTS = new Set(LAN_GAME_PORTS);
+const ALLOWED_MESSAGE_TYPES = new Set(["room-announcement"]);
+const ROOM_ANNOUNCEMENT_KEYS = Object.freeze([
+  "protocolVersion",
+  "gameVersion",
+  "contentHash",
+  "roomId",
+  "sequence",
+  "sentAt",
+  "type",
+  "payload",
+]);
+const ROOM_ANNOUNCEMENT_PAYLOAD_KEYS = Object.freeze([
+  "roomName",
+  "hostName",
+  "discoveryPort",
+  "port",
+  "playerCount",
+  "capacity",
+  "phase",
+]);
+const STATEFUL_CHANNELS = Object.freeze([
+  CHANNELS.createRoom,
+  CHANNELS.updateAnnouncement,
+  CHANNELS.closeRoom,
+  CHANNELS.startDiscovery,
+  CHANNELS.stopDiscovery,
+  CHANNELS.connect,
+  CHANNELS.disconnect,
+  CHANNELS.send,
+]);
+
+function isRecord(value) {
+  return typeof value === "object" && value !== null && !Array.isArray(value);
+}
+
+function hasExactKeys(value, allowed) {
+  const keys = Object.keys(value);
+  return keys.length === allowed.length && keys.every((key) => allowed.includes(key));
+}
+
+function readNonEmptyString(value, maxLength) {
+  if (typeof value !== "string") return undefined;
+  const normalized = value.trim();
+  if (!normalized || normalized.length > maxLength) return undefined;
+  return normalized;
+}
+
+function readFiniteInteger(value, { min = Number.MIN_SAFE_INTEGER, max = Number.MAX_SAFE_INTEGER } = {}) {
+  if (typeof value !== "number" || !Number.isInteger(value) || value < min || value > max) return undefined;
+  return value;
+}
 
 function isCanonicalIpv4Octet(value) {
   if (value === "0") return true;
@@ -26,9 +92,65 @@ function isCanonicalIpv4(value) {
   return parts.length === 4 && parts.every((part) => isCanonicalIpv4Octet(part));
 }
 
-function assertStringPayload(value, maxBytes, kind) {
+function assertLanBridgeStringPayload(value, maxBytes, kind) {
   if (typeof value !== "string") throw new TypeError(`${kind}-must-be-string`);
   if (Buffer.byteLength(value, "utf8") > maxBytes) throw new Error(`message-too-large:${maxBytes}`);
+}
+
+function parseDiscoveryAnnouncementJson(json) {
+  assertLanBridgeStringPayload(json, UDP_MAX_BYTES, "announcement");
+
+  let value;
+  try {
+    value = JSON.parse(json);
+  } catch {
+    return undefined;
+  }
+
+  if (!isRecord(value) || !hasExactKeys(value, ROOM_ANNOUNCEMENT_KEYS)) return undefined;
+  const protocolVersion = readFiniteInteger(value.protocolVersion, { min: LAN_PROTOCOL_VERSION, max: LAN_PROTOCOL_VERSION });
+  const gameVersion = readNonEmptyString(value.gameVersion, 32);
+  const contentHash = readNonEmptyString(value.contentHash, 128);
+  const roomId = readNonEmptyString(value.roomId, 64);
+  const sequence = readFiniteInteger(value.sequence, { min: 0 });
+  const sentAt = readFiniteInteger(value.sentAt, { min: 0 });
+  const type = typeof value.type === "string" && ALLOWED_MESSAGE_TYPES.has(value.type) ? value.type : undefined;
+  if (!protocolVersion || !gameVersion || !contentHash || !roomId || sequence === undefined || sentAt === undefined || !type) {
+    return undefined;
+  }
+
+  const payload = value.payload;
+  if (!isRecord(payload) || !hasExactKeys(payload, ROOM_ANNOUNCEMENT_PAYLOAD_KEYS)) return undefined;
+  const roomName = readNonEmptyString(payload.roomName, 48);
+  const hostName = readNonEmptyString(payload.hostName, 32);
+  const discoveryPort = readFiniteInteger(payload.discoveryPort, { min: LAN_DISCOVERY_PORT, max: LAN_DISCOVERY_PORT });
+  const port = readFiniteInteger(payload.port);
+  const playerCount = readFiniteInteger(payload.playerCount, { min: 1, max: 2 });
+  const capacity = readFiniteInteger(payload.capacity, { min: 2, max: 2 });
+  const phase = typeof payload.phase === "string" && LAN_ROOM_PHASES.includes(payload.phase) ? payload.phase : undefined;
+  if (!roomName || !hostName || discoveryPort !== LAN_DISCOVERY_PORT || port === undefined || !ALLOWED_PORTS.has(port) || !phase) {
+    return undefined;
+  }
+  if ((playerCount !== 1 && playerCount !== 2) || capacity !== 2) return undefined;
+
+  return Object.freeze({
+    protocolVersion: LAN_PROTOCOL_VERSION,
+    gameVersion,
+    contentHash,
+    roomId,
+    sequence,
+    sentAt,
+    type: "room-announcement",
+    payload: Object.freeze({
+      roomName,
+      hostName,
+      discoveryPort: LAN_DISCOVERY_PORT,
+      port,
+      playerCount,
+      capacity: 2,
+      phase,
+    }),
+  });
 }
 
 function waitForUdpBound(socket, port) {
@@ -70,12 +192,18 @@ function sendUdp(socket, message, port, address) {
 function closeWebSocket(socket) {
   if (!socket || socket.readyState === WebSocket.CLOSED) return Promise.resolve();
   return new Promise((resolve) => {
-    socket.once("close", () => resolve());
+    let settled = false;
+    const finish = () => {
+      if (settled) return;
+      settled = true;
+      resolve();
+    };
+    socket.once("close", finish);
     try {
       if (socket.readyState === WebSocket.CLOSING) return;
       socket.close();
     } catch {
-      resolve();
+      finish();
     }
   });
 }
@@ -98,15 +226,33 @@ function validateLanWebSocketUrl(value) {
 
   const [, host, portText] = match;
   if (!isCanonicalIpv4(host)) throw new Error("invalid-url");
+  if (portText.length > 1 && portText.startsWith("0")) throw new Error("invalid-url");
 
   const port = Number(portText);
-  if (!Number.isInteger(port) || !ALLOWED_PORTS.has(port)) throw new Error("invalid-url");
+  if (!Number.isInteger(port) || String(port) != portText || !ALLOWED_PORTS.has(port)) throw new Error("invalid-url");
   return `ws://${host}:${port}`;
 }
 
+function normalizeBridgeError(error) {
+  if (error && typeof error === "object" && error.code === "WS_ERR_UNSUPPORTED_MESSAGE_LENGTH") {
+    return { code: "message-too-large", message: "message-too-large" };
+  }
+  const message = error instanceof Error ? error.message : String(error);
+  if (/max payload size exceeded/i.test(message) || /message-too-large/i.test(message)) {
+    return { code: "message-too-large", message: "message-too-large" };
+  }
+  return { code: "socket-error", message };
+}
+
 class LanBridge {
-  constructor() {
+  constructor(options = {}) {
     this.events = new EventEmitter();
+    this.createUdpSocket = options.createUdpSocket ?? (() => dgram.createSocket({ type: "udp4", reuseAddr: true }));
+    this.createWebSocketServer = options.createWebSocketServer ?? ((serverOptions) => new WebSocketServer(serverOptions));
+    this.WebSocketClass = options.WebSocketClass ?? WebSocket;
+    this.setIntervalFn = options.setInterval ?? setInterval;
+    this.clearIntervalFn = options.clearInterval ?? clearInterval;
+
     this.roomServer = undefined;
     this.roomPort = undefined;
     this.roomAnnouncementJson = undefined;
@@ -116,6 +262,8 @@ class LanBridge {
     this.clientSocket = undefined;
     this.clientUrl = undefined;
     this.connectPromise = undefined;
+    this.announcementTimer = undefined;
+    this.socketStates = new WeakMap();
   }
 
   async capabilities() {
@@ -134,7 +282,8 @@ class LanBridge {
 
   async createRoom(request) {
     const announcementJson = request?.announcementJson;
-    assertStringPayload(announcementJson, UDP_MAX_BYTES, "announcement");
+    const parsedAnnouncement = parseDiscoveryAnnouncementJson(announcementJson);
+    if (!parsedAnnouncement) throw new Error("invalid-announcement");
 
     if (this.roomServer && this.roomPort) {
       if (this.roomAnnouncementJson !== announcementJson) await this.updateAnnouncement(announcementJson);
@@ -150,6 +299,7 @@ class LanBridge {
         this.roomServer = server;
         this.roomPort = port;
         this.roomAnnouncementJson = announcementJson;
+        this.startAnnouncementTimer();
         await this.broadcastAnnouncement();
         return { port };
       } catch (error) {
@@ -165,13 +315,15 @@ class LanBridge {
   }
 
   async updateAnnouncement(announcementJson) {
-    assertStringPayload(announcementJson, UDP_MAX_BYTES, "announcement");
+    if (!parseDiscoveryAnnouncementJson(announcementJson)) throw new Error("invalid-announcement");
     if (!this.roomServer) throw new Error("room-not-active");
     this.roomAnnouncementJson = announcementJson;
     await this.broadcastAnnouncement();
   }
 
   async closeRoom() {
+    this.stopAnnouncementTimer();
+
     const peerSocket = this.hostPeerSocket;
     this.hostPeerSocket = undefined;
     await closeWebSocket(peerSocket);
@@ -189,14 +341,14 @@ class LanBridge {
 
   async startDiscovery() {
     if (!this.discoverySocket) {
-      const socket = dgram.createSocket({ type: "udp4", reuseAddr: true });
+      const socket = this.createUdpSocket();
       socket.on("message", (message, remote) => this.onDiscoveryMessage(message, remote));
       await waitForUdpBound(socket, LAN_DISCOVERY_PORT);
       socket.setBroadcast(true);
       this.discoverySocket = socket;
     }
 
-    await sendUdp(this.discoverySocket, DISCOVERY_PROBE, LAN_DISCOVERY_PORT, "127.0.0.1");
+    await Promise.allSettled(BROADCAST_ADDRESSES.map((address) => sendUdp(this.discoverySocket, DISCOVERY_PROBE, LAN_DISCOVERY_PORT, address)));
   }
 
   async stopDiscovery() {
@@ -207,14 +359,14 @@ class LanBridge {
 
   async connect(url) {
     const normalizedUrl = validateLanWebSocketUrl(url);
-    if (this.clientSocket && this.clientSocket.readyState === WebSocket.OPEN && this.clientUrl === normalizedUrl) return;
+    if (this.clientSocket && this.clientSocket.readyState === this.WebSocketClass.OPEN && this.clientUrl === normalizedUrl) return;
     if (this.connectPromise && this.clientUrl === normalizedUrl) return this.connectPromise;
 
     await this.disconnect();
     this.clientUrl = normalizedUrl;
 
     this.connectPromise = new Promise((resolve, reject) => {
-      const socket = new WebSocket(normalizedUrl, { maxPayload: WS_MAX_BYTES });
+      const socket = new this.WebSocketClass(normalizedUrl, { maxPayload: WS_MAX_BYTES });
       this.clientSocket = socket;
       this.attachSocket(socket, { role: "guest", url: normalizedUrl });
 
@@ -263,10 +415,10 @@ class LanBridge {
   }
 
   async send(messageJson) {
-    assertStringPayload(messageJson, WS_MAX_BYTES, "message");
-    const socket = this.clientSocket?.readyState === WebSocket.OPEN
+    assertLanBridgeStringPayload(messageJson, WS_MAX_BYTES, "message");
+    const socket = this.clientSocket?.readyState === this.WebSocketClass.OPEN
       ? this.clientSocket
-      : this.hostPeerSocket?.readyState === WebSocket.OPEN
+      : this.hostPeerSocket?.readyState === this.WebSocketClass.OPEN
         ? this.hostPeerSocket
         : undefined;
     if (!socket) throw new Error("not-connected");
@@ -286,7 +438,7 @@ class LanBridge {
 
   async ensureHostDiscoverySocket() {
     if (this.hostDiscoverySocket) return;
-    const socket = dgram.createSocket({ type: "udp4", reuseAddr: true });
+    const socket = this.createUdpSocket();
     socket.on("message", (message, remote) => this.onHostDiscoveryMessage(message, remote));
     await waitForUdpBound(socket, LAN_DISCOVERY_PORT);
     socket.setBroadcast(true);
@@ -295,14 +447,14 @@ class LanBridge {
 
   async createRoomServer(port) {
     return await new Promise((resolve, reject) => {
-      const server = new WebSocketServer({ host: "0.0.0.0", port, maxPayload: WS_MAX_BYTES });
+      const server = this.createWebSocketServer({ host: "0.0.0.0", port, maxPayload: WS_MAX_BYTES });
       const onError = (error) => {
         server.off("listening", onListening);
         reject(error);
       };
       const onListening = () => {
         server.off("error", onError);
-        server.on("connection", (socket, request) => {
+        server.on("connection", (socket, request = { socket: {} }) => {
           const previousSocket = this.hostPeerSocket;
           this.hostPeerSocket = socket;
           this.attachSocket(socket, { role: "host" });
@@ -321,17 +473,34 @@ class LanBridge {
   }
 
   attachSocket(socket, metadata) {
+    const state = { role: metadata.role, disconnected: false };
+    this.socketStates.set(socket, state);
+
     socket.on("message", (data, isBinary) => {
       if (isBinary) return;
       const text = typeof data === "string" ? data : data.toString("utf8");
       if (Buffer.byteLength(text, "utf8") > WS_MAX_BYTES) {
-        socket.close(1009, "message-too-large");
+        this.emitSocketError(socket, state, new Error("message-too-large"));
+        try { socket.terminate(); } catch { /* ignore */ }
         return;
       }
       this.emit({ type: "message", role: metadata.role, messageJson: text });
     });
 
+    socket.on("error", (error) => {
+      this.emitSocketError(socket, state, error);
+      try {
+        if (socket.readyState !== this.WebSocketClass.CLOSED && socket.readyState !== this.WebSocketClass.CLOSING) {
+          socket.terminate();
+        }
+      } catch {
+        /* ignore */
+      }
+    });
+
     socket.on("close", (code) => {
+      if (state.disconnected) return;
+      state.disconnected = true;
       if (metadata.role === "guest" && this.clientSocket === socket) {
         this.clientSocket = undefined;
         this.clientUrl = undefined;
@@ -341,10 +510,18 @@ class LanBridge {
     });
   }
 
+  emitSocketError(socket, state, error) {
+    if (state.errored) return;
+    state.errored = true;
+    const normalized = normalizeBridgeError(error);
+    this.emit({ type: "error", role: state.role, code: normalized.code, message: normalized.message });
+  }
+
   onDiscoveryMessage(message, remote) {
     if (message.length > UDP_MAX_BYTES) return;
     const text = message.toString("utf8");
     if (text === DISCOVERY_PROBE) return;
+    if (!parseDiscoveryAnnouncementJson(text)) return;
     this.emit({
       type: "announcement",
       announcementJson: text,
@@ -368,16 +545,99 @@ class LanBridge {
       BROADCAST_ADDRESSES.map((address) => sendUdp(this.hostDiscoverySocket, this.roomAnnouncementJson, LAN_DISCOVERY_PORT, address)),
     );
   }
+
+  startAnnouncementTimer() {
+    if (this.announcementTimer || !this.roomAnnouncementJson) return;
+    this.announcementTimer = this.setIntervalFn(() => {
+      void this.broadcastAnnouncement();
+    }, ANNOUNCEMENT_INTERVAL_MS);
+  }
+
+  stopAnnouncementTimer() {
+    if (!this.announcementTimer) return;
+    this.clearIntervalFn(this.announcementTimer);
+    this.announcementTimer = undefined;
+  }
 }
 
-function createLanBridge() {
-  return new LanBridge();
+function createLanBridge(options) {
+  return new LanBridge(options);
+}
+
+function createLanIpcController({ bridge, ipcMain, getWindowFromSender }) {
+  let ownerSenderId;
+  let ownerRecord;
+  const unsubscribeBridge = bridge.subscribe((payload) => {
+    if (!ownerRecord || ownerRecord.sender.isDestroyed()) return;
+    ownerRecord.sender.send(CHANNELS.event, payload);
+  });
+
+  function releaseOwner(sender, shouldDispose = true) {
+    if (!ownerRecord || ownerRecord.sender !== sender) return;
+    sender.removeListener("destroyed", ownerRecord.onSenderDestroyed);
+    if (ownerRecord.window && !ownerRecord.window.isDestroyed()) {
+      ownerRecord.window.removeListener("closed", ownerRecord.onWindowClosed);
+    }
+    ownerRecord = undefined;
+    ownerSenderId = undefined;
+    if (shouldDispose) void bridge.dispose();
+  }
+
+  function claimOwner(sender) {
+    if (ownerSenderId === undefined) {
+      const window = getWindowFromSender(sender);
+      const onSenderDestroyed = () => releaseOwner(sender, true);
+      const onWindowClosed = () => releaseOwner(sender, true);
+      sender.once("destroyed", onSenderDestroyed);
+      if (window) window.once("closed", onWindowClosed);
+      ownerSenderId = sender.id;
+      ownerRecord = { sender, window, onSenderDestroyed, onWindowClosed };
+      return;
+    }
+    if (ownerSenderId !== sender.id) throw new Error("lan-owner-mismatch");
+  }
+
+  function registerHandler(channel, callback, { stateful = true } = {}) {
+    ipcMain.handle(channel, async (event, ...args) => {
+      if (stateful) claimOwner(event.sender);
+      return await callback(event.sender, ...args);
+    });
+  }
+
+  registerHandler(CHANNELS.capabilities, async () => await bridge.capabilities(), { stateful: false });
+  registerHandler(CHANNELS.createRoom, async (_sender, request) => await bridge.createRoom(request));
+  registerHandler(CHANNELS.updateAnnouncement, async (_sender, announcementJson) => await bridge.updateAnnouncement(announcementJson));
+  registerHandler(CHANNELS.closeRoom, async () => await bridge.closeRoom());
+  registerHandler(CHANNELS.startDiscovery, async () => await bridge.startDiscovery());
+  registerHandler(CHANNELS.stopDiscovery, async () => await bridge.stopDiscovery());
+  registerHandler(CHANNELS.connect, async (_sender, url) => await bridge.connect(url));
+  registerHandler(CHANNELS.disconnect, async () => await bridge.disconnect());
+  registerHandler(CHANNELS.send, async (_sender, messageJson) => await bridge.send(messageJson));
+
+  return {
+    async dispose() {
+      unsubscribeBridge();
+      if (ownerRecord) releaseOwner(ownerRecord.sender, false);
+      for (const channel of [CHANNELS.capabilities, ...STATEFUL_CHANNELS]) {
+        if (typeof ipcMain.removeHandler === "function") ipcMain.removeHandler(channel);
+      }
+      await bridge.dispose();
+    },
+  };
 }
 
 module.exports = {
+  ANNOUNCEMENT_INTERVAL_MS,
+  CHANNELS,
+  DISCOVERY_PROBE,
   LAN_DISCOVERY_PORT,
   LAN_GAME_PORTS,
   LanBridge,
+  UDP_MAX_BYTES,
+  WS_MAX_BYTES,
+  assertLanBridgeStringPayload,
   createLanBridge,
+  createLanIpcController,
+  parseDiscoveryAnnouncementJson,
   validateLanWebSocketUrl,
 };

@@ -18,6 +18,7 @@ export type LanBridgeEvent =
   | { type: "probe"; address: string; port: number }
   | { type: "connected"; role: "host" | "guest"; url?: string }
   | { type: "message"; role: "host" | "guest"; messageJson: string }
+  | { type: "error"; role: "host" | "guest"; code: string; message: string }
   | { type: "disconnected"; role: "host" | "guest"; hadError: boolean };
 
 export interface BattleshipLanApi {
