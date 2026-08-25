@@ -104,15 +104,34 @@ const WEAPON_SLOTS = ["mainGun", "torpedo", "aircraft"] as const;
 const DAMAGE_CONTROL_PRIORITIES = ["balanced", "fire", "flood", "module"] as const;
 const AMMO_TYPES = ["he", "ap"] as const;
 const TORPEDO_SPREAD_MODES = ["narrow", "wide"] as const;
+const AIR_MISSION_KINDS = [
+  "moveTo",
+  "defendShip",
+  "interceptSquadron",
+  "patrolArea",
+  "strikeShip",
+  "recall",
+] as const;
+const PERCEPTION_MODES = ["unaware", "acquiring", "tracking", "lost", "searching"] as const;
+const FLEET_AI_ROLES = ["screen", "escort", "line"] as const;
+const FLEET_AI_PHASES = ["forming", "securing", "engaging", "evading", "withdrawing", "searching"] as const;
 
 const SHIP_CLASS_ID_SET = new Set<string>(SHIP_CLASS_IDS);
 const GAME_PORT_SET = new Set<number>(LAN_GAME_PORTS);
-const SLOT_KEY_SET = new Set<string>(LAN_BUILD_SLOT_KEYS);
 
 type UnknownRecord = Record<string, unknown>;
 
 function isRecord(value: unknown): value is UnknownRecord {
   return typeof value === "object" && value !== null && !Array.isArray(value);
+}
+
+function hasExactKeys(value: UnknownRecord, allowed: readonly string[]): boolean {
+  const keys = Object.keys(value);
+  return keys.length === allowed.length && keys.every((key) => (allowed as readonly string[]).includes(key));
+}
+
+function hasAllowedKeys(value: UnknownRecord, allowed: readonly string[]): boolean {
+  return Object.keys(value).every((key) => (allowed as readonly string[]).includes(key));
 }
 
 function readFiniteNumber(
@@ -147,6 +166,7 @@ function readEnum<T extends string>(value: unknown, allowed: readonly T[]): T | 
 
 function readVec3(value: unknown): { x: number; y: number; z: number } | undefined {
   if (!isRecord(value)) return undefined;
+  if (!hasExactKeys(value, ["x", "y", "z"])) return undefined;
   const x = readFiniteNumber(value.x);
   const y = readFiniteNumber(value.y);
   const z = readFiniteNumber(value.z);
@@ -186,19 +206,18 @@ function readSlotArray(value: unknown, maxItems: number, maxItemLength: number):
 
 function readLanBuildDescriptor(value: unknown): LanBuildDescriptor | undefined {
   if (!isRecord(value)) return undefined;
+  if (!hasExactKeys(value, ["buildId", "buildName", "shipClassId", "slots"])) return undefined;
   const buildId = readNonEmptyString(value.buildId, 64);
   const buildName = readNonEmptyString(value.buildName, 24);
   const shipClassId = readNonEmptyString(value.shipClassId, 32);
   if (!buildId || !buildName || !shipClassId || !SHIP_CLASS_ID_SET.has(shipClassId)) return undefined;
   if (!isRecord(value.slots)) return undefined;
+  if (!hasAllowedKeys(value.slots, LAN_BUILD_SLOT_KEYS)) return undefined;
   const slots = {} as LanBuildDescriptor["slots"];
   for (const key of LAN_BUILD_SLOT_KEYS) {
     const array = readSlotArray(value.slots[key], 16, 64);
     if (!array) return undefined;
     slots[key] = array;
-  }
-  for (const key of Object.keys(value.slots)) {
-    if (!SLOT_KEY_SET.has(key)) return undefined;
   }
   return {
     buildId,
@@ -210,6 +229,7 @@ function readLanBuildDescriptor(value: unknown): LanBuildDescriptor | undefined 
 
 function readLobbyPlayer(value: unknown): LobbyPlayerPayload | undefined {
   if (!isRecord(value)) return undefined;
+  if (!hasAllowedKeys(value, ["peerId", "commanderName", "role", "build", "ready", "connected"])) return undefined;
   const peerId = readNonEmptyString(value.peerId, 64);
   const commanderName = readNonEmptyString(value.commanderName, 32);
   const role = readEnum(value.role, ["host", "guest"] as const);
@@ -223,6 +243,7 @@ function readLobbyPlayer(value: unknown): LobbyPlayerPayload | undefined {
 
 function readLobbySnapshot(value: unknown): LobbySnapshotPayload | undefined {
   if (!isRecord(value)) return undefined;
+  if (!hasExactKeys(value, ["phase", "roomName", "hostPeerId", "players"])) return undefined;
   const phase = readEnum(value.phase, LAN_ROOM_PHASES);
   const roomName = readNonEmptyString(value.roomName, 48);
   const hostPeerId = readNonEmptyString(value.hostPeerId, 64);
@@ -241,6 +262,7 @@ function readLobbySnapshot(value: unknown): LobbySnapshotPayload | undefined {
 
 function readDiscoveryProbePayload(value: unknown): DiscoveryProbePayload | undefined {
   if (!isRecord(value)) return undefined;
+  if (!hasExactKeys(value, ["peerId", "commanderName"])) return undefined;
   const peerId = readNonEmptyString(value.peerId, 64);
   const commanderName = readNonEmptyString(value.commanderName, 32);
   return peerId && commanderName ? { peerId, commanderName } : undefined;
@@ -248,6 +270,7 @@ function readDiscoveryProbePayload(value: unknown): DiscoveryProbePayload | unde
 
 function readRoomAnnouncementPayload(value: unknown): RoomAnnouncementPayload | undefined {
   if (!isRecord(value)) return undefined;
+  if (!hasExactKeys(value, ["roomName", "hostName", "discoveryPort", "port", "playerCount", "capacity", "phase"])) return undefined;
   const roomName = readNonEmptyString(value.roomName, 48);
   const hostName = readNonEmptyString(value.hostName, 32);
   const discoveryPort = readFiniteNumber(value.discoveryPort, { integer: true, min: LAN_DISCOVERY_PORT, max: LAN_DISCOVERY_PORT });
@@ -272,6 +295,7 @@ function readRoomAnnouncementPayload(value: unknown): RoomAnnouncementPayload | 
 
 function readJoinRequestPayload(value: unknown): JoinRequestPayload | undefined {
   if (!isRecord(value)) return undefined;
+  if (!hasAllowedKeys(value, ["peerId", "commanderName", "expectedGameVersion", "expectedContentHash", "build"])) return undefined;
   const peerId = readNonEmptyString(value.peerId, 64);
   const commanderName = readNonEmptyString(value.commanderName, 32);
   const expectedGameVersion = readNonEmptyString(value.expectedGameVersion, 32);
@@ -290,6 +314,7 @@ function readJoinRequestPayload(value: unknown): JoinRequestPayload | undefined 
 
 function readJoinAcceptedPayload(value: unknown): JoinAcceptedPayload | undefined {
   if (!isRecord(value)) return undefined;
+  if (!hasExactKeys(value, ["peerId", "assignedRole", "lobby"])) return undefined;
   const peerId = readNonEmptyString(value.peerId, 64);
   const lobby = readLobbySnapshot(value.lobby);
   return peerId && lobby && value.assignedRole === "guest"
@@ -299,6 +324,7 @@ function readJoinAcceptedPayload(value: unknown): JoinAcceptedPayload | undefine
 
 function readJoinRejectedPayload(value: unknown): JoinRejectedPayload | undefined {
   if (!isRecord(value)) return undefined;
+  if (!hasAllowedKeys(value, ["reason", "detail"])) return undefined;
   const reason = readEnum(value.reason, LAN_REJECTION_REASONS);
   const detail = value.detail === undefined ? undefined : readNonEmptyString(value.detail, 96);
   if (!reason || (value.detail !== undefined && !detail)) return undefined;
@@ -307,12 +333,14 @@ function readJoinRejectedPayload(value: unknown): JoinRejectedPayload | undefine
 
 function readLobbyUpdatePayload(value: unknown): LobbyUpdatePayload | undefined {
   if (!isRecord(value)) return undefined;
+  if (!hasExactKeys(value, ["lobby"])) return undefined;
   const lobby = readLobbySnapshot(value.lobby);
   return lobby ? { lobby } : undefined;
 }
 
 function readReadyRequestPayload(value: unknown): ReadyRequestPayload | undefined {
   if (!isRecord(value)) return undefined;
+  if (!hasAllowedKeys(value, ["peerId", "ready", "build"])) return undefined;
   const peerId = readNonEmptyString(value.peerId, 64);
   const ready = readBoolean(value.ready);
   if (!peerId || ready === undefined) return undefined;
@@ -323,6 +351,7 @@ function readReadyRequestPayload(value: unknown): ReadyRequestPayload | undefine
 
 function readStartMatchPayload(value: unknown): StartMatchPayload | undefined {
   if (!isRecord(value)) return undefined;
+  if (!hasExactKeys(value, ["seed", "serverTick", "hostShipId", "guestShipId"])) return undefined;
   const seed = readFiniteNumber(value.seed, { integer: true, min: 0, max: Number.MAX_SAFE_INTEGER });
   const serverTick = readFiniteNumber(value.serverTick, { integer: true, min: 0, max: Number.MAX_SAFE_INTEGER });
   const hostShipId = readNonEmptyString(value.hostShipId, 64);
@@ -331,8 +360,122 @@ function readStartMatchPayload(value: unknown): StartMatchPayload | undefined {
   return { seed, serverTick, hostShipId, guestShipId };
 }
 
+function readAirMissionArea(value: unknown): { center: { x: number; y: number; z: number }; radius: number } | undefined {
+  if (!isRecord(value)) return undefined;
+  if (!hasExactKeys(value, ["center", "radius"])) return undefined;
+  const center = readVec3(value.center);
+  const radius = readFiniteNumber(value.radius, { min: 0, max: 100_000 });
+  if (!center || radius === undefined) return undefined;
+  return { center, radius };
+}
+
+function readAirMissionCommand(value: unknown): NonNullable<ControlCommand["airMission"]> | undefined {
+  if (!isRecord(value)) return undefined;
+  if (!hasAllowedKeys(value, ["squadronId", "kind", "targetId", "targetIds", "area"])) return undefined;
+  const squadronId = readNonEmptyString(value.squadronId, 64);
+  const kind = readEnum(value.kind, AIR_MISSION_KINDS);
+  const targetId = value.targetId === undefined ? undefined : readNonEmptyString(value.targetId, 64);
+  const targetIds = value.targetIds === undefined ? undefined : readJsonStringArray(value.targetIds, 16, 64);
+  const area = value.area === undefined ? undefined : readAirMissionArea(value.area);
+  if (!squadronId || !kind) return undefined;
+  if (value.targetId !== undefined && !targetId) return undefined;
+  if (value.targetIds !== undefined && !targetIds) return undefined;
+  if (value.area !== undefined && !area) return undefined;
+
+  const requiresTarget = kind === "strikeShip" || kind === "interceptSquadron";
+  const requiresArea = kind === "moveTo" || kind === "patrolArea";
+  const forbidsTarget = kind === "moveTo" || kind === "recall";
+  const forbidsArea = kind === "recall";
+
+  if (requiresTarget && !targetId && (!targetIds || targetIds.length === 0)) return undefined;
+  if (requiresArea && !area) return undefined;
+  if (forbidsTarget && (targetId || targetIds?.length)) return undefined;
+  if (forbidsArea && area) return undefined;
+
+  return {
+    squadronId,
+    kind,
+    ...(targetId ? { targetId } : {}),
+    ...(targetIds ? { targetIds } : {}),
+    ...(area ? { area } : {}),
+  };
+}
+
+function readPerceptionTelemetry(value: unknown): NonNullable<ControlCommand["perception"]> | undefined {
+  if (!isRecord(value)) return undefined;
+  if (!hasAllowedKeys(value, ["mode", "confidence", "lastObservedAt", "estimatedPosition"])) return undefined;
+  const mode = readEnum(value.mode, PERCEPTION_MODES);
+  const confidence = readFiniteNumber(value.confidence, { min: 0, max: 1 });
+  const lastObservedAt = value.lastObservedAt === undefined
+    ? undefined
+    : readFiniteNumber(value.lastObservedAt, { min: 0 });
+  const estimatedPosition = value.estimatedPosition === undefined ? undefined : readVec3(value.estimatedPosition);
+  if (!mode || confidence === undefined) return undefined;
+  if (value.lastObservedAt !== undefined && lastObservedAt === undefined) return undefined;
+  if (value.estimatedPosition !== undefined && !estimatedPosition) return undefined;
+  return {
+    mode,
+    confidence,
+    ...(lastObservedAt !== undefined ? { lastObservedAt } : {}),
+    ...(estimatedPosition ? { estimatedPosition } : {}),
+  };
+}
+
+function readAiDecisionTelemetry(value: unknown): NonNullable<ControlCommand["aiDecision"]> | undefined {
+  if (!isRecord(value)) return undefined;
+  if (!hasAllowedKeys(value, ["role", "phase", "targetId", "desiredHeading", "throttle", "fireIntent", "avoidanceReason"])) return undefined;
+  const role = readEnum(value.role, FLEET_AI_ROLES);
+  const phase = readEnum(value.phase, FLEET_AI_PHASES);
+  const targetId = value.targetId === undefined ? undefined : readNonEmptyString(value.targetId, 64);
+  const desiredHeading = readFiniteNumber(value.desiredHeading);
+  const throttle = readFiniteNumber(value.throttle, { min: -1, max: 1 });
+  const fireIntent = readBoolean(value.fireIntent);
+  const avoidanceReason = value.avoidanceReason === undefined ? undefined : readNonEmptyString(value.avoidanceReason, 96);
+  if (!role || !phase || desiredHeading === undefined || throttle === undefined || fireIntent === undefined) return undefined;
+  if (value.targetId !== undefined && !targetId) return undefined;
+  if (value.avoidanceReason !== undefined && !avoidanceReason) return undefined;
+  return {
+    role,
+    phase,
+    desiredHeading,
+    throttle,
+    fireIntent,
+    ...(targetId ? { targetId } : {}),
+    ...(avoidanceReason ? { avoidanceReason } : {}),
+  };
+}
+
+function readJsonStringArray(value: unknown, maxItems: number, maxItemLength: number): string[] | undefined {
+  if (!Array.isArray(value) || value.length > maxItems) return undefined;
+  const normalized: string[] = [];
+  for (const entry of value) {
+    const item = readNonEmptyString(entry, maxItemLength);
+    if (!item) return undefined;
+    normalized.push(item);
+  }
+  return normalized;
+}
+
 export function validateRemoteCommand(value: unknown): ControlCommand | undefined {
   if (!isRecord(value)) return undefined;
+  if (!hasAllowedKeys(value, [
+    "throttle",
+    "rudder",
+    "aimPoint",
+    "fire",
+    "weaponSlot",
+    "repairHull",
+    "damageControlPriority",
+    "ammoType",
+    "torpedoSpread",
+    "activateSmoke",
+    "activateHydro",
+    "deployDepthCharge",
+    "airMission",
+    "airMissions",
+    "perception",
+    "aiDecision",
+  ])) return undefined;
   const throttle = readFiniteNumber(value.throttle);
   const rudder = readFiniteNumber(value.rudder);
   const aimPoint = readVec3(value.aimPoint);
@@ -349,6 +492,14 @@ export function validateRemoteCommand(value: unknown): ControlCommand | undefine
   const activateSmoke = value.activateSmoke === undefined ? undefined : readBoolean(value.activateSmoke);
   const activateHydro = value.activateHydro === undefined ? undefined : readBoolean(value.activateHydro);
   const deployDepthCharge = value.deployDepthCharge === undefined ? undefined : readBoolean(value.deployDepthCharge);
+  const airMission = value.airMission === undefined ? undefined : readAirMissionCommand(value.airMission);
+  const airMissions = value.airMissions === undefined
+    ? undefined
+    : (Array.isArray(value.airMissions) && value.airMissions.length <= 16
+        ? value.airMissions.map(readAirMissionCommand)
+        : undefined);
+  const perception = value.perception === undefined ? undefined : readPerceptionTelemetry(value.perception);
+  const aiDecision = value.aiDecision === undefined ? undefined : readAiDecisionTelemetry(value.aiDecision);
 
   if (
     (value.weaponSlot !== undefined && !weaponSlot)
@@ -359,6 +510,10 @@ export function validateRemoteCommand(value: unknown): ControlCommand | undefine
     || (value.activateSmoke !== undefined && activateSmoke === undefined)
     || (value.activateHydro !== undefined && activateHydro === undefined)
     || (value.deployDepthCharge !== undefined && deployDepthCharge === undefined)
+    || (value.airMission !== undefined && !airMission)
+    || (value.airMissions !== undefined && (!airMissions || airMissions.some((entry) => !entry)))
+    || (value.perception !== undefined && !perception)
+    || (value.aiDecision !== undefined && !aiDecision)
   ) {
     return undefined;
   }
@@ -376,11 +531,16 @@ export function validateRemoteCommand(value: unknown): ControlCommand | undefine
     ...(activateSmoke !== undefined ? { activateSmoke } : {}),
     ...(activateHydro !== undefined ? { activateHydro } : {}),
     ...(deployDepthCharge !== undefined ? { deployDepthCharge } : {}),
+    ...(airMission ? { airMission } : {}),
+    ...(airMissions ? { airMissions: airMissions as NonNullable<ControlCommand["airMissions"]> } : {}),
+    ...(perception ? { perception } : {}),
+    ...(aiDecision ? { aiDecision } : {}),
   };
 }
 
 function readInputFramePayload(value: unknown): InputFramePayload | undefined {
   if (!isRecord(value)) return undefined;
+  if (!hasExactKeys(value, ["peerId", "inputSequence", "command"])) return undefined;
   const peerId = readNonEmptyString(value.peerId, 64);
   const inputSequence = readFiniteNumber(value.inputSequence, { integer: true, min: 0, max: Number.MAX_SAFE_INTEGER });
   const command = validateRemoteCommand(value.command);
@@ -390,6 +550,20 @@ function readInputFramePayload(value: unknown): InputFramePayload | undefined {
 
 function readPlayerSnapshotPayload(value: unknown): PlayerSnapshotPayload | undefined {
   if (!isRecord(value)) return undefined;
+  if (!hasExactKeys(value, [
+    "controlledShipId",
+    "serverTick",
+    "lastProcessedInputSequence",
+    "time",
+    "self",
+    "friendlies",
+    "contacts",
+    "projectiles",
+    "torpedoes",
+    "aircraft",
+    "objective",
+    "events",
+  ])) return undefined;
   const controlledShipId = readNonEmptyString(value.controlledShipId, 64);
   const serverTick = readFiniteNumber(value.serverTick, { integer: true, min: 0, max: Number.MAX_SAFE_INTEGER });
   const lastProcessedInputSequence = readFiniteNumber(value.lastProcessedInputSequence, { integer: true, min: 0, max: Number.MAX_SAFE_INTEGER });
@@ -436,6 +610,7 @@ function readPlayerSnapshotPayload(value: unknown): PlayerSnapshotPayload | unde
 
 function readPeerDisconnectedPayload(value: unknown): PeerDisconnectedPayload | undefined {
   if (!isRecord(value)) return undefined;
+  if (!hasExactKeys(value, ["peerId", "reason", "fallback"])) return undefined;
   const peerId = readNonEmptyString(value.peerId, 64);
   const reason = readEnum(value.reason, LAN_DISCONNECT_REASONS);
   const fallback = readEnum(value.fallback, LAN_DISCONNECT_FALLBACKS);
@@ -444,6 +619,7 @@ function readPeerDisconnectedPayload(value: unknown): PeerDisconnectedPayload | 
 
 function readReturnToLobbyPayload(value: unknown): ReturnToLobbyPayload | undefined {
   if (!isRecord(value)) return undefined;
+  if (!hasAllowedKeys(value, ["reason", "lobby"])) return undefined;
   const reason = readEnum(value.reason, LAN_RETURN_TO_LOBBY_REASONS);
   if (!reason) return undefined;
   const lobby = value.lobby === undefined ? undefined : readLobbySnapshot(value.lobby);
@@ -482,6 +658,16 @@ function readPayload(type: typeof LAN_MESSAGE_TYPES[number], payload: unknown): 
 
 export function parseLanMessageValue(value: unknown): LanMessage | undefined {
   if (!isRecord(value)) return undefined;
+  if (!hasExactKeys(value, [
+    "protocolVersion",
+    "gameVersion",
+    "contentHash",
+    "roomId",
+    "sequence",
+    "sentAt",
+    "type",
+    "payload",
+  ])) return undefined;
   const protocolVersion = readFiniteNumber(value.protocolVersion, {
     integer: true,
     min: LAN_PROTOCOL_VERSION,

@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import type { ControlCommand } from "../src/sim/types";
 import {
   LAN_CONTENT_HASH,
+  LAN_FINGERPRINT_SOURCE,
   LAN_GAME_VERSION,
 } from "../src/net/networkFingerprint";
 import {
@@ -82,6 +83,17 @@ const validCommand: ControlCommand = {
   deployDepthCharge: false,
 };
 
+const validAirMission = {
+  squadronId: "air-squadron-01",
+  kind: "patrolArea" as const,
+  targetId: "target-alpha",
+  targetIds: ["target-alpha", "target-bravo"],
+  area: {
+    center: { x: 400, y: 120, z: -250 },
+    radius: 800,
+  },
+};
+
 describe("LAN protocol", () => {
   it("round-trips a valid join request", () => {
     const encoded = encodeLanMessage(validJoinRequest);
@@ -116,6 +128,23 @@ describe("LAN protocol", () => {
       },
     })).toBeUndefined();
   });
+
+  it("rejects envelopes with unexpected own properties", () => {
+    expect(parseLanMessage({
+      ...validJoinRequest,
+      unexpected: true,
+    })).toBeUndefined();
+  });
+
+  it("rejects payloads with unexpected own properties", () => {
+    expect(parseLanMessage({
+      ...validJoinRequest,
+      payload: {
+        ...validJoinRequest.payload,
+        unexpected: true,
+      },
+    })).toBeUndefined();
+  });
 });
 
 describe("remote control command validation", () => {
@@ -147,5 +176,95 @@ describe("remote control command validation", () => {
       ...validCommand,
       ammoType: "sap",
     })).toBeUndefined();
+  });
+
+  it("round-trips a validated single air mission", () => {
+    expect(validateRemoteCommand({
+      ...validCommand,
+      airMission: validAirMission,
+    })).toEqual({
+      ...validCommand,
+      airMission: validAirMission,
+    });
+  });
+
+  it("round-trips a validated air mission list", () => {
+    expect(validateRemoteCommand({
+      ...validCommand,
+      airMissions: [
+        validAirMission,
+        {
+          squadronId: "air-squadron-02",
+          kind: "recall",
+        },
+      ],
+    })).toEqual({
+      ...validCommand,
+      airMissions: [
+        validAirMission,
+        {
+          squadronId: "air-squadron-02",
+          kind: "recall",
+        },
+      ],
+    });
+  });
+
+  it("rejects malformed or oversized air mission payloads", () => {
+    expect(validateRemoteCommand({
+      ...validCommand,
+      airMission: {
+        ...validAirMission,
+        area: {
+          ...validAirMission.area,
+          radius: Number.POSITIVE_INFINITY,
+        },
+      },
+    })).toBeUndefined();
+
+    expect(validateRemoteCommand({
+      ...validCommand,
+      airMissions: Array.from({ length: 17 }, (_, index) => ({
+        squadronId: `air-${index}`,
+        kind: "recall" as const,
+      })),
+    })).toBeUndefined();
+  });
+
+  it("rejects unexpected own properties on commands and nested objects", () => {
+    expect(validateRemoteCommand({
+      ...validCommand,
+      unexpected: true,
+    })).toBeUndefined();
+
+    expect(validateRemoteCommand({
+      ...validCommand,
+      aimPoint: {
+        ...validCommand.aimPoint,
+        unexpected: true,
+      },
+    })).toBeUndefined();
+
+    expect(validateRemoteCommand({
+      ...validCommand,
+      airMission: {
+        ...validAirMission,
+        unexpected: true,
+      },
+    })).toBeUndefined();
+  });
+});
+
+describe("network fingerprint", () => {
+  it("uses a stable LAN hash format", () => {
+    expect(LAN_CONTENT_HASH).toMatch(/^lan-1-[a-z0-9]+$/);
+  });
+
+  it("includes protocol-visible catalog and slot schema details in the canonical source", () => {
+    expect(LAN_FINGERPRINT_SOURCE).toContain("mainGun-common");
+    expect(LAN_FINGERPRINT_SOURCE).toContain("\"fletcher\"");
+    expect(LAN_FINGERPRINT_SOURCE).toContain("\"mainGun\":5");
+    expect(LAN_FINGERPRINT_SOURCE).toContain("\"starterSlots\"");
+    expect(LAN_FINGERPRINT_SOURCE).toContain("\"minimumSeaReadySlotCounts\"");
   });
 });
