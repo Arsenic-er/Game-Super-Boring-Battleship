@@ -12,8 +12,11 @@ Replace simplified procedural hull presentation one ship class at a time without
 - Runtime ship art uses binary `.glb` only. Blender/FBX source files stay in the private asset repository.
 - Never import models ripped from commercial games. Every external model requires a source URL, creator, licence, download date, checksum, and modification history.
 - The existing procedural fleet remains a permanent fallback.
-- Windows portable packages are built and retained on the server; they are not copied to the user's PC by Codex.
-- Browser testing is delivered through `http://127.0.0.1:4174/` over SSH tunnelling.
+- Delivery policy updated for 0.7.0: Windows builds are complete game directories built
+  on the server, verified, and copied to the user's PC as the one latest local directory.
+  This supersedes every earlier package-retention and web-handoff instruction.
+- User-visible validation uses the packaged desktop game; the handoff contains no web
+  endpoint, forwarding command, or server login command.
 - Single-player battles have a 20-minute hard limit and are tuned toward a 15–20 minute normal duration.
 
 ## Recommended architecture
@@ -94,7 +97,8 @@ The preferred atlas is 1024 px with point sampling. LOD thresholds are based on 
 - Combat and dock tests assert the same visual factory and component hardpoint mapping.
 - Lifecycle tests assert partial-load and ship disposal release nodes, meshes, materials, and textures.
 - Visual checks cover menu, dock, setup, battle, scope, tactical map, and developer view at 1440x900 and 1280x720.
-- Full gate: `git diff --check`, `npm test -- --run`, `npm run build`, HTTP 200, then server-only Windows portable packaging after visual/gameplay stability.
+- Full gate: `git diff --check`, `npm test -- --run`, `npm run build`, and
+  `npm run assets:validate`, followed by a verified complete Windows directory build.
 
 ## Delivery order
 
@@ -104,4 +108,4 @@ The preferred atlas is 1024 px with point sampling. LOD thresholds are based on 
 4. Hardpoint and collider adapters.
 5. Licensed Fletcher benchmark.
 6. Cleveland and Yamato benchmarks.
-7. Remaining classes, balance tuning, AI/terrain work, and server-only portable release.
+7. Remaining classes, balance tuning, AI/terrain work, and complete-directory release.

@@ -18,7 +18,9 @@
 - Render meshes never become simulation colliders.
 - LOD0/1/2 budgets are 45k/15k/4k maximum triangles and 6/4/2 maximum materials.
 - Work stays on `main` on `ubuntu@150.65.181.188`; push only on explicit request.
-- Windows packages remain on the server.
+- Delivery policy updated for 0.7.0: build the complete Windows game directory on the
+  server, verify it, then replace the user's latest local directory; a ZIP is optional.
+  This supersedes every earlier package-retention and web-handoff instruction.
 - Battle hard limit is 20 minutes; balancing target is 15–20 minutes.
 
 ---
@@ -36,7 +38,7 @@
 
 - [ ] Add a simulation test that advances a neutral battle across the old ten-minute boundary and proves it remains active until the twenty-minute boundary.
 - [ ] Run the focused test and confirm it fails because the current limit is ten minutes.
-- [ ] Change the constant to `20 * 60` and update operational documentation to `.188`, server-only packaging, and the 15–20 minute target.
+- [ ] Change the constant to `20 * 60` and update operational documentation to `.188`, complete-directory delivery, and the 15–20 minute target.
 - [ ] Run the focused test and confirm it passes.
 - [ ] Commit as `Arsenic-er <302726993@qq.com>`.
 
@@ -179,6 +181,7 @@
 - [ ] Update balance defaults without making offline 100-seed reports part of every unit-test run.
 - [ ] Run at least 100 paired seeds for important matchups after model work no longer changes combat visibility.
 - [ ] Capture visual references at 1440x900 and 1280x720 for menu, dock, setup, combat, scope, tactical map, and developer view.
-- [ ] Run `git diff --check`, `npm test -- --run`, `npm run build`, and confirm HTTP 200.
-- [ ] Run `npm run desktop:dist` on the server only; retain the portable artifact under the server release directory and do not copy it locally.
+- [ ] Run `git diff --check`, `npm test -- --run`, `npm run build`, and `npm run assets:validate`.
+- [ ] Run `npm run desktop:dist` on the server, verify the complete directory, and replace
+  the user's latest local directory; optionally run `npm run desktop:zip` for publication.
 - [ ] Commit; push only after explicit user instruction.

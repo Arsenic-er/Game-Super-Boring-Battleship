@@ -173,8 +173,8 @@ Key commits:
    developer mode at 1440x900 and 1280x720.
 3. Run at least 100 paired seeds for important mirror/class matchups; investigate Kagero
    versus Fletcher and heavy-ship timeout bias.
-4. Tune the mixed-fleet match toward a 6–9 minute median and at least 70% non-timeout endings.
+4. Tune the mixed-fleet match toward the 15–20 minute target and at least 70% non-timeout endings.
 5. Deepen terrain navigation, cover use, delayed shared spotting and multiple objectives.
 6. Show complete installed loadouts in the dockyard 3D preview.
-7. Package a new portable Windows build only after the single-player loop and visual
-   baseline remain stable.
+7. Package a complete Windows game directory only after the single-player loop and
+   visual baseline remain stable; optionally wrap that directory in a ZIP for release.

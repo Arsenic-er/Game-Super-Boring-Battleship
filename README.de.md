@@ -2,18 +2,19 @@
 
 # Super Boring Battleship Game
 
-> Ein leichtgewichtiges 3D-Seekampfspiel des Zweiten Weltkriegs für Einzelspieler von **koko**, mit bewusst bedächtiger Schiffsführung, gut lesbarer Ballistik und modularen Schäden.
+> Ein leichtgewichtiges 3D-Seekampfspiel des Zweiten Weltkriegs für Einzelspieler und zwei Spieler im LAN von **koko**, mit bewusst bedächtiger Schiffsführung, gut lesbarer Ballistik und modularen Schäden.
 
 [Neueste Windows-Verzeichnisversion (ZIP) herunterladen](https://github.com/Arsenic-er/Game-Super-Boring-Battleship/releases/latest)
 
 ## Über das Spiel
 
-Kommandiere Zerstörer, leichte Kreuzer und Schlachtschiffe in zehnminütigen KI-Gefechten oder zeitlich unbegrenzten Seeerprobungen. Manövriere dein Schiff, organisiere die Schadensabwehr und setze Geschütze, Torpedos, Wasserbomben sowie Trägerflugzeuge ein. Das Projekt ist für durchschnittliche PCs ausgelegt und nutzt TypeScript, Babylon.js, Vite und Electron.
+Version 0.7.0 bietet Einzelgefechte gegen die KI, gemeinsame KI-Gefechte für zwei Spieler und zeitlich unbegrenzte Seeerprobungen; ein normales Gefecht ist auf 15–20 Minuten ausgelegt. Kommandiere Zerstörer, leichte Kreuzer und Schlachtschiffe, organisiere die Schadensabwehr und setze Geschütze, Torpedos, Wasserbomben sowie Trägerflugzeuge ein. Das Projekt ist für durchschnittliche PCs ausgelegt und nutzt TypeScript, Babylon.js, Vite und Electron.
 
 Das Spiel ist noch ein Prototyp in Entwicklung. Grafik, Balance, Schiffsmodelle und Fortschrittssystem werden weiter verbessert.
 
 ## Aktuelle Funktionen
 
+- LAN-Koop für zwei Spieler mit Raumsuche, manueller Eingabe der IPv4-Adresse als Ausweichverbindung, Auswahl gespeicherter Ausrüstungen und autoritativer Host-Simulation gegen die KI.
 - Historisch angelehnte Maschinenbefehle, langsame Ruderverstellung, Fahrtverlust in Kurven und Modulschäden.
 - Sichtbare Geschossbahnen, Streuung, Nachladen, unabhängige Turmausrichtung, HE/AP-Durchschlag und Abteilungsschäden.
 - Torpedosektoren, schmale/breite Fächer, Scharfschaltentfernung, Reichweite, Vorhalt und beschädigbare Werfer.

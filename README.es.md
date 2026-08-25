@@ -2,18 +2,19 @@
 
 # Super Boring Battleship Game
 
-> Juego ligero de combate naval 3D de la Segunda Guerra Mundial para un jugador, creado por **koko**, con maniobra deliberada, balística legible y daños modulares.
+> Juego ligero de combate naval 3D de la Segunda Guerra Mundial para un jugador o para dos jugadores en LAN, creado por **koko**, con maniobra deliberada, balística legible y daños modulares.
 
 [Descargar la última versión de directorio para Windows (ZIP)](https://github.com/Arsenic-er/Game-Super-Boring-Battleship/releases/latest)
 
 ## Acerca del juego
 
-Dirige destructores, cruceros ligeros y acorazados en batallas de diez minutos contra la IA o en pruebas de mar sin límite. Maniobra el buque, organiza el control de daños y emplea artillería, torpedos, cargas de profundidad y aviación embarcada. El proyecto prioriza equipos modestos y usa TypeScript, Babylon.js, Vite y Electron.
+La versión 0.7.0 ofrece combates individuales contra la IA, cooperación contra la IA para dos jugadores y pruebas de mar sin límite; la duración objetivo de una batalla normal es de 15–20 minutos. Dirige destructores, cruceros ligeros y acorazados, organiza el control de daños y emplea artillería, torpedos, cargas de profundidad y aviación embarcada. El proyecto prioriza equipos modestos y usa TypeScript, Babylon.js, Vite y Electron.
 
 Todavía es un prototipo en desarrollo. Los gráficos, el equilibrio, los modelos y la progresión seguirán mejorando.
 
 ## Funciones actuales
 
+- Modo cooperativo LAN para dos jugadores con búsqueda de salas, conexión alternativa por IPv4 manual, selección de configuraciones guardadas y simulación autoritativa del anfitrión contra la IA.
 - Órdenes de máquinas, timón gradual, pérdida de velocidad en giro y respuesta al daño de módulos.
 - Trayectorias visibles, dispersión, recarga, torretas independientes, penetración HE/AP y daño por compartimentos.
 - Arcos de torpedo, abanicos estrecho/amplio, distancia de armado, alcance, predicción y daños del lanzador.

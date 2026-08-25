@@ -20,7 +20,7 @@
 - `contextIsolation: true`, `nodeIntegration: false`, and `sandbox: true` remain enabled.
 - Browser preview exposes disabled LAN hosting/search controls with a desktop-required explanation.
 - Multiplayer copy is translated for `zh-CN`, `zh-TW`, `en`, `ja`, `es`, `de`, and `ru`.
-- The server preview service remains stopped. Completed user-visible batches copy one complete Windows game directory to `C:\Users\jiang\Documents\战舰\release\battleship-latest-windows-x64` and atomically replace the previous local directory after verification.
+- Validation is desktop-package-only. Completed user-visible batches copy one complete Windows game directory to `C:\Users\jiang\Documents\战舰\release\battleship-latest-windows-x64` and atomically replace the previous local directory after verification.
 - Production behavior follows strict red-green-refactor TDD and each task is committed by `Arsenic-er <302726993@qq.com>`.
 
 ---

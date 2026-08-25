@@ -17,8 +17,9 @@ sub-agent transcripts, temporary patches, credentials, or repeated status update
 - A lightweight 3D World War II naval-combat game for ordinary PCs.
 - Realism is the reference point, but pacing and readability may be compressed in
   the style of World of Warships.
-- Finish the complete single-player human-versus-AI loop before LAN multiplayer,
-  online multiplayer, submarines, or reinforcement-learning training.
+- Preserve the complete single-player human-versus-AI loop while expanding the
+  shipped two-player LAN co-op mode; online multiplayer, submarines, and
+  reinforcement-learning training remain later work.
 - An unpacked Windows x64 game directory is the release and local-test target. Players
   extract its ZIP completely and launch the EXE without an installer; the EXE, `resources`
   directory and DLL files must remain together.
@@ -32,17 +33,13 @@ sub-agent transcripts, temporary patches, credentials, or repeated status update
 ## 2. Canonical development workflow
 
 - Development source of truth is the Linux server, not the Windows staging folder.
-- Server project: `/home/ubuntu/battleship` on `ubuntu@150.65.181.202`.
+- Server project: `/home/ubuntu/battleship` on `ubuntu@150.65.181.188`.
 - Server asset archive: `/home/ubuntu/battleship-assets`.
 - Main development branch: `main`; obsolete historical branches were removed earlier.
-- Test tunnel:
-
-  ```bash
-  ssh -N -L 4174:127.0.0.1:4174 ubuntu@150.65.181.202
-  ```
-
-- Browser test URL: `http://127.0.0.1:4174/`.
-- Every user-facing test handoff must include both the test URL and SSH command.
+- Validation is performed through tests and packaged desktop builds. User-facing
+  handoff contains no web endpoint, forwarding command, or server login command.
+- Every completed development batch must copy one verified complete Windows game
+  directory to the user's PC.
 - Only the latest local `battleship-latest-windows-x64` game directory should be retained;
   the previous directory may be atomically replaced after a new package is verified.
 - Git commits must use `Arsenic-er <302726993@qq.com>` so the public contributor list
@@ -208,7 +205,7 @@ sub-agent transcripts, temporary patches, credentials, or repeated status update
 - Expand fleet composition rules and scenario objectives after 3v3 stability.
 - Deepen terrain navigation, cover seeking, shared spotting delays and tactical withdrawal.
 - Run larger paired-seed balance matrices; current open balance concern is Kagero versus Fletcher.
-- Tune battles toward a 6–9 minute median with fewer timeout endings.
+- Tune normal battles toward the 15–20 minute target with fewer timeout endings.
 - Capture visual-regression baselines at 1440x900 and 1280x720.
 - Produce and publish a fresh Windows directory build, optionally delivered as a ZIP, only
   after the current single-player loop and asset pipeline are stable.
@@ -219,7 +216,8 @@ sub-agent transcripts, temporary patches, credentials, or repeated status update
 2. Install Node.js 24.x and run `npm install` in the game repository.
 3. Read this file, `docs/DEVELOPMENT_STATUS.md`, `docs/DEVELOPMENT_LOG.md`,
    `docs/ARCHITECTURE.md`, and the asset repository's `PAUSE_HANDOFF.md`.
-4. Run `npm test -- --run`, `npm run build`, and start Vite on `127.0.0.1:4174`.
+4. Run `npm test -- --run`, `npm run build`, `npm run assets:validate`, and
+   `npm run desktop:dist`; verify the complete Windows directory before handoff.
 5. Confirm the seven-language menu, battle setup, dock/armory, battle, tactical map,
    scope and developer mode before changing systems.
 6. Preserve the two-repository boundary: buildable runtime assets remain in the game
