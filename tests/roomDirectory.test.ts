@@ -117,6 +117,40 @@ describe("RoomDirectory", () => {
     expect(valid.list().map((room) => room.roomId)).toEqual(["room-1", "private-1", "private-2"]);
   });
 
+  it("rejects ipv4 octets with leading zeroes while keeping canonical literals", () => {
+    const invalidAddresses = [
+      "001.002.003.004",
+      "01.2.3.4",
+      "00.2.3.4",
+      "000.2.3.4",
+    ];
+
+    for (const address of invalidAddresses) {
+      const directory = new RoomDirectory();
+      expect(directory.ingest(discoveredRoom({ address })), address).toBe(false);
+      expect(directory.list(), address).toEqual([]);
+    }
+
+    const directory = new RoomDirectory();
+    expect(directory.ingest(discoveredRoom({ roomId: "canonical-0", address: "0.0.0.0" }))).toBe(true);
+    expect(directory.ingest(discoveredRoom({ roomId: "canonical-10", address: "10.2.3.4", port: LAN_GAME_PORTS[1] }))).toBe(true);
+    expect(directory.ingest(discoveredRoom({ roomId: "canonical-255", address: "255.255.255.255", port: LAN_GAME_PORTS[2] }))).toBe(true);
+
+    expect(directory.ingest(discoveredRoom({
+      roomId: "canonical-10",
+      address: "010.2.3.4",
+      roomName: "Tampered Room",
+      hostName: "Tampered Host",
+      lastSeenAt: 9_999,
+    }))).toBe(false);
+
+    expect(directory.list()).toEqual([
+      discoveredRoom({ roomId: "canonical-0", address: "0.0.0.0" }),
+      discoveredRoom({ roomId: "canonical-10", address: "10.2.3.4", port: LAN_GAME_PORTS[1] }),
+      discoveredRoom({ roomId: "canonical-255", address: "255.255.255.255", port: LAN_GAME_PORTS[2] }),
+    ]);
+  });
+
   it("returns a frozen snapshot that cannot mutate internal state", () => {
     const directory = new RoomDirectory();
     expect(directory.ingest(discoveredRoom())).toBe(true);

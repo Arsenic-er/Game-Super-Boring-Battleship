@@ -75,3 +75,31 @@
 
 ### Commit
 - Review fix commit message: `Harden LAN room validation and lobby snapshots`
+
+## Review round 3
+
+### Red
+- Added a focused `RoomDirectory` regression test for non-canonical IPv4 octets.
+- Verified the failing state first with:
+  - `npx vitest run tests/roomDirectory.test.ts --reporter=verbose`
+- The intended red was:
+  - `001.002.003.004` being accepted when it should be rejected.
+- The regression also covers:
+  - invalid single-octet leading-zero forms: `01`, `00`, `000`
+  - valid canonical octets: `0`, `10`, `255`
+  - invalid replays with the same `roomId` not overwriting an already accepted canonical room.
+
+### Green
+- Tightened IPv4 validation so each octet must be either:
+  - exactly `0`, or
+  - a non-zero-prefixed decimal string matching `[1-9]\d{0,2}`
+- Numeric range is still enforced with `<= 255`.
+- This rejects forms like `001.002.003.004` and `010.2.3.4` while preserving canonical literals such as `0.0.0.0`, `10.2.3.4`, and `255.255.255.255`.
+
+### Verification
+- `npx vitest run tests/roomDirectory.test.ts --reporter=verbose`
+- `npx vitest run tests/roomDirectory.test.ts tests/lobbyState.test.ts tests/savedBuilds.test.ts tests/loadoutPolicy.test.ts --reporter=verbose`
+- `npm run build`
+
+### Commit
+- Final IPv4 normalization fix commit message: `Reject non-canonical LAN room IPv4 literals`

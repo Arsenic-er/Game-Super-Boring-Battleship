@@ -28,15 +28,18 @@ function hasBoundedText(value: unknown, maxLength: number): value is string {
   return typeof value === "string" && value.trim().length > 0 && value.length <= maxLength;
 }
 
+function isCanonicalIpv4Octet(value: string): boolean {
+  if (value === "0") return true;
+  if (!/^[1-9]\d{0,2}$/.test(value)) return false;
+  const number = Number(value);
+  return Number.isInteger(number) && number <= 255;
+}
+
 function isIpv4Literal(value: unknown): value is string {
   if (typeof value !== "string" || value.length < 7 || value.length > 15) return false;
   const parts = value.split(".");
   if (parts.length !== 4) return false;
-  return parts.every((part) => {
-    if (!/^\d{1,3}$/.test(part)) return false;
-    const number = Number(part);
-    return Number.isInteger(number) && number >= 0 && number <= 255;
-  });
+  return parts.every((part) => isCanonicalIpv4Octet(part));
 }
 
 function isDiscoveredRoom(room: DiscoveredRoom): boolean {
