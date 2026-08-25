@@ -479,6 +479,15 @@ export class Hud {
     this.gameCursor.className = `game-cursor ${style}`;
   }
 
+  showMultiplayerNotice(message: string): void {
+    const element = document.createElement("div");
+    element.className = "combat-message";
+    element.textContent = message;
+    this.feedback.prepend(element);
+    while (this.feedback.children.length > 4) this.feedback.lastElementChild?.remove();
+    window.setTimeout(() => element.remove(), 3_200);
+  }
+
   private renderModules(ship: ShipState): void {
     this.modules.innerHTML = (Object.keys(moduleLabels) as ModuleId[]).map((id) => {
       const module = ship.modules[id];

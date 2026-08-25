@@ -287,6 +287,7 @@ class LanBridge {
     this.hostDiscoverySocket = undefined;
     this.discoverySocket = undefined;
     this.hostPeerSocket = undefined;
+    this.hostPeerConnectionId = undefined;
     this.clientSocket = undefined;
     this.clientUrl = undefined;
     this.connectPromise = undefined;
@@ -297,6 +298,7 @@ class LanBridge {
     this.setTimeoutFn = options.setTimeout ?? setTimeout;
     this.clearTimeoutFn = options.clearTimeout ?? clearTimeout;
     this.socketStates = new WeakMap();
+    this.nextHostConnectionId = 0;
   }
 
   async capabilities() {
@@ -358,6 +360,7 @@ class LanBridge {
 
     const peerSocket = this.hostPeerSocket;
     this.hostPeerSocket = undefined;
+    this.hostPeerConnectionId = undefined;
     await closeWebSocket(peerSocket);
 
     const server = this.roomServer;
@@ -460,13 +463,11 @@ class LanBridge {
     if (pending) await Promise.allSettled([pending]);
   }
 
-  async send(messageJson) {
+  async send(messageJson, target = undefined) {
     assertLanBridgeStringPayload(messageJson, WS_MAX_BYTES, "message");
     const socket = this.clientSocket?.readyState === this.WebSocketClass.OPEN
       ? this.clientSocket
-      : this.hostPeerSocket?.readyState === this.WebSocketClass.OPEN
-        ? this.hostPeerSocket
-        : undefined;
+      : this.resolveHostSocketTarget(target);
     if (!socket) throw new Error("not-connected");
     await new Promise((resolve, reject) => {
       socket.send(messageJson, (error) => {
@@ -502,15 +503,20 @@ class LanBridge {
       const onListening = () => {
         server.off("error", onError);
         server.on("connection", (socket, request = { socket: {} }) => {
+          const connectionId = this.allocateHostConnectionId();
           const previousSocket = this.hostPeerSocket;
           this.hostPeerSocket = socket;
-          this.attachSocket(socket, { role: "host" });
+          this.hostPeerConnectionId = connectionId;
+          this.attachSocket(socket, { role: "host", connectionId });
           this.emit({
             type: "connected",
             role: "host",
             url: `ws://${request.socket.remoteAddress || "127.0.0.1"}:${request.socket.remotePort || 0}`,
+            connectionId,
           });
-          if (previousSocket && previousSocket !== socket) void closeWebSocket(previousSocket);
+          if (previousSocket && previousSocket !== socket) {
+            void closeWebSocket(previousSocket);
+          }
         });
         resolve(server);
       };
@@ -519,8 +525,24 @@ class LanBridge {
     });
   }
 
+  resolveHostSocketTarget(target) {
+    if (this.hostPeerSocket?.readyState !== this.WebSocketClass.OPEN) return undefined;
+    if (!target?.connectionId) return this.hostPeerSocket;
+    if (target.connectionId !== this.hostPeerConnectionId) throw new Error("connection-not-found");
+    return this.hostPeerSocket;
+  }
+
+  allocateHostConnectionId() {
+    this.nextHostConnectionId += 1;
+    return `host-connection-${this.nextHostConnectionId}`;
+  }
+
   attachSocket(socket, metadata) {
-    const state = { role: metadata.role, disconnected: false };
+    const state = {
+      role: metadata.role,
+      disconnected: false,
+      connectionId: metadata.connectionId,
+    };
     this.socketStates.set(socket, state);
 
     socket.on("message", (data, isBinary) => {
@@ -531,7 +553,7 @@ class LanBridge {
         try { socket.terminate(); } catch { /* ignore */ }
         return;
       }
-      this.emit({ type: "message", role: metadata.role, messageJson: text });
+      this.emit({ type: "message", role: metadata.role, messageJson: text, connectionId: metadata.connectionId });
     });
 
     socket.on("error", (error) => {
@@ -552,8 +574,16 @@ class LanBridge {
         this.clientSocket = undefined;
         this.clientUrl = undefined;
       }
-      if (metadata.role === "host" && this.hostPeerSocket === socket) this.hostPeerSocket = undefined;
-      this.emit({ type: "disconnected", role: metadata.role, hadError: code !== 1000 && code !== 1005 });
+      if (metadata.role === "host" && this.hostPeerSocket === socket) {
+        this.hostPeerSocket = undefined;
+        this.hostPeerConnectionId = undefined;
+      }
+      this.emit({
+        type: "disconnected",
+        role: metadata.role,
+        hadError: code !== 1000 && code !== 1005,
+        connectionId: metadata.connectionId,
+      });
     });
   }
 
@@ -561,7 +591,13 @@ class LanBridge {
     if (state.errored) return;
     state.errored = true;
     const normalized = normalizeBridgeError(error);
-    this.emit({ type: "error", role: state.role, code: normalized.code, message: normalized.message });
+    this.emit({
+      type: "error",
+      role: state.role,
+      code: normalized.code,
+      message: normalized.message,
+      connectionId: state.connectionId,
+    });
   }
 
   onDiscoveryMessage(message, remote) {
@@ -680,7 +716,7 @@ function createLanIpcController({ bridge, ipcMain, getWindowFromSender }) {
   registerHandler(CHANNELS.stopDiscovery, async () => await bridge.stopDiscovery());
   registerHandler(CHANNELS.connect, async (_sender, url) => await bridge.connect(url));
   registerHandler(CHANNELS.disconnect, async () => await bridge.disconnect());
-  registerHandler(CHANNELS.send, async (_sender, messageJson) => await bridge.send(messageJson));
+  registerHandler(CHANNELS.send, async (_sender, messageJson, target) => await bridge.send(messageJson, target));
 
   return {
     async dispose() {

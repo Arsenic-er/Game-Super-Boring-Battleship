@@ -57,10 +57,10 @@ export const MULTIPLAYER_MENU_SOURCE_STRINGS = [
   "等待客席加入并准备。",
   "等待房主启动战斗。",
   "本地房间",
-  "等待局域网联机运行时接线完成。",
-  "房间创建入口已就绪，运行时接线将在后续任务完成。",
+  "局域网联机桥不可用。",
+  "创建房间失败。",
   "搜索尚未连接到对战会话",
-  "手动连接入口已就绪，运行时连接将在后续任务完成。",
+  "加入房间失败。",
   "不兼容",
   "房主",
   "访客",
@@ -384,7 +384,7 @@ export class MultiplayerMenu {
       this.capabilities = await this.options.callbacks.capabilities();
       this.capabilitiesLoaded = true;
     } catch {
-      this.statusSource = "等待局域网联机运行时接线完成。";
+      this.statusSource = "局域网联机桥不可用。";
     } finally {
       this.loadingCapabilities = false;
       this.render();
@@ -567,7 +567,7 @@ export class MultiplayerMenu {
     const result = await this.options.callbacks.createRoom({ roomName, buildId: this.controller.getSelectedBuildId() });
     this.statusSource = result.ok
       ? this.statusSource
-      : result.errorSource ?? "房间创建入口已就绪，运行时接线将在后续任务完成。";
+      : result.errorSource ?? "创建房间失败。";
     if (result.lobby && result.localPeerId) {
       this.controller.setLobby(result.lobby, result.localPeerId);
       this.screen = "lobby";
@@ -610,7 +610,7 @@ export class MultiplayerMenu {
     const result = await this.options.callbacks.manualJoin(target);
     this.statusSource = result.ok
       ? this.statusSource
-      : result.errorSource ?? "手动连接入口已就绪，运行时连接将在后续任务完成。";
+      : result.errorSource ?? "加入房间失败。";
     if (result.lobby && result.localPeerId) {
       this.controller.setLobby(result.lobby, result.localPeerId);
       this.screen = "lobby";
@@ -621,7 +621,7 @@ export class MultiplayerMenu {
   private async handleLeaveRoom(): Promise<void> {
     const result = await this.controller.requestLeave();
     if (result.ok) this.screen = "directory";
-    else this.statusSource = result.errorSource ?? "等待局域网联机运行时接线完成。";
+    else this.statusSource = result.errorSource ?? "离开房间失败。";
     this.render();
   }
 
@@ -633,7 +633,7 @@ export class MultiplayerMenu {
 
   private async handleStartLobby(): Promise<void> {
     const ok = await this.controller.requestStart();
-    if (!ok) this.statusSource = "等待局域网联机运行时接线完成。";
+    if (!ok) this.statusSource = "局域网联机桥不可用。";
     this.render();
   }
 }

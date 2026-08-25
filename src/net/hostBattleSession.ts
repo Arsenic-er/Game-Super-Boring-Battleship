@@ -227,9 +227,6 @@ export class HostBattleSession implements AuthoritativeBattleSession {
     if (peerId !== this.config.guestPeerId || !this.activeAssignments.has(peerId)) {
       return { accepted: false, reason: "unknown-peer" };
     }
-    if (frame.peerId !== peerId) {
-      return { accepted: false, reason: "unknown-peer" };
-    }
     if (!Number.isSafeInteger(frame.inputSequence) || frame.inputSequence < 0) {
       return { accepted: false, reason: "invalid-sequence" };
     }

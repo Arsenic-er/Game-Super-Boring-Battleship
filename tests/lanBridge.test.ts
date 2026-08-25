@@ -41,7 +41,7 @@ interface TestBridge {
   stopDiscovery(): Promise<void>;
   connect(url: string): Promise<void>;
   disconnect(): Promise<void>;
-  send(messageJson: string): Promise<void>;
+  send(messageJson: string, target?: { connectionId?: string }): Promise<void>;
   subscribe(listener: (event: LanBridgeEvent) => void): () => void;
   dispose(): Promise<void>;
 }
@@ -598,6 +598,49 @@ describe("Electron LAN bridge", () => {
     await expect(disconnected).resolves.toMatchObject({ type: "disconnected" });
   });
 
+  it("tags host websocket events with a stable connectionId and routes targeted host sends through that socket", async () => {
+    const host = trackBridge(createLanBridge());
+    const room = await host.createRoom({ announcementJson: buildAnnouncementJson() });
+    const client = trackWsClient(new WebSocket(`ws://127.0.0.1:${room.port}`, { maxPayload: 256 * 1024 }));
+
+    const connected = await waitForEvent(host, (event) => event.type === "connected" && event.role === "host");
+    if (connected.type !== "connected" || !connected.connectionId) throw new Error("expected-host-connection-id");
+
+    const hostMessage = waitForEvent(
+      host,
+      (event) =>
+        event.type === "message"
+        && event.role === "host"
+        && event.connectionId === connected.connectionId
+        && event.messageJson === "guest->host",
+    );
+    await new Promise<void>((resolve, reject) => {
+      client.once("open", () => resolve());
+      client.once("error", reject);
+    });
+    client.send("guest->host");
+    await expect(hostMessage).resolves.toMatchObject({
+      type: "message",
+      role: "host",
+      connectionId: connected.connectionId,
+      messageJson: "guest->host",
+    });
+
+    const guestReceived = await new Promise<string>((resolve, reject) => {
+      client.once("message", (payload, isBinary) => {
+        if (isBinary) {
+          reject(new Error("expected-text-message"));
+          return;
+        }
+        resolve(typeof payload === "string" ? payload : payload.toString("utf8"));
+      });
+      void host.send("host->guest", { connectionId: connected.connectionId }).catch(reject);
+    });
+    expect(guestReceived).toBe("host->guest");
+
+    await expect(host.send("bad-target", { connectionId: "host-connection-missing" })).rejects.toThrow(/connection-not-found/i);
+  });
+
   it("emits error then one disconnected event when a raw websocket server sends an oversized frame to the guest bridge", async () => {
     const oversized = "x".repeat(64 * 1_024 + 1);
     const { port } = await listenWsOnAllowedPort((server) => {
@@ -748,7 +791,10 @@ describe("Electron LAN bridge", () => {
     const preload = loadPreloadModule({ contextBridge, ipcRenderer });
     expect(preload.installBattleshipLanBridge).toBeTypeOf("function");
 
-    const [, api] = contextBridge.exposeInMainWorld.mock.calls[0] as [string, { subscribe: (listener: (payload: unknown) => void) => () => void }];
+    const [, api] = contextBridge.exposeInMainWorld.mock.calls[0] as [string, {
+      send: (messageJson: string, target?: { connectionId?: string }) => Promise<void>;
+      subscribe: (listener: (payload: unknown) => void) => () => void;
+    }];
     const received: unknown[] = [];
     const unsubscribe = api.subscribe((payload) => {
       received.push(payload);
@@ -761,6 +807,8 @@ describe("Electron LAN bridge", () => {
     listeners.get(eventChannel)?.[0]?.({}, { id: 2 });
 
     expect(received).toEqual([{ id: 1 }]);
+    await api.send("payload", { connectionId: "host-connection-1" });
+    expect(ipcRenderer.invoke).toHaveBeenCalledWith(preload.CHANNELS?.send ?? "battleship-lan:send", "payload", { connectionId: "host-connection-1" });
     expect(ipcRenderer.off).toHaveBeenCalledOnce();
   });
 

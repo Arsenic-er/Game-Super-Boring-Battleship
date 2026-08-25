@@ -13,13 +13,17 @@ export interface LanCapabilitiesUnsupported {
 
 export type LanCapabilities = LanCapabilitiesSupported | LanCapabilitiesUnsupported;
 
+export interface LanSendTarget {
+  connectionId?: string;
+}
+
 export type LanBridgeEvent =
   | { type: "announcement"; announcementJson: string; address: string; port: number }
   | { type: "probe"; address: string; port: number }
-  | { type: "connected"; role: "host" | "guest"; url?: string }
-  | { type: "message"; role: "host" | "guest"; messageJson: string }
-  | { type: "error"; role: "host" | "guest"; code: string; message: string }
-  | { type: "disconnected"; role: "host" | "guest"; hadError: boolean };
+  | { type: "connected"; role: "host" | "guest"; url?: string; connectionId?: string }
+  | { type: "message"; role: "host" | "guest"; messageJson: string; connectionId?: string }
+  | { type: "error"; role: "host" | "guest"; code: string; message: string; connectionId?: string }
+  | { type: "disconnected"; role: "host" | "guest"; hadError: boolean; connectionId?: string };
 
 export interface BattleshipLanApi {
   capabilities(): Promise<LanCapabilities>;
@@ -30,7 +34,7 @@ export interface BattleshipLanApi {
   stopDiscovery(): Promise<void>;
   connect(url: string): Promise<void>;
   disconnect(): Promise<void>;
-  send(messageJson: string): Promise<void>;
+  send(messageJson: string, target?: LanSendTarget): Promise<void>;
   subscribe(listener: (event: LanBridgeEvent) => void): () => void;
 }
 
@@ -64,7 +68,7 @@ export function createLanBridgeClient(): BattleshipLanApi {
     stopDiscovery: async () => requireNativeLanBridge().stopDiscovery(),
     connect: async (url) => requireNativeLanBridge().connect(url),
     disconnect: async () => requireNativeLanBridge().disconnect(),
-    send: async (messageJson) => requireNativeLanBridge().send(messageJson),
+    send: async (messageJson, target) => requireNativeLanBridge().send(messageJson, target),
     subscribe: (listener) => requireNativeLanBridge().subscribe(listener),
   };
 }

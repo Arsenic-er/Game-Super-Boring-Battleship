@@ -153,6 +153,13 @@ interface SmokeCloudVisual {
   lobes: Mesh[];
 }
 
+interface ContactVisual {
+  root: TransformNode;
+  body: Mesh;
+  ring: Mesh;
+  material: StandardMaterial;
+}
+
 const CONTACT_OUTLINE = new Color3(.2, .92, 1);
 const LOST_CONTACT_OUTLINE = new Color3(1, .72, .24);
 const toVector = (value: Vec3): Vector3 => new Vector3(value.x, value.y, value.z);
@@ -183,6 +190,7 @@ export class GameView implements AimProvider {
   private readonly ambientLight: HemisphericLight;
   private readonly sunLight: DirectionalLight;
   private readonly ships = new Map<string, ShipVisual>();
+  private readonly contactVisuals = new Map<string, ContactVisual>();
   private readonly shipModelCatalogReady = loadShipModelCatalog();
   private readonly airSquadronVisuals = new Map<string, AirSquadronVisual>();
   private readonly projectileMeshes = new Map<number, ProjectileVisual>();
@@ -722,6 +730,71 @@ export class GameView implements AimProvider {
     visual.externalHullRoot?.dispose(false, true);
     visual.root.dispose(false, false);
     for (const material of new Set(visual.ownedMaterials)) material.dispose(false, true);
+  }
+
+
+  private createContactVisual(id: string): ContactVisual {
+    const root = new TransformNode(`contact-root-${id}`, this.scene);
+    const body = CreateCylinder(`contact-body-${id}`, {
+      height: 3.4,
+      diameterTop: 0,
+      diameterBottom: 2,
+      tessellation: 4,
+    }, this.scene);
+    body.parent = root;
+    body.rotation.x = Math.PI / 2;
+    body.position.y = 1.8;
+    const ring = CreateTorus(`contact-ring-${id}`, {
+      diameter: 7.5,
+      thickness: 0.18,
+      tessellation: 12,
+    }, this.scene);
+    ring.parent = root;
+    ring.rotation.x = Math.PI / 2;
+    ring.position.y = 0.15;
+    const material = this.effectMaterial(
+      `contact-${id}`,
+      new Color3(0.94, 0.5, 0.42),
+      new Color3(0.95, 0.54, 0.42),
+      0.72,
+    );
+    body.material = material;
+    ring.material = material;
+    body.renderOutline = true;
+    ring.renderOutline = true;
+    return { root, body, ring, material };
+  }
+
+  private syncContacts(contacts: readonly PlayerTargetView[], time: number): void {
+    const activeIds = new Set(contacts.map((contact) => contact.id));
+    for (const [id, visual] of this.contactVisuals) {
+      if (activeIds.has(id)) continue;
+      visual.root.dispose(false, true);
+      this.contactVisuals.delete(id);
+    }
+    for (const contact of contacts) {
+      let visual = this.contactVisuals.get(contact.id);
+      if (!visual) {
+        visual = this.createContactVisual(contact.id);
+        this.contactVisuals.set(contact.id, visual);
+      }
+      const stale = !contact.live;
+      const age = Math.max(0, time - contact.lastObservedAt);
+      const color = stale ? LOST_CONTACT_OUTLINE : CONTACT_OUTLINE;
+      visual.material.diffuseColor.copyFrom(stale ? new Color3(0.88, 0.67, 0.35) : new Color3(0.94, 0.5, 0.42));
+      visual.material.emissiveColor.copyFrom(color.scale(stale ? 0.38 : 0.5));
+      visual.material.alpha = stale ? Math.max(0.22, contact.confidence * 0.45) : 0.45 + contact.confidence * 0.3;
+      visual.body.outlineColor.copyFrom(color);
+      visual.body.outlineWidth = stale ? 0.085 : 0.065;
+      visual.ring.outlineColor.copyFrom(color);
+      visual.ring.outlineWidth = stale ? 0.06 : 0.045;
+      visual.root.position.set(contact.position.x, 0, contact.position.z);
+      visual.root.rotation.set(0, contact.heading, 0);
+      visual.body.scaling.setAll(stale ? 0.88 : 1);
+      const pulse = stale ? Math.min(1.8, 1 + age * 0.12) : 1 + Math.sin(time * 4 + contact.confidence * Math.PI) * 0.08;
+      visual.ring.scaling.setAll(pulse);
+      visual.ring.visibility = stale ? 0.9 : 0.68;
+    }
   }
 
   aimPoint(ship: ShipState, range: number): Vec3 {
@@ -1853,6 +1926,7 @@ export class GameView implements AimProvider {
     weaponSlot: WeaponSlot = "mainGun",
     torpedoSpread: TorpedoSpreadMode = "narrow",
     developerView?: Readonly<DeveloperViewOptions>,
+    contactViews: readonly PlayerTargetView[] = perceivedTarget ? [perceivedTarget] : [],
   ): void {
     this.syncWeather(state.weatherId);
     const steppedTime = Math.floor(state.time * 6) / 6;
@@ -1867,6 +1941,7 @@ export class GameView implements AimProvider {
       ?? state.ships.find((ship) => ship.team === "player" && ship.hull > 0)
       ?? state.ships.find((ship) => ship.team === "player");
     this.syncShips(state, perceivedTarget, developerView?.omniscient, cameraShip?.id);
+    this.syncContacts(contactViews, state.time);
     this.syncAirSquadrons(state, dt, developerView);
     this.syncProjectiles(state, perceivedTarget, developerView?.omniscient);
     this.syncUnderwaterEntities(state);

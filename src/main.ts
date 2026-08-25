@@ -27,9 +27,10 @@ import { FIXED_STEP } from "./sim/config";
 import { createInitialState, observe } from "./sim/simulation";
 import { deployFleetAirSupport } from "./sim/airOperations";
 import { PlayerPerceptionTracker } from "./sim/playerPerception";
-import type { BattleState, ControlCommand, GameMode } from "./sim/types";
+import type { BattleState, ControlCommand, GameMode, PlayerTargetView } from "./sim/types";
 import type { GameLaunchRequest } from "./sim/battleSetup";
 import { createLanBridgeClient } from "./net/lanBridge";
+import { LanMultiplayerRuntime } from "./net/lanMultiplayerRuntime";
 import { GameMenus } from "./ui/gameMenus";
 import { Hud } from "./ui/hud";
 import { auxiliaryHudVisible } from "./ui/auxiliaryHud";
@@ -70,9 +71,32 @@ let currentLaunchRequest: GameLaunchRequest = {
   weatherId: "clear",
 };
 let battleRewarded = false;
+const CLIENT_INPUT_INTERVAL_MS = 1_000 / 30;
+let lastClientInputSentAt = -Infinity;
+let lanRuntime: LanMultiplayerRuntime;
+
+function enterActiveBattle(nextState: BattleState): void {
+  gameShell?.classList.remove("hud-details-held");
+  state = nextState;
+  input.reset();
+  view.resetTransient();
+  tacticalMap?.close();
+  tacticalMap?.resetForBattle();
+  developerPanel?.close();
+  menus?.closeAll();
+  hud.resetMetrics();
+  developerView = normalDeveloperView();
+  playerPerception.reset();
+  audio.unlock();
+  started = true;
+  paused = false;
+  accumulator = 0;
+  lastClientInputSentAt = -Infinity;
+  gameShell?.classList.add("game-active");
+  view.requestPointerLock();
+}
 
 function startMode(request: GameLaunchRequest): void {
-  gameShell?.classList.remove("hud-details-held");
   const mode = request.mode;
   currentMode = mode;
   currentLaunchRequest = request;
@@ -93,32 +117,24 @@ function startMode(request: GameLaunchRequest): void {
   );
   if (state.airSupport === "fleet-edge") deployFleetAirSupport(state);
   session.reset(state);
-  input.reset();
-  view.resetTransient();
-  tacticalMap?.close();
-  tacticalMap?.resetForBattle();
-  developerPanel?.close();
-  menus?.closeAll();
-  hud.resetMetrics();
-  developerView = normalDeveloperView();
-  playerPerception.reset();
-  audio.unlock();
-  started = true;
-  paused = false;
-  accumulator = 0;
-  gameShell?.classList.add("game-active");
-  view.requestPointerLock();
+  enterActiveBattle(state);
 }
 
 function restart(): void {
+  if (lanRuntime?.role !== "none") {
+    returnToMainMenu();
+    return;
+  }
   startMode(currentLaunchRequest);
 }
 
 function returnToMainMenu(): void {
+  if (lanRuntime?.role !== "none") void lanRuntime.callbacks.leaveRoom();
   gameShell?.classList.remove("hud-details-held");
   started = false;
   paused = true;
   accumulator = 0;
+  lastClientInputSentAt = -Infinity;
   input.reset();
   tacticalMap?.close();
   developerPanel?.close();
@@ -183,7 +199,7 @@ gameShell.append(developerObserverHud);
 tacticalMap = new TacticalMap(gameShell, {
   locale: settings.locale,
   onOpen: () => {
-    gameShell.classList.remove("hud-details-held");
+    gameShell?.classList.remove("hud-details-held");
     input.setSuppressed(true);
     view.releasePointerLock();
     gameShell.classList.add("map-active");
@@ -203,47 +219,73 @@ hud.setWeaponSelectHandler((slot) => {
     || menus?.isOpen() || developerPanel?.isOpen()) return;
   tacticalMap.open();
 });
+lanRuntime = new LanMultiplayerRuntime(lanBridge, profile, {
+  onHostMatchStarted: (hostSession) => {
+    currentMode = "battle";
+    battleRewarded = false;
+    enterActiveBattle(hostSession.state);
+  },
+  onClientMatchStarted: (clientSession) => {
+    currentMode = "battle";
+    battleRewarded = false;
+    enterActiveBattle(clientSession.renderState(performance.now()).state);
+  },
+  onReturnToMenu: (notice) => {
+    hud.showMultiplayerNotice(notice);
+    returnToMainMenu();
+  },
+  onNotice: (notice) => {
+    hud.showMultiplayerNotice(notice);
+  },
+});
 menus = new GameMenus(gameShell, settings, profile, view.getQuality(), {
   onStart: startMode,
   onPause: () => {
-    gameShell.classList.remove("hud-details-held");
+    gameShell?.classList.remove("hud-details-held");
     view.releasePointerLock();
-    gameShell.classList.remove("game-active");
+    gameShell?.classList.remove("game-active");
+    if (lanRuntime.role !== "none") {
+      input.setSuppressed(true);
+      view.setCameraInputEnabled(false);
+      return;
+    }
     paused = true;
     accumulator = 0;
   },
   onResume: () => {
-    gameShell.classList.remove("hud-details-held");
+    gameShell?.classList.remove("hud-details-held");
     audio.unlock();
     gameShell.classList.add("game-active");
+    input.setSuppressed(false);
+    view.setCameraInputEnabled(true);
     view.requestPointerLock();
+    if (lanRuntime.role !== "none") return;
     paused = false;
     accumulator = 0;
   },
-  onRestart: restart,
+  onRestart: () => {
+    if (lanRuntime.role !== "none") {
+      returnToMainMenu();
+      return;
+    }
+    restart();
+  },
   onExitToMenu: returnToMainMenu,
   onSettingsChange: applyControlSettings,
   onQualityChange: applyQuality,
   onProfileChange: (nextProfile) => {
     profile = nextProfile;
     saveLocalProfile(profile);
+    lanRuntime.setProfile(profile);
   },
-  multiplayer: {
-    capabilities: () => lanBridge.capabilities(),
-    createRoom: async () => ({ ok: false, errorSource: "房间创建入口已就绪，运行时接线将在后续任务完成。" }),
-    searchRooms: async () => ({ ok: false, errorSource: "搜索尚未连接到对战会话" }),
-    manualJoin: async () => ({ ok: false, errorSource: "手动连接入口已就绪，运行时连接将在后续任务完成。" }),
-    leaveRoom: async () => ({ ok: true }),
-    readyLobby: async () => ({ ok: false, errorSource: "等待局域网联机运行时接线完成。" }),
-    startLobby: async () => ({ ok: false, errorSource: "等待局域网联机运行时接线完成。" }),
-  },
+  multiplayer: lanRuntime.callbacks,
 });
 developerPanel = new DeveloperPanel(gameShell, () => state, {
   onOpen: () => {
-    gameShell.classList.remove("hud-details-held");
+    gameShell?.classList.remove("hud-details-held");
     paused = true;
     accumulator = 0;
-    gameShell.classList.remove("game-active");
+    gameShell?.classList.remove("game-active");
     input.setSuppressed(true);
     view.setCameraInputEnabled(false);
     view.releasePointerLock();
@@ -303,7 +345,7 @@ window.addEventListener("keydown", (event) => {
       event.preventDefault();
       gameShell.classList.add("hud-details-held");
     } else {
-      gameShell.classList.remove("hud-details-held");
+      gameShell?.classList.remove("hud-details-held");
     }
     return;
   }
@@ -331,6 +373,10 @@ window.addEventListener("keydown", (event) => {
   }
   if (event.code === "F3") {
     event.preventDefault();
+    if (lanRuntime.role !== "none") {
+      hud.showMultiplayerNotice("多人联机已禁用开发者改动。");
+      return;
+    }
     developerPanel?.toggle();
     return;
   }
@@ -345,18 +391,182 @@ window.addEventListener("keydown", (event) => {
 window.addEventListener("keyup", (event) => {
   if (event.code !== "Tab") return;
   const held = gameShell.classList.contains("hud-details-held");
-  gameShell.classList.remove("hud-details-held");
+  gameShell?.classList.remove("hud-details-held");
   if (held) event.preventDefault();
 });
 window.addEventListener("blur", () => gameShell.classList.remove("hud-details-held"));
 document.addEventListener("visibilitychange", () => {
-  if (document.hidden) gameShell.classList.remove("hud-details-held");
+  if (document.hidden) gameShell?.classList.remove("hud-details-held");
 });
 document.addEventListener("pointerlockchange", () => {
-  if (document.pointerLockElement !== hud.canvas) gameShell.classList.remove("hud-details-held");
+  if (document.pointerLockElement !== hud.canvas) gameShell?.classList.remove("hud-details-held");
 });
 
+function idleCommandFor(ship: BattleState["ships"][number]): ControlCommand {
+  return {
+    throttle: 0,
+    rudder: 0,
+    aimPoint: { ...ship.aimPoint },
+    fire: false,
+  };
+}
+
+function observerShipIdForState(activeState: BattleState): string {
+  return activeState.ships.find(({ id, hull }) => id === "player" && hull > 0)?.id
+    ?? activeState.ships.find(({ team, hull }) => team === "player" && hull > 0)?.id
+    ?? activeState.ships.find(({ team }) => team === "player")?.id
+    ?? activeState.ships[0]?.id
+    ?? "player";
+}
+
+function primaryContact(contacts: readonly PlayerTargetView[]): PlayerTargetView | undefined {
+  return contacts.find(({ live }) => live) ?? contacts[0];
+}
+
+function finishFrame(
+  activeState: BattleState,
+  frameSeconds: number,
+  observerShipId: string,
+  perceivedTarget?: PlayerTargetView,
+  contactViews: readonly PlayerTargetView[] = perceivedTarget ? [perceivedTarget] : [],
+): void {
+  const multiplayerActive = lanRuntime.role !== "none";
+  const playerForAudio = activeState.ships.find((ship) => ship.id === observerShipId);
+  audio.sync(
+    playerForAudio,
+    started && activeState.status === "running" && (multiplayerActive || !paused),
+  );
+
+  view.sync(
+    activeState,
+    frameSeconds,
+    perceivedTarget,
+    input.selectedWeapon,
+    input.selectedTorpedoSpread,
+    multiplayerActive ? undefined : developerView.active ? {
+      focusEntityId: developerView.focus?.id,
+      controlledShipId: developerView.controlledShipId,
+      omniscient: true,
+    } : undefined,
+    contactViews,
+  );
+  if (activeState.status !== "running") {
+    gameShell?.classList.remove("hud-details-held");
+    tacticalMap.close();
+    if (!multiplayerActive && currentMode === "battle" && !battleRewarded) {
+      const economy = awardBattleResult(profile, activeState.status);
+      profile = economy.profile;
+      saveLocalProfile(profile);
+      menus.setProfile(profile);
+      battleRewarded = true;
+    }
+    gameShell?.classList.remove("game-active");
+    view.releasePointerLock();
+  }
+  hud.setAimMode(input.isAiming);
+  hud.update(activeState, input.aimRange, input.selectedWeapon, perceivedTarget, observerShipId);
+  tacticalMap.update(activeState, perceivedTarget, contactViews);
+  developerObserverHud.hidden = multiplayerActive || !developerView.active;
+  if (!multiplayerActive && developerView.active) {
+    const focusShip = activeState.ships.find(({ id }) => id === developerView.focus?.id);
+    const focusSquadron = activeState.airSquadrons.find(({ id }) => id === developerView.focus?.id);
+    if (focusShip) {
+      const decision = focusShip.aiDecision;
+      developerObserverHud.textContent = `开发者视角 · ${developerView.controlledShipId === focusShip.id ? "人工接管" : "AI 观察"} ${focusShip.id} · ${decision ? `${decision.role}/${decision.phase} · 目标 ${decision.targetId ?? "无"} · 航向 ${((decision.desiredHeading * 180 / Math.PI + 360) % 360).toFixed(0)}° · 车钟 ${Math.round(decision.throttle * 100)}%${decision.avoidanceReason ? ` · ${decision.avoidanceReason}` : ""}` : "等待策略遥测"} · F3 切换实体`;
+    } else if (focusSquadron) {
+      developerObserverHud.textContent = `开发者视角 · 航空 AI ${focusSquadron.id} · ${focusSquadron.role}/${focusSquadron.phase} · 指令 ${focusSquadron.order?.kind ?? "自主"} · 目标 ${focusSquadron.order?.activeTargetId ?? focusSquadron.order?.targetId ?? "无"} · 编队 ${focusSquadron.aircraftOperational}/${focusSquadron.aircraftCapacity} · F3 切换实体`;
+    }
+  }
+  developerPanel?.update();
+  view.render();
+}
+
+function renderHostFrame(frameSeconds: number): void {
+  const hostSession = lanRuntime.hostSession;
+  if (!hostSession) return;
+  state = hostSession.state;
+  const hostShipId = hostSession.assignments.get(lanRuntime.localPeerId);
+  const observerShipId = hostShipId ?? observerShipIdForState(state);
+  let perceivedTarget = started && state.mode === "battle"
+    ? playerPerception.update(observe(state, observerShipId))
+    : undefined;
+
+  if (started && state.status === "running") {
+    accumulator += frameSeconds;
+    while (accumulator >= FIXED_STEP) {
+      const controlledShip = hostShipId
+        ? state.ships.find(({ id, hull }) => id === hostShipId && hull > 0)
+        : undefined;
+      const playerCommand = controlledShip ? input.command(controlledShip) : idleCommandFor(state.ships[0]!);
+      const airMissions = controlledShip ? tacticalMap.consumeAirMissions() : [];
+      if (airMissions.length > 0) playerCommand.airMissions = airMissions;
+      const stepOutput = hostSession.step(playerCommand, FIXED_STEP);
+      tacticalMap.handleAirEvents(stepOutput.airEvents);
+      perceivedTarget = state.mode === "battle"
+        ? playerPerception.update(observe(state, observerShipId))
+        : undefined;
+      const visibleShots = stepOutput.shots.filter((shot) =>
+        shot.team === "player" || Boolean(perceivedTarget?.live));
+      view.consumeShots(visibleShots);
+      view.consumeImpacts(stepOutput.impacts);
+      audio.consumeShots(visibleShots);
+      audio.consumeImpacts(stepOutput.impacts);
+      hud.consumeImpacts(stepOutput.impacts);
+      const guestPeerId = lanRuntime.currentGuestPeerId();
+      const guestSnapshot = guestPeerId ? stepOutput.snapshots.get(guestPeerId) : undefined;
+      if (guestSnapshot) {
+        void lanRuntime.send(lanRuntime.createEnvelope("player-snapshot", guestSnapshot));
+      }
+      accumulator -= FIXED_STEP;
+    }
+  } else {
+    accumulator = 0;
+  }
+
+  finishFrame(state, frameSeconds, observerShipId, perceivedTarget);
+}
+
+function renderClientFrame(frameSeconds: number): void {
+  const clientSession = lanRuntime.clientSession;
+  if (!clientSession) return;
+  const now = performance.now();
+  const replicated = clientSession.renderState(now);
+  state = replicated.state;
+  const observerShipId = replicated.controlledShipId ?? observerShipIdForState(state);
+  const contacts = replicated.contacts;
+  const perceivedTarget = primaryContact(contacts);
+
+  if (started && state.status === "running" && now - lastClientInputSentAt >= CLIENT_INPUT_INTERVAL_MS) {
+    const controlledShip = state.ships.find(({ id, hull }) => id === observerShipId && hull > 0);
+    if (controlledShip) {
+      const playerCommand = input.command(controlledShip);
+      const airMissions = tacticalMap.consumeAirMissions();
+      if (airMissions.length > 0) playerCommand.airMissions = airMissions;
+      try {
+        const frame = clientSession.submitLocalCommand(playerCommand, now);
+        lastClientInputSentAt = now;
+        void lanRuntime.send(lanRuntime.createEnvelope("input-frame", frame.payload));
+      } catch {
+        // Ignore locally invalid or non-monotonic samples until the next frame.
+      }
+    }
+  }
+
+  finishFrame(state, frameSeconds, observerShipId, perceivedTarget, contacts);
+}
+
 view.engine.runRenderLoop(() => {
+  const frameSeconds = Math.min(view.engine.getDeltaTime() / 1_000, 0.1);
+
+  if (lanRuntime.role === "host") {
+    renderHostFrame(frameSeconds);
+    return;
+  }
+  if (lanRuntime.role === "client") {
+    renderClientFrame(frameSeconds);
+    return;
+  }
+
   const reconciledView = reconcileDeveloperView(state, developerView);
   if (reconciledView !== developerView) {
     developerView = reconciledView;
@@ -369,14 +579,10 @@ view.engine.runRenderLoop(() => {
     : undefined;
   const liveControlledShipId = state.ships.some(({ id, hull }) =>
     id === controlledShipId && hull > 0) ? controlledShipId : undefined;
-  const fallbackObserverShipId = state.ships.find(({ id, hull }) =>
-    id === "player" && hull > 0)?.id
-    ?? state.ships.find(({ team, hull }) => team === "player" && hull > 0)?.id
-    ?? "player";
+  const fallbackObserverShipId = observerShipIdForState(state);
   const observerShipId = liveControlledShipId
     ?? (developerView.focus?.kind === "ship" ? developerView.focus.id : focusedAir?.controllerId)
     ?? fallbackObserverShipId;
-  const frameSeconds = Math.min(view.engine.getDeltaTime() / 1_000, 0.1);
   let perceivedTarget = started && state.mode === "battle"
     ? playerPerception.update(observe(state, observerShipId))
     : undefined;
@@ -411,54 +617,5 @@ view.engine.runRenderLoop(() => {
     accumulator = 0;
   }
 
-  const playerForAudio = state.ships.find((ship) => ship.id === observerShipId);
-  audio.sync(
-    playerForAudio,
-    started && !paused && state.status === "running",
-  );
-
-  view.sync(
-    state,
-    frameSeconds,
-    perceivedTarget,
-    input.selectedWeapon,
-    input.selectedTorpedoSpread,
-    developerView.active ? {
-      focusEntityId: developerView.focus?.id,
-      controlledShipId: developerView.controlledShipId,
-      omniscient: true,
-    } : undefined,
-  );
-  if (state.status !== "running") {
-    gameShell.classList.remove("hud-details-held");
-    tacticalMap.close();
-    if (currentMode === "battle" && !battleRewarded) {
-      const economy = awardBattleResult(profile, state.status);
-      profile = economy.profile;
-      saveLocalProfile(profile);
-      menus.setProfile(profile);
-      battleRewarded = true;
-    }
-    gameShell.classList.remove("game-active");
-    view.releasePointerLock();
-  }
-  hud.setAimMode(input.isAiming);
-  hud.update(state, input.aimRange, input.selectedWeapon, perceivedTarget, observerShipId);
-  tacticalMap.update(state, perceivedTarget);
-  developerObserverHud.hidden = !developerView.active;
-  if (developerView.active) {
-    const focusShip = state.ships.find(({ id }) => id === developerView.focus?.id);
-    const focusSquadron = state.airSquadrons.find(({ id }) => id === developerView.focus?.id);
-    if (focusShip) {
-      const decision = focusShip.aiDecision;
-      developerObserverHud.textContent = `开发者视角 · ${developerView.controlledShipId === focusShip.id ? "人工接管" : "AI 观察"} ${focusShip.id} · ${decision ? `${decision.role}/${decision.phase} · 目标 ${decision.targetId ?? "无"} · 航向 ${((decision.desiredHeading * 180 / Math.PI + 360) % 360).toFixed(0)}° · 车钟 ${Math.round(decision.throttle * 100)}%${decision.avoidanceReason ? ` · ${decision.avoidanceReason}` : ""}` : "等待策略遥测"} · F3 切换实体`;
-    } else if (focusSquadron) {
-      developerObserverHud.textContent = `开发者视角 · 航空 AI ${focusSquadron.id} · ${focusSquadron.role}/${focusSquadron.phase} · 指令 ${focusSquadron.order?.kind ?? "自主"} · 目标 ${focusSquadron.order?.activeTargetId ?? focusSquadron.order?.targetId ?? "无"} · 编队 ${focusSquadron.aircraftOperational}/${focusSquadron.aircraftCapacity} · F3 切换实体`;
-    }
-  }
-  developerPanel?.update();
-  view.render();
+  finishFrame(state, frameSeconds, observerShipId, perceivedTarget);
 });
-
-
-

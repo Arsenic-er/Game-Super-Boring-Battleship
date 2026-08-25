@@ -249,6 +249,20 @@ describe("HostBattleSession", () => {
     }, 4)).toMatchObject({ accepted: false, reason: "stale-input" });
   });
 
+  it("binds authority to the authenticated guest identity instead of trusting frame.peerId", () => {
+    const session = createSession();
+
+    expect(session.acceptInput("peer-guest-1", {
+      peerId: "peer-spoofed",
+      inputSequence: 1,
+      command: { ...zeroCommand(), throttle: 0.6 },
+    }, 0)).toMatchObject({ accepted: true });
+
+    const guestShipId = session.assignments.get("peer-guest-1")!;
+    session.step(zeroCommand(), FIXED_STEP);
+    expect(shipThrottle(session, guestShipId)).toBe(0.6);
+  });
+
   it("publishes snapshots on accumulated fixed-tick cadence instead of step-call cadence", () => {
     const doubleStep = createSession();
     for (let call = 1; call <= 2; call += 1) {

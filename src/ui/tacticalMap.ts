@@ -440,7 +440,7 @@ export class TacticalMap {
   private lastDrawTime = -1;
   private lastLargeMapDrawTime = -1;
   private lastState?: BattleState;
-  private lastTarget?: PlayerTargetView;
+  private lastContacts: readonly PlayerTargetView[] = [];
   private largeMapView: LargeMapView = { centerX: 0, centerZ: 0, halfExtent: LARGE_MAP_MAX_HALF_EXTENT };
 
   constructor(
@@ -521,7 +521,7 @@ export class TacticalMap {
 
     minimapPanel.addEventListener("click", () => this.open());
     this.airCommands = new TacticalAirCommandController(largeMap, airLayer, () => {
-      if (this.lastState) this.drawLargeMap(this.lastState, this.lastTarget);
+      if (this.lastState) this.drawLargeMap(this.lastState, this.lastContacts);
     });
     minimapPanel.addEventListener("keydown", (event) => {
       if (event.code === "Enter") {
@@ -552,7 +552,7 @@ export class TacticalMap {
     this.airStatusTitle.closest("aside")?.setAttribute("aria-label", label);
     if (this.lastState) {
       this.renderAirStatus(this.lastState);
-      if (this.expanded) this.drawLargeMap(this.lastState, this.lastTarget);
+      if (this.expanded) this.drawLargeMap(this.lastState, this.lastContacts);
     }
   }
 
@@ -562,7 +562,7 @@ export class TacticalMap {
     this.overlay.hidden = false;
     this.options.onOpen?.();
     if (this.lastState) {
-      this.drawLargeMap(this.lastState, this.lastTarget);
+      this.drawLargeMap(this.lastState, this.lastContacts);
       this.lastLargeMapDrawTime = this.lastState.time;
     }
   }
@@ -611,7 +611,7 @@ export class TacticalMap {
   private resetLargeMapView(): void {
     this.largeMapView = { centerX: 0, centerZ: 0, halfExtent: LARGE_MAP_MAX_HALF_EXTENT };
     this.updateZoomLabel();
-    if (this.lastState) this.drawLargeMap(this.lastState, this.lastTarget);
+    if (this.lastState) this.drawLargeMap(this.lastState, this.lastContacts);
   }
 
   private changeLargeMapZoom(direction: "in" | "out", anchor?: MapPoint): void {
@@ -626,7 +626,7 @@ export class TacticalMap {
       direction,
     );
     this.updateZoomLabel();
-    if (this.lastState) this.drawLargeMap(this.lastState, this.lastTarget);
+    if (this.lastState) this.drawLargeMap(this.lastState, this.lastContacts);
   }
 
   private updateZoomLabel(): void {
@@ -646,21 +646,21 @@ export class TacticalMap {
     return this.expanded;
   }
 
-  update(state: BattleState, target?: PlayerTargetView): void {
+  update(state: BattleState, target?: PlayerTargetView, contacts: readonly PlayerTargetView[] = target ? [target] : []): void {
     this.lastState = state;
-    this.lastTarget = target;
+    this.lastContacts = contacts;
     const { own: player } = friendlyMapShips(state.ships);
     if (!player) return;
     this.compassNeedle.style.transform = `rotate(${-player.heading}rad)`;
     if (this.lastDrawTime >= 0 && state.time - this.lastDrawTime < 1 / 15) return;
     this.lastDrawTime = state.time;
-    this.drawMinimap(state, player, target);
+    this.drawMinimap(state, player, contacts);
     if (
       this.expanded
       && (this.lastLargeMapDrawTime < 0 || state.time - this.lastLargeMapDrawTime >= 1 / 4)
     ) {
       this.lastLargeMapDrawTime = state.time;
-      this.drawLargeMap(state, target);
+      this.drawLargeMap(state, contacts);
     }
   }
 
@@ -712,7 +712,7 @@ export class TacticalMap {
   private drawMinimap(
     state: BattleState,
     player: ShipState,
-    target?: PlayerTargetView,
+    contacts: readonly PlayerTargetView[] = [],
   ): void {
     const context = resizeCanvas(this.minimap);
     if (!context) return;
@@ -813,22 +813,22 @@ export class TacticalMap {
       ),
       player.heading,
     );
-    if (target) {
+    for (const contact of contacts) {
       const point = worldToHeadingUpMap(
-        target.position.x - player.position.x,
-        target.position.z - player.position.z,
+        contact.position.x - player.position.x,
+        contact.position.z - player.position.z,
         player.heading,
         scale,
         center.x,
         center.y,
       );
       if (point.x >= 6 && point.x <= width - 6 && point.y >= 6 && point.y <= height - 6) {
-        drawContact(context, target, point, target.heading - player.heading, state.time);
+        drawContact(context, contact, point, contact.heading - player.heading, state.time);
       }
     }
   }
 
-  private drawLargeMap(state: BattleState, target?: PlayerTargetView): void {
+  private drawLargeMap(state: BattleState, contacts: readonly PlayerTargetView[] = []): void {
     const context = resizeCanvas(this.largeMap, 1);
     if (!context) return;
     const width = this.largeMap.clientWidth;
@@ -896,13 +896,14 @@ export class TacticalMap {
         world: { ...ship.position },
       });
     }
-    if (target?.live) {
+    for (const contact of contacts) {
+      if (!contact.live) continue;
       entities.push({
-        id: target.id,
+        id: contact.id,
         category: "enemyShip",
-        label: target.live ? "\u654c\u8230\u89c2\u6d4b" : "\u6700\u540e\u5df2\u77e5\u654c\u8230",
-        point: project(target.position.x, target.position.z),
-        world: { ...target.position },
+        label: contact.live ? "敌舰观测" : "最后已知敌舰",
+        point: project(contact.position.x, contact.position.z),
+        world: { ...contact.position },
       });
     }
     for (const ship of friendlyShips) {
@@ -997,18 +998,18 @@ export class TacticalMap {
         aircraftOperational: contact.estimatedAircraft ?? 0,
       }, project(position.x, position.z), false, false, pending.has(id));
     }
-    if (target) {
-      const point = project(target.position.x, target.position.z);
-      if (pending.has(target.id)) {
+    for (const contact of contacts) {
+      const point = project(contact.position.x, contact.position.z);
+      if (pending.has(contact.id)) {
         context.strokeStyle = "#ffb65c";
         context.lineWidth = 2;
         context.beginPath();
         context.arc(point.x, point.y, 13, 0, Math.PI * 2);
         context.stroke();
       }
-      drawContact(context, target, point, target.heading, state.time);
-      context.fillStyle = target.live ? "#ffad9d" : "#e4b97b";
-      context.fillText(target.live ? "敌舰观测" : "最后已知", point.x + 10, point.y - 8);
+      drawContact(context, contact, point, contact.heading, state.time);
+      context.fillStyle = contact.live ? "#ffad9d" : "#e4b97b";
+      context.fillText(contact.live ? "敌舰观测" : "最后已知", point.x + 10, point.y - 8);
     }
   }
 }

@@ -23,7 +23,7 @@ function createPreloadApi(ipcRenderer) {
     stopDiscovery: () => ipcRenderer.invoke(CHANNELS.stopDiscovery),
     connect: (url) => ipcRenderer.invoke(CHANNELS.connect, url),
     disconnect: () => ipcRenderer.invoke(CHANNELS.disconnect),
-    send: (messageJson) => ipcRenderer.invoke(CHANNELS.send, messageJson),
+    send: (messageJson, target) => ipcRenderer.invoke(CHANNELS.send, messageJson, target),
     subscribe: (listener) => {
       if (typeof listener !== "function") throw new TypeError("listener-must-be-function");
       const wrapped = (_event, payload) => listener(payload);
