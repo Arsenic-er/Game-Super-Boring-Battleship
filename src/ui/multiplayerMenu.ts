@@ -4,7 +4,7 @@ import {
   type GameLocale,
 } from "../i18n/gameLocale";
 import type { LanCapabilities } from "../net/lanBridge";
-import { LAN_GAME_VERSION } from "../net/networkFingerprint";
+import { LAN_CONTENT_HASH, LAN_GAME_VERSION } from "../net/networkFingerprint";
 import type { LobbySnapshot, LobbyPlayer } from "../net/lobbyState";
 import { RoomDirectory, type DiscoveredRoom } from "../net/roomDirectory";
 import { LAN_GAME_PORTS, type LanGamePort } from "../net/protocol";
@@ -59,8 +59,12 @@ export const MULTIPLAYER_MENU_SOURCE_STRINGS = [
   "本地房间",
   "等待局域网联机运行时接线完成。",
   "房间创建入口已就绪，运行时接线将在后续任务完成。",
-  "房间搜索入口已就绪，运行时发现将在后续任务完成。",
+  "搜索尚未连接到对战会话",
   "手动连接入口已就绪，运行时连接将在后续任务完成。",
+  "不兼容",
+  "房主",
+  "访客",
+  "准备状态",
 ] as const;
 
 const GAME_PORT_SET = new Set<number>(LAN_GAME_PORTS);
@@ -96,6 +100,16 @@ function buildReady(profile: LocalProfile, buildId: string | null | undefined): 
 
 function roomPhaseSource(room: DiscoveredRoom): string {
   return room.phase === "lobby" ? "房间中" : "战斗中";
+}
+
+function roomCompatible(room: DiscoveredRoom): boolean {
+  return room.gameVersion === LAN_GAME_VERSION && room.contentHash === LAN_CONTENT_HASH;
+}
+
+function roleSource(role: LobbyPlayer["role"] | null | undefined): string {
+  if (role === "host") return "房主";
+  if (role === "guest") return "访客";
+  return "—";
 }
 
 export function parseManualJoinTarget(addressText: string, portText: string):
@@ -216,7 +230,12 @@ export class MultiplayerMenuController {
 
   setProfile(profile: LocalProfile): void {
     this.profile = profile;
-    if (!findSavedBuild(profile, this.selectedBuildId)) this.selectedBuildId = chooseInitialMultiplayerBuildId(profile);
+    if (buildReady(profile, profile.selectedBattleBuildId)) {
+      this.selectedBuildId = profile.selectedBattleBuildId;
+      return;
+    }
+    if (buildReady(profile, this.selectedBuildId)) return;
+    this.selectedBuildId = chooseInitialMultiplayerBuildId(profile);
   }
 
   selectBuild(buildId: string | null): void {
@@ -275,11 +294,11 @@ export class MultiplayerMenuController {
     return true;
   }
 
-  async requestLeave(): Promise<boolean> {
+  async requestLeave(): Promise<MultiplayerActionResult> {
     const result = await this.callbacks.leaveRoom();
     this.syncActionResult(result);
     if (result.ok) this.clearLobby();
-    return result.ok;
+    return result;
   }
 
   private syncActionResult(result: MultiplayerActionResult): void {
@@ -395,6 +414,7 @@ export class MultiplayerMenu {
     const now = this.now();
     return rooms.map((room) => {
       const latency = approximateRoomPingMs(now, room.lastSeenAt);
+      const compatible = roomCompatible(room);
       return `
         <article class="multiplayer-room-card">
           <div class="multiplayer-room-card-header">
@@ -402,14 +422,14 @@ export class MultiplayerMenu {
               <p class="multiplayer-field-label">房间名</p>
               <b>${room.roomName}</b>
             </div>
-            <button class="menu-button primary multiplayer-room-join" type="button" data-room-id="${room.roomId}" ${room.phase === "lobby" ? "" : "disabled"}>加入</button>
+            <button class="menu-button primary multiplayer-room-join" type="button" data-room-id="${room.roomId}" ${room.phase === "lobby" && compatible ? "" : "disabled"}>加入</button>
           </div>
           <dl class="multiplayer-room-fields">
             <div><dt>主机</dt><dd>${room.hostName}</dd></div>
             <div><dt>席位</dt><dd>${room.playerCount}/${room.capacity}</dd></div>
             <div><dt>近似延迟（最近广播）</dt><dd>≈${latency} ms</dd></div>
-            <div><dt>游戏版本</dt><dd>${LAN_GAME_VERSION}</dd></div>
-            <div><dt>房间状态</dt><dd>${roomPhaseSource(room)}</dd></div>
+            <div><dt>游戏版本</dt><dd>${room.gameVersion}</dd></div>
+            <div><dt>房间状态</dt><dd>${compatible ? roomPhaseSource(room) : "不兼容"}</dd></div>
           </dl>
         </article>`;
     }).join("");
@@ -430,11 +450,11 @@ export class MultiplayerMenu {
       <section class="multiplayer-seat-card">
         <h3>${title}</h3>
         <dl>
-          <div><dt>席位</dt><dd>${player?.role ?? "—"}</dd></div>
+          <div><dt>席位</dt><dd>${roleSource(player?.role)}</dd></div>
           <div><dt>主机</dt><dd>${player?.commanderName ?? "—"}</dd></div>
           <div><dt>房间状态</dt><dd>${player?.connected ? "已连接" : "未连接"}</dd></div>
           <div><dt>本地方案</dt><dd>${buildName}</dd></div>
-          <div><dt>游戏版本</dt><dd>${player?.ready ? "已准备" : "未准备"}</dd></div>
+          <div><dt>准备状态</dt><dd>${player?.ready ? "已准备" : "未准备"}</dd></div>
         </dl>
       </section>`;
   }
@@ -566,8 +586,8 @@ export class MultiplayerMenu {
       this.statusSource = null;
     } else {
       this.statusSource = result.errorSource ?? (trigger === "refresh"
-        ? "房间搜索入口已就绪，运行时发现将在后续任务完成。"
-        : "房间搜索入口已就绪，运行时发现将在后续任务完成。");
+        ? "搜索尚未连接到对战会话"
+        : "搜索尚未连接到对战会话");
     }
     this.render();
   }
@@ -599,8 +619,9 @@ export class MultiplayerMenu {
   }
 
   private async handleLeaveRoom(): Promise<void> {
-    await this.controller.requestLeave();
-    this.screen = "directory";
+    const result = await this.controller.requestLeave();
+    if (result.ok) this.screen = "directory";
+    else this.statusSource = result.errorSource ?? "等待局域网联机运行时接线完成。";
     this.render();
   }
 

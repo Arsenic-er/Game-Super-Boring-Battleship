@@ -60,7 +60,9 @@ describe("game locales", () => {
       expect(messageSources.has(source), source).toBe(true);
     }
     expect(translateGameText("多人联机", "en-US")).toBe("LAN Multiplayer");
+    expect(translateGameText("搜索尚未连接到对战会话", "en-US")).toBe("Search is not connected to a battle session yet.");
     expect(translateGameText("局域网联机仅在桌面版可用。", "ja-JP")).toBe("LAN マルチプレイはデスクトップ版でのみ利用できます。");
+    expect(translateGameText("不兼容", "de-DE")).toBe("Inkompatibel");
     expect(translateGameText("近似延迟（最近广播）", "de-DE")).toBe("Ungefähre Latenz (letzte Ankündigung)");
   });
 });

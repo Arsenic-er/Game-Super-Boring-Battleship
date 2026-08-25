@@ -38,3 +38,21 @@
 
 ## Commit
 - Commit message: `Add LAN room search and lobby menus`
+
+## Task 5 follow-up (2026-08-25)
+- Search placeholder honesty fix:
+  - `src/main.ts` now returns `ok: false` for room search with the explicit source string `搜索尚未连接到对战会话`, so the multiplayer directory always shows a non-empty error instead of pretending search succeeded with an empty list.
+- Room directory / presenter fixes:
+  - `DiscoveredRoom` metadata stays cloned and frozen with remote `gameVersion` and `contentHash`.
+  - Room cards now display the remote room version, mark mismatched version/hash combinations as `不兼容`, and disable Join for those rooms.
+- Lobby presenter fixes:
+  - Seat roles render as localized `房主` / `访客`.
+  - Ready state now uses its own `准备状态` field instead of the incorrect `游戏版本` label.
+- Profile / leave behavior fixes:
+  - Multiplayer build selection now re-syncs to a valid `profile.selectedBattleBuildId` whenever one is available, otherwise it keeps the current valid selection or falls back to the first sea-ready build.
+  - Leave only returns to the directory when the callback succeeds; failed leave attempts keep the lobby visible and surface the callback error.
+- Verification added:
+  - `tests/multiplayerMenu.test.ts` now covers presenter output for incompatible room cards, localized seat markup, selected-build resync, and failed-leave lobby retention.
+- Explicitly deferred to Task 7:
+  - Live room-announcement subscription and continuously running expiry cleanup are still runtime wiring work for Task 7.
+  - This task does not claim the LAN directory is already fed by realtime discovery traffic.

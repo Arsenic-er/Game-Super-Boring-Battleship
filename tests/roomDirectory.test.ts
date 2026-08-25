@@ -1,4 +1,5 @@
 import { describe, expect, it } from "vitest";
+import { LAN_CONTENT_HASH, LAN_GAME_VERSION } from "../src/net/networkFingerprint";
 import { LAN_GAME_PORTS } from "../src/net/protocol";
 import { RoomDirectory, type DiscoveredRoom } from "../src/net/roomDirectory";
 
@@ -13,18 +14,22 @@ function discoveredRoom(overrides: Partial<DiscoveredRoom> = {}): DiscoveredRoom
     capacity: 2,
     phase: "lobby",
     lastSeenAt: 1_000,
+    gameVersion: LAN_GAME_VERSION,
+    contentHash: LAN_CONTENT_HASH,
     ...overrides,
   };
 }
 
 describe("RoomDirectory", () => {
-  it("de-duplicates by room id while cloning caller input", () => {
+  it("de-duplicates by room id while cloning caller input including remote version metadata", () => {
     const directory = new RoomDirectory();
     const first = discoveredRoom();
     expect(directory.ingest(first)).toBe(true);
 
     first.roomName = "Mutated Outside";
     first.address = "10.0.0.99";
+    first.gameVersion = "mutated-version";
+    first.contentHash = "mutated-hash";
 
     expect(directory.ingest(discoveredRoom({
       roomId: "room-1",
@@ -35,6 +40,8 @@ describe("RoomDirectory", () => {
       playerCount: 2,
       phase: "in-match",
       lastSeenAt: 2_000,
+      gameVersion: "0.7.0-remote",
+      contentHash: "lan-1-remote-hash",
     }))).toBe(true);
 
     expect(directory.list()).toEqual([
@@ -47,6 +54,8 @@ describe("RoomDirectory", () => {
         playerCount: 2,
         phase: "in-match",
         lastSeenAt: 2_000,
+        gameVersion: "0.7.0-remote",
+        contentHash: "lan-1-remote-hash",
       }),
     ]);
   });
@@ -99,6 +108,10 @@ describe("RoomDirectory", () => {
       { label: "long-host-name", room: discoveredRoom({ hostName: "h".repeat(33) }) },
       { label: "negative-last-seen", room: discoveredRoom({ lastSeenAt: -1 }) },
       { label: "nan-last-seen", room: discoveredRoom({ lastSeenAt: Number.NaN }) },
+      { label: "empty-game-version", room: discoveredRoom({ gameVersion: "" }) },
+      { label: "long-game-version", room: discoveredRoom({ gameVersion: "v".repeat(33) }) },
+      { label: "empty-content-hash", room: discoveredRoom({ contentHash: "" }) },
+      { label: "long-content-hash", room: discoveredRoom({ contentHash: "h".repeat(129) }) },
     ];
 
     expect(LAN_GAME_PORTS).toContain(47_778);
@@ -162,8 +175,8 @@ describe("RoomDirectory", () => {
       (snapshot as DiscoveredRoom[]).push(discoveredRoom({ roomId: "room-2" }));
     }).toThrow();
     expect(() => {
-      (snapshot[0] as DiscoveredRoom).roomName = "Tampered";
+      (snapshot[0] as DiscoveredRoom).gameVersion = "tampered-version";
     }).toThrow();
-    expect(directory.list()[0]?.roomName).toBe("Alpha Room");
+    expect(directory.list()[0]?.gameVersion).toBe(LAN_GAME_VERSION);
   });
 });

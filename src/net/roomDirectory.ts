@@ -10,6 +10,8 @@ export interface DiscoveredRoom {
   capacity: 2;
   phase: "lobby" | "in-match";
   lastSeenAt: number;
+  gameVersion: string;
+  contentHash: string;
 }
 
 interface StoredRoom {
@@ -54,7 +56,9 @@ function isDiscoveredRoom(room: DiscoveredRoom): boolean {
     && (room.phase === "lobby" || room.phase === "in-match")
     && typeof room.lastSeenAt === "number"
     && Number.isFinite(room.lastSeenAt)
-    && room.lastSeenAt >= 0;
+    && room.lastSeenAt >= 0
+    && hasBoundedText(room.gameVersion, 32)
+    && hasBoundedText(room.contentHash, 128);
 }
 
 function cloneRoom(room: DiscoveredRoom): DiscoveredRoom {
@@ -68,6 +72,8 @@ function cloneRoom(room: DiscoveredRoom): DiscoveredRoom {
     capacity: 2,
     phase: room.phase,
     lastSeenAt: room.lastSeenAt,
+    gameVersion: room.gameVersion,
+    contentHash: room.contentHash,
   };
 }
 

@@ -231,7 +231,7 @@ menus = new GameMenus(gameShell, settings, profile, view.getQuality(), {
   multiplayer: {
     capabilities: () => lanBridge.capabilities(),
     createRoom: async () => ({ ok: false, errorSource: "房间创建入口已就绪，运行时接线将在后续任务完成。" }),
-    searchRooms: async () => ({ ok: true, rooms: [] }),
+    searchRooms: async () => ({ ok: false, errorSource: "搜索尚未连接到对战会话" }),
     manualJoin: async () => ({ ok: false, errorSource: "手动连接入口已就绪，运行时连接将在后续任务完成。" }),
     leaveRoom: async () => ({ ok: true }),
     readyLobby: async () => ({ ok: false, errorSource: "等待局域网联机运行时接线完成。" }),

@@ -1,10 +1,12 @@
 import { describe, expect, it, vi } from "vitest";
 import { createDefaultLocalProfile, type LocalProfile, type SavedShipBuild } from "../src/profile/localProfile";
+import { LAN_CONTENT_HASH, LAN_GAME_VERSION } from "../src/net/networkFingerprint";
 import { RoomDirectory, type DiscoveredRoom } from "../src/net/roomDirectory";
 import { HostLobby, type LobbySnapshot } from "../src/net/lobbyState";
 import type { LanBuildDescriptor } from "../src/net/protocol";
 import {
   MULTIPLAYER_MENU_SOURCE_STRINGS,
+  MultiplayerMenu,
   MultiplayerMenuController,
   approximateRoomPingMs,
   chooseInitialMultiplayerBuildId,
@@ -33,6 +35,8 @@ function makeRoom(overrides: Partial<DiscoveredRoom> = {}): DiscoveredRoom {
     capacity: 2,
     phase: "lobby",
     lastSeenAt: 1_000,
+    gameVersion: LAN_GAME_VERSION,
+    contentHash: LAN_CONTENT_HASH,
     ...overrides,
   };
 }
@@ -231,9 +235,129 @@ describe("multiplayer menu helpers", () => {
     expect(callbacks.startLobby).toHaveBeenCalledTimes(1);
   });
 
+  it("prefers a newly selected sea-ready profile build, otherwise keeps the current valid multiplayer selection", () => {
+    const base = createDefaultLocalProfile();
+    const buildA = { ...base.savedShipBuilds[0]!, id: "build-a", name: "Build A" };
+    const buildB = { ...base.savedShipBuilds[0]!, id: "build-b", name: "Build B" };
+    const callbacks = {
+      capabilities: vi.fn(async () => ({ desktop: true as const, canHost: true as const, canDiscover: true as const })),
+      createRoom: vi.fn(async () => ({ ok: false, errorSource: "stub" })),
+      searchRooms: vi.fn(async () => ({ ok: false, errorSource: "搜索尚未连接到对战会话" })),
+      manualJoin: vi.fn(async () => ({ ok: false, errorSource: "stub" })),
+      leaveRoom: vi.fn(async () => ({ ok: true })),
+      readyLobby: vi.fn(async () => ({ ok: true })),
+      startLobby: vi.fn(async () => ({ ok: true })),
+    };
+
+    const controller = new MultiplayerMenuController({
+      ...base,
+      savedShipBuilds: [buildA, buildB],
+      selectedBattleBuildId: buildA.id,
+    }, callbacks);
+
+    controller.selectBuild(buildA.id);
+    controller.setProfile({
+      ...base,
+      savedShipBuilds: [buildA, buildB],
+      selectedBattleBuildId: buildB.id,
+    });
+    expect(controller.getSelectedBuildId()).toBe(buildB.id);
+
+    controller.selectBuild(buildA.id);
+    controller.setProfile({
+      ...base,
+      savedShipBuilds: [buildA, { ...buildB, slots: {
+        mainGun: buildB.slots.mainGun.map(() => null),
+        torpedo: buildB.slots.torpedo.map(() => null),
+        antiAir: buildB.slots.antiAir.map(() => null),
+        sideGun: buildB.slots.sideGun.map(() => null),
+        depthCharge: buildB.slots.depthCharge.map(() => null),
+        magazine: buildB.slots.magazine.map(() => null),
+        engine: buildB.slots.engine.map(() => null),
+        steering: buildB.slots.steering.map(() => null),
+      } }],
+      selectedBattleBuildId: buildB.id,
+    });
+    expect(controller.getSelectedBuildId()).toBe(buildA.id);
+  });
+
+  it("renders incompatible room cards with the remote game version and a disabled join action", () => {
+    const directory = new RoomDirectory();
+    expect(directory.ingest(makeRoom({
+      roomId: "room-legacy",
+      roomName: "Legacy Room",
+      gameVersion: "0.6.12",
+      contentHash: "lan-legacy-hash",
+    }))).toBe(true);
+
+    const markup = (MultiplayerMenu.prototype as unknown as {
+      roomCardsMarkup(this: { roomDirectory: RoomDirectory; loadingRooms: boolean; now: () => number }): string;
+    }).roomCardsMarkup.call({
+      roomDirectory: directory,
+      loadingRooms: false,
+      now: () => 1_500,
+    });
+
+    expect(markup).toContain(">0.6.12<");
+    expect(markup).toContain(">不兼容<");
+    expect(markup).toMatch(/multiplayer-room-join" type="button" data-room-id="room-legacy" disabled>加入<\/button>/);
+  });
+
+  it("renders localized lobby roles and a dedicated ready-status field in seat cards", () => {
+    const profile = createDefaultLocalProfile();
+    const readyBuildId = profile.savedShipBuilds[0]!.id;
+    const snapshot = createHostSnapshot(profile, readyBuildId, true);
+    const localBuildName = profile.savedShipBuilds[0]!.name;
+
+    const markup = (MultiplayerMenu.prototype as unknown as {
+      seatMarkup(
+        this: { controller: { getLobby: () => { localPeerId?: string } } },
+        title: string,
+        player: LobbySnapshot["players"][number] | undefined,
+        localBuildName: string | null,
+      ): string;
+    }).seatMarkup.call({
+      controller: {
+        getLobby: () => ({ localPeerId: "peer-host" }),
+      },
+    }, "房主席位", snapshot.players[0], localBuildName);
+
+    expect(markup).toContain(">房主<");
+    expect(markup).toContain("<dt>准备状态</dt><dd>已准备</dd>");
+    expect(markup).not.toContain(">host<");
+    expect(markup).not.toContain(">guest<");
+    expect(markup).not.toContain("<dt>游戏版本</dt><dd>已准备</dd>");
+  });
+
+  it("keeps the lobby visible when leave fails and surfaces the returned error", async () => {
+    const render = vi.fn();
+    const fakeMenu = {
+      controller: {
+        requestLeave: vi.fn(async () => ({ ok: false, errorSource: "离开房间尚未连接到对战会话" })),
+      },
+      screen: "lobby" as const,
+      statusSource: null,
+      render,
+    };
+
+    await (MultiplayerMenu.prototype as unknown as {
+      handleLeaveRoom(this: {
+        controller: { requestLeave: () => Promise<{ ok: boolean; errorSource?: string }> };
+        screen: "directory" | "lobby";
+        statusSource: string | null;
+        render: () => void;
+      }): Promise<void>;
+    }).handleLeaveRoom.call(fakeMenu);
+
+    expect(fakeMenu.screen).toBe("lobby");
+    expect(fakeMenu.statusSource).toBe("离开房间尚未连接到对战会话");
+    expect(render).toHaveBeenCalledTimes(1);
+  });
+
   it("tracks the full multiplayer source-string surface for locale coverage", () => {
     expect(MULTIPLAYER_MENU_SOURCE_STRINGS).toContain("多人联机");
     expect(MULTIPLAYER_MENU_SOURCE_STRINGS).toContain("手动加入也需要桌面版联机桥。");
+    expect(MULTIPLAYER_MENU_SOURCE_STRINGS).toContain("搜索尚未连接到对战会话");
     expect(MULTIPLAYER_MENU_SOURCE_STRINGS).toContain("近似延迟（最近广播）");
     expect(new Set(MULTIPLAYER_MENU_SOURCE_STRINGS).size).toBe(MULTIPLAYER_MENU_SOURCE_STRINGS.length);
   });
