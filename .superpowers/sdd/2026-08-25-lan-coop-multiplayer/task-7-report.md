@@ -234,3 +234,39 @@ Result:
 - Both CommonJS entry points passed syntax checks.
 - Production TypeScript/Vite build passed (existing large-chunk advisory only).
 - Whitespace diff check passed.
+
+## Fourth independent-review remediation (2026-08-26)
+
+The final focused review of `f380614` found two client presentation defects.
+Friendly ships were paired across snapshots by array position, and visual events
+from the newer snapshot were exposed before the 120 ms interpolation timeline
+had reached that snapshot. Both were reproduced with failing tests first.
+
+### Client interpolation and event timeline
+- Friendly interpolation now builds the previous-frame lookup by ship ID. A
+  continuing ship follows only its own prior position, heading, speed, and hull
+  history; a newly visible ID starts directly from its current authoritative
+  values instead of borrowing another ship's trajectory.
+- Validated replicated shot, impact, and air events now enter a separate queue
+  keyed by their snapshot receive boundary. They remain hidden while interpolation
+  alpha is below one, are released once when the delayed render timeline crosses
+  the authoritative boundary, and are removed immediately after delivery.
+- The same release rule works for a single snapshot, bounded extrapolation, and
+  the 500 ms freeze state; repeated renders never replay an already delivered
+  event.
+
+### Verification after fourth review remediation (2026-08-26)
+
+```bash
+npm test -- --run tests/clientBattleSession.test.ts tests/networkReconciliation.test.ts
+npm test -- --run
+npm run build
+git diff --check
+```
+
+Result:
+- Focused regression: 2 files, 19 tests passed.
+- Full suite: 63 files passed, 2 report suites skipped; 536 tests passed,
+  2 report tests skipped.
+- Production TypeScript/Vite build passed (existing large-chunk advisory only).
+- Whitespace diff check passed.

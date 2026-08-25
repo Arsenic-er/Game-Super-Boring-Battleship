@@ -99,9 +99,15 @@ interface InterpolatedSnapshot {
   readonly objective: BattleState["objective"];
   readonly projectiles: readonly ProjectileState[];
   readonly airSquadrons: readonly AirSquadronState[];
-  readonly shots: readonly ShotEvent[];
-  readonly impacts: readonly ImpactEvent[];
-  readonly airEvents: readonly AirCombatEvent[];
+}
+
+interface PendingVisualEvents {
+  readonly receivedAt: number;
+  readonly events: {
+    readonly shots: readonly ShotEvent[];
+    readonly impacts: readonly ImpactEvent[];
+    readonly airEvents: readonly AirCombatEvent[];
+  };
 }
 
 function asNumber(value: unknown): number | undefined {
@@ -446,6 +452,7 @@ export class ClientBattleSession {
   readonly role = "client" as const;
 
   private readonly snapshots = new SnapshotBuffer<PlayerSnapshotPayload>();
+  private readonly pendingVisualEvents: PendingVisualEvents[] = [];
   private readonly templateState = createInitialState(1, "battle");
   private readonly pendingInputs: PendingInput[] = [];
   private lastInputSequence = 0;
@@ -497,7 +504,12 @@ export class ClientBattleSession {
     if (latest && snapshot.time <= latest.snapshot.time) {
       return { accepted: false, reason: "stale-time" };
     }
-    this.snapshots.push(structuredClone(snapshot), receivedAt);
+    const cloned = structuredClone(snapshot);
+    this.snapshots.push(cloned, receivedAt);
+    const visualEvents = cloneReplicatedEvents(cloned.events);
+    if (visualEvents.shots.length > 0 || visualEvents.impacts.length > 0 || visualEvents.airEvents.length > 0) {
+      this.pendingVisualEvents.push({ receivedAt, events: visualEvents });
+    }
     while (this.pendingInputs.length > 0 && this.pendingInputs[0]!.inputSequence <= snapshot.lastProcessedInputSequence) {
       this.pendingInputs.shift();
     }
@@ -517,15 +529,16 @@ export class ClientBattleSession {
     }
 
     const predictedSelf = this.predictSelf(sampled.self, now);
+    const visualEvents = this.releaseVisualEvents(now);
     const state = structuredClone(this.templateState);
     state.time = sampled.time;
     state.ships = [predictedSelf, ...sampled.friendlies.map(makeFriendly)];
     state.objective = sampled.objective;
     state.projectiles = sampled.projectiles.map((entry) => structuredClone(entry));
     state.airSquadrons = sampled.airSquadrons.map((entry) => structuredClone(entry));
-    state.airEvents = sampled.airEvents.map((entry) => structuredClone(entry));
-    state.shots = sampled.shots.map((entry) => structuredClone(entry));
-    state.impacts = sampled.impacts.map((entry) => structuredClone(entry));
+    state.airEvents = visualEvents.airEvents.map((entry) => structuredClone(entry));
+    state.shots = visualEvents.shots.map((entry) => structuredClone(entry));
+    state.impacts = visualEvents.impacts.map((entry) => structuredClone(entry));
     state.smokeClouds = [];
     state.depthCharges = [];
     state.underwaterTargets = [];
@@ -543,10 +556,34 @@ export class ClientBattleSession {
     this.disconnectState = { connected: false, reason };
   }
 
+  private visualTimelineBoundary(now: number): number | undefined {
+    const latest = this.snapshots.latest();
+    return latest
+      ? Math.min(now, latest.receivedAt + FREEZE_AFTER_MS) - INTERPOLATION_DELAY_MS
+      : undefined;
+  }
+
+  private releaseVisualEvents(now: number): {
+    shots: ShotEvent[];
+    impacts: ImpactEvent[];
+    airEvents: AirCombatEvent[];
+  } {
+    const boundary = this.visualTimelineBoundary(now);
+    const released = { shots: [] as ShotEvent[], impacts: [] as ImpactEvent[], airEvents: [] as AirCombatEvent[] };
+    if (boundary === undefined) return released;
+    while (this.pendingVisualEvents[0] && this.pendingVisualEvents[0].receivedAt <= boundary) {
+      const due = this.pendingVisualEvents.shift()!.events;
+      released.shots.push(...due.shots);
+      released.impacts.push(...due.impacts);
+      released.airEvents.push(...due.airEvents);
+    }
+    return released;
+  }
+
   private sampleSnapshot(now: number): InterpolatedSnapshot | undefined {
     const latest = this.snapshots.latest();
     if (!latest) return undefined;
-    const targetReceivedAt = Math.min(now, latest.receivedAt + FREEZE_AFTER_MS) - INTERPOLATION_DELAY_MS;
+    const targetReceivedAt = this.visualTimelineBoundary(now)!;
     if (targetReceivedAt <= latest.receivedAt) {
       const sampled = this.snapshots.sample(targetReceivedAt) ?? { previous: latest, next: latest, alpha: 0 };
       return this.interpolate(sampled.previous.snapshot, sampled.next.snapshot, sampled.alpha);
@@ -592,21 +629,27 @@ export class ClientBattleSession {
     const previousThrottle = asNumber(previousSelf.throttle) ?? 0;
     const nextThrottle = asNumber(nextSelf.throttle) ?? previousThrottle;
     const newerSelf = alpha >= 0.5 ? nextSelf : previousSelf;
+    const previousFriendliesById = new Map(previous.friendlies.flatMap((entry) => {
+      const record = entry as Record<string, unknown>;
+      const id = asString(record.id);
+      return id ? [[id, record] as const] : [];
+    }));
     const friendlies = next.friendlies.map((entry, index) => {
       const nextFriendly = entry as Record<string, unknown>;
-      const previousFriendly = (previous.friendlies[index] ?? entry) as Record<string, unknown>;
+      const id = asString(nextFriendly.id);
+      const previousFriendly = (id ? previousFriendliesById.get(id) : undefined) ?? nextFriendly;
       const shipClassId = (asString(nextFriendly.shipClassId) ?? "fletcher") as ShipState["shipClassId"];
+      const nextFriendlyPosition = asVec3(nextFriendly.position) ?? { x: 0, y: 0, z: 0 };
       return {
-        id: asString(nextFriendly.id) ?? `friendly-${index}`,
+        id: id ?? `friendly-${index}`,
         shipClassId,
-        position: lerpVec3(asVec3(previousFriendly.position) ?? { x: 0, y: 0, z: 0 }, asVec3(nextFriendly.position) ?? { x: 0, y: 0, z: 0 }, alpha),
-        heading: lerpAngle(asNumber(previousFriendly.heading) ?? 0, asNumber(nextFriendly.heading) ?? 0, alpha),
-        speedKnots: lerpNumber(asNumber(previousFriendly.speedKnots) ?? 0, asNumber(nextFriendly.speedKnots) ?? 0, alpha),
-        hullRatio: lerpNumber(asNumber(previousFriendly.hullRatio) ?? 1, asNumber(nextFriendly.hullRatio) ?? 1, alpha),
+        position: lerpVec3(asVec3(previousFriendly.position) ?? nextFriendlyPosition, nextFriendlyPosition, alpha),
+        heading: lerpAngle(asNumber(previousFriendly.heading) ?? asNumber(nextFriendly.heading) ?? 0, asNumber(nextFriendly.heading) ?? 0, alpha),
+        speedKnots: lerpNumber(asNumber(previousFriendly.speedKnots) ?? asNumber(nextFriendly.speedKnots) ?? 0, asNumber(nextFriendly.speedKnots) ?? 0, alpha),
+        hullRatio: lerpNumber(asNumber(previousFriendly.hullRatio) ?? asNumber(nextFriendly.hullRatio) ?? 1, asNumber(nextFriendly.hullRatio) ?? 1, alpha),
         loadout: loadoutFromReplicated(nextFriendly, shipClassId),
       };
     });
-    const replicatedEvents = cloneReplicatedEvents(next.events);
     return {
       controlledShipId: next.controlledShipId,
       serverTick: next.serverTick,
@@ -647,7 +690,6 @@ export class ClientBattleSession {
         const squadron = cloneReplicatedAircraft(entry, index);
         return squadron ? [squadron] : [];
       }),
-      ...replicatedEvents,
     };
   }
 

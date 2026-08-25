@@ -230,6 +230,81 @@ describe("ClientBattleSession", () => {
     expect(frozenOwn.heading).toBeCloseTo(boundaryOwn.heading, 5);
   });
 
+  it("matches friendly interpolation history by ship id instead of array index", () => {
+    const session = new ClientBattleSession({
+      roomId: "room-alpha", peerId: "peer-guest",
+      gameVersion: LAN_GAME_VERSION, contentHash: LAN_CONTENT_HASH,
+    });
+    session.receiveSnapshot(snapshot({
+      serverTick: 1,
+      time: 0,
+      friendlies: [{
+        id: "ally-a", shipClassId: "cleveland",
+        position: { x: -1_000, y: 0, z: 0 }, heading: 0, speedKnots: 5, hullRatio: 0.9,
+      }, {
+        id: "ally-b", shipClassId: "fletcher",
+        position: { x: 100, y: 0, z: 0 }, heading: 0.2, speedKnots: 20, hullRatio: 0.8,
+      }],
+    }), 0);
+    session.receiveSnapshot(snapshot({
+      serverTick: 2,
+      time: 0.2,
+      friendlies: [{
+        id: "ally-b", shipClassId: "fletcher",
+        position: { x: 300, y: 0, z: 0 }, heading: 0.4, speedKnots: 24, hullRatio: 0.7,
+      }],
+    }), 200);
+
+    const ally = session.renderState(220).state.ships.find(({ id }) => id === "ally-b")!;
+    expect(ally.position.x).toBeCloseTo(200, 5);
+    expect(ally.heading).toBeCloseTo(0.3, 5);
+    expect(ally.speedKnots).toBeCloseTo(22, 5);
+    expect(ally.hull / ally.maxHull).toBeCloseTo(0.75, 5);
+  });
+
+  it("releases next-snapshot visual events only after the interpolation timeline crosses their boundary", () => {
+    const session = new ClientBattleSession({
+      roomId: "room-alpha", peerId: "peer-guest",
+      gameVersion: LAN_GAME_VERSION, contentHash: LAN_CONTENT_HASH,
+    });
+    session.receiveSnapshot(snapshot({ serverTick: 1, time: 0, events: [] }), 0);
+    session.receiveSnapshot(snapshot({
+      serverTick: 2,
+      time: 0.2,
+      events: [{
+        id: 701, kind: "shot", team: "player", ownerId: "guest-ship",
+        position: { x: 10, y: 2, z: 20 }, projectileKind: "shell", ammoType: "he",
+      }],
+    }), 200);
+
+    expect(session.renderState(220).state.shots).toEqual([]);
+    expect(session.renderState(319).state.shots).toEqual([]);
+    expect(session.renderState(320).state.shots.map(({ id }) => id)).toEqual([701]);
+    expect(session.renderState(320).state.shots).toEqual([]);
+    expect(session.renderState(600).state.shots).toEqual([]);
+  });
+
+  it("releases a single-snapshot event once during extrapolation and never replays it after freeze", () => {
+    const session = new ClientBattleSession({
+      roomId: "room-alpha", peerId: "peer-guest",
+      gameVersion: LAN_GAME_VERSION, contentHash: LAN_CONTENT_HASH,
+    });
+    session.receiveSnapshot(snapshot({
+      serverTick: 1,
+      time: 0,
+      events: [{
+        id: 702, kind: "splash", position: { x: 30, y: 0, z: 40 },
+        damage: 0, projectileKind: "shell", ammoType: "ap",
+      }],
+    }), 0);
+
+    expect(session.renderState(119).state.impacts).toEqual([]);
+    expect(session.renderState(120).state.impacts.map(({ id }) => id)).toEqual([702]);
+    expect(session.renderState(350).state.impacts).toEqual([]);
+    expect(session.renderState(700).state.impacts).toEqual([]);
+    expect(session.renderState(900).state.impacts).toEqual([]);
+  });
+
   it("dead-reckons a single snapshot from its velocity and freezes that result after 500 ms", () => {
     const session = new ClientBattleSession({
       roomId: "room-alpha",
