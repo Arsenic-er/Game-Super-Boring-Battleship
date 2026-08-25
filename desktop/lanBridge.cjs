@@ -359,6 +359,7 @@ class LanBridge {
     this.wsMaxBytesPerWindow = options.wsMaxBytesPerWindow ?? WS_MAX_BYTES_PER_WINDOW;
     this.socketStates = new WeakMap();
     this.nextHostConnectionId = 0;
+    this.nextGuestConnectionId = 0;
   }
 
   async capabilities() {
@@ -481,8 +482,9 @@ class LanBridge {
 
     this.connectPromise = new Promise((resolve, reject) => {
       const socket = new this.WebSocketClass(normalizedUrl, { maxPayload: WS_MAX_BYTES });
+      const connectionId = this.allocateGuestConnectionId();
       this.clientSocket = socket;
-      this.attachSocket(socket, { role: "guest", url: normalizedUrl });
+      this.attachSocket(socket, { role: "guest", url: normalizedUrl, connectionId });
 
       let settled = false;
       const cleanup = () => {
@@ -504,7 +506,7 @@ class LanBridge {
         settled = true;
         cleanup();
         this.connectPromise = undefined;
-        this.emit({ type: "connected", role: "guest", url: normalizedUrl });
+        this.emit({ type: "connected", role: "guest", url: normalizedUrl, connectionId });
         resolve();
       };
       const onError = (error) => fail(error);
@@ -646,6 +648,11 @@ class LanBridge {
   allocateHostConnectionId() {
     this.nextHostConnectionId += 1;
     return `host-connection-${this.nextHostConnectionId}`;
+  }
+
+  allocateGuestConnectionId() {
+    this.nextGuestConnectionId += 1;
+    return `guest-connection-${this.nextGuestConnectionId}`;
   }
 
   attachSocket(socket, metadata) {

@@ -656,6 +656,42 @@ describe("Electron LAN bridge", () => {
     await expect(host.send("bad-target", { connectionId: "host-connection-missing" })).rejects.toThrow(/connection-not-found/i);
   });
 
+  it("tags every guest websocket event with the active host connection identity", async () => {
+    const host = trackBridge(createLanBridge());
+    const guest = trackBridge(createLanBridge());
+    const room = await host.createRoom({ announcementJson: buildAnnouncementJson() });
+    const hostConnectedPromise = waitForEvent(host, (event) => event.type === "connected" && event.role === "host");
+    const guestConnectedPromise = waitForEvent(guest, (event) => event.type === "connected" && event.role === "guest");
+    await guest.connect(`ws://127.0.0.1:${room.port}`);
+    const hostConnected = await hostConnectedPromise;
+    const guestConnected = await guestConnectedPromise;
+    if (hostConnected.type !== "connected" || !hostConnected.connectionId) throw new Error("expected-host-connection-id");
+    if (guestConnected.type !== "connected" || !guestConnected.connectionId) throw new Error("expected-guest-connection-id");
+
+    const guestMessage = waitForEvent(
+      guest,
+      (event) => event.type === "message" && event.role === "guest" && event.messageJson === "host->guest",
+    );
+    await host.send("host->guest", { connectionId: hostConnected.connectionId });
+    await expect(guestMessage).resolves.toMatchObject({
+      type: "message",
+      role: "guest",
+      connectionId: guestConnected.connectionId,
+      messageJson: "host->guest",
+    });
+
+    const guestDisconnected = waitForEvent(
+      guest,
+      (event) => event.type === "disconnected" && event.role === "guest",
+    );
+    await guest.disconnect();
+    await expect(guestDisconnected).resolves.toMatchObject({
+      type: "disconnected",
+      role: "guest",
+      connectionId: guestConnected.connectionId,
+    });
+  });
+
   it("rejects a second websocket client without evicting the active guest or breaking targeted sends", async () => {
     const host = trackBridge(createLanBridge());
     const room = await host.createRoom({ announcementJson: buildAnnouncementJson() });

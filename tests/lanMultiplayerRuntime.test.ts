@@ -13,6 +13,7 @@ import {
 
 class FakeLanBridge implements BattleshipLanApi {
   private listener?: (event: LanBridgeEvent) => void;
+  readonly guestConnectionId = "guest-connection-fake";
   readonly sent: Array<{ message: LanMessage; target?: LanSendTarget }> = [];
   capabilities = vi.fn(async () => ({ desktop: true as const, canHost: true as const, canDiscover: true as const }));
   createRoom = vi.fn(async () => ({ port: 47779, address: "192.168.1.88" }));
@@ -20,7 +21,9 @@ class FakeLanBridge implements BattleshipLanApi {
   closeRoom = vi.fn(async () => {});
   startDiscovery = vi.fn(async () => {});
   stopDiscovery = vi.fn(async () => {});
-  connect = vi.fn(async () => {});
+  connect = vi.fn(async () => {
+    this.emit({ type: "connected", role: "guest", connectionId: this.guestConnectionId });
+  });
   disconnect = vi.fn(async () => {});
   acceptConnection = vi.fn(async (_connectionId: string) => {});
   closeConnection = vi.fn(async (_connectionId: string, _reason?: string) => {});
@@ -182,6 +185,148 @@ describe("LanMultiplayerRuntime receive validation", () => {
     await runtime.dispose();
   });
 
+  it.each([
+    {
+      reason: "version-mismatch" as const,
+      gameVersion: "0.6.0",
+      contentHash: LAN_CONTENT_HASH,
+      errorSource: "游戏版本不一致，无法加入。",
+    },
+    {
+      reason: "content-mismatch" as const,
+      gameVersion: LAN_GAME_VERSION,
+      contentHash: "lan-foreign-content",
+      errorSource: "内容哈希不一致，无法加入。",
+    },
+  ])("accepts an exact foreign $reason only from the pending host connection", async ({
+    reason, gameVersion, contentHash, errorSource,
+  }) => {
+    const bridge = new FakeLanBridge();
+    const runtime = new LanMultiplayerRuntime(bridge, createDefaultLocalProfile(), {
+      onHostMatchStarted: vi.fn(), onClientMatchStarted: vi.fn(), onLobbyUpdated: vi.fn(),
+      onReturnToMenu: vi.fn(), onNotice: vi.fn(),
+    });
+    vi.stubGlobal("window", {
+      setTimeout: globalThis.setTimeout.bind(globalThis),
+      clearTimeout: globalThis.clearTimeout.bind(globalThis),
+    });
+
+    const joining = runtime.callbacks.manualJoin({ address: "192.168.1.24", port: 47778 });
+    await vi.waitFor(() => expect(bridge.sent.some(({ message }) => message.type === "join-request")).toBe(true));
+    const request = bridge.sent.find(({ message }) => message.type === "join-request")!.message;
+    const resolved = vi.fn();
+    void joining.then(resolved);
+
+    bridge.emit({
+      type: "message", role: "guest", connectionId: "guest-connection-foreign",
+      messageJson: encodeLanMessage(envelope("join-rejected", { reason: "invalid-request" }, {
+        roomId: request.roomId, sequence: 1,
+      })),
+    });
+    await flush();
+    expect(resolved).not.toHaveBeenCalled();
+
+    bridge.emit({
+      type: "message", role: "guest", connectionId: bridge.guestConnectionId,
+      messageJson: encodeLanMessage(envelope("join-rejected", { reason }, {
+        roomId: request.roomId, sequence: 2, gameVersion, contentHash,
+      })),
+    });
+    await vi.waitFor(() => expect(resolved).toHaveBeenCalledWith({ ok: false, errorSource }));
+    await expect(joining).resolves.toEqual({ ok: false, errorSource });
+    expect(bridge.disconnect).toHaveBeenCalledTimes(1);
+    await runtime.dispose();
+  });
+
+  it("ignores a forged mismatch rejection whose reason does not match its envelope", async () => {
+    const bridge = new FakeLanBridge();
+    const runtime = new LanMultiplayerRuntime(bridge, createDefaultLocalProfile(), {
+      onHostMatchStarted: vi.fn(), onClientMatchStarted: vi.fn(), onLobbyUpdated: vi.fn(),
+      onReturnToMenu: vi.fn(), onNotice: vi.fn(),
+    });
+    vi.stubGlobal("window", {
+      setTimeout: globalThis.setTimeout.bind(globalThis),
+      clearTimeout: globalThis.clearTimeout.bind(globalThis),
+    });
+
+    const joining = runtime.callbacks.manualJoin({ address: "192.168.1.25", port: 47778 });
+    await vi.waitFor(() => expect(bridge.sent.some(({ message }) => message.type === "join-request")).toBe(true));
+    const request = bridge.sent.find(({ message }) => message.type === "join-request")!.message;
+    const resolved = vi.fn();
+    void joining.then(resolved);
+
+    bridge.emit({
+      type: "message", role: "guest", connectionId: bridge.guestConnectionId,
+      messageJson: encodeLanMessage(envelope("join-rejected", { reason: "version-mismatch" }, {
+        roomId: request.roomId, sequence: 1,
+      })),
+    });
+    await flush();
+    expect(resolved).not.toHaveBeenCalled();
+
+    await runtime.dispose();
+    await expect(joining).resolves.toEqual({ ok: false, errorSource: "联机已关闭。" });
+  });
+
+  it("does not let stale guest errors or disconnects terminate the active pending connection", async () => {
+    const bridge = new FakeLanBridge();
+    const runtime = new LanMultiplayerRuntime(bridge, createDefaultLocalProfile(), {
+      onHostMatchStarted: vi.fn(), onClientMatchStarted: vi.fn(), onLobbyUpdated: vi.fn(),
+      onReturnToMenu: vi.fn(), onNotice: vi.fn(),
+    });
+    vi.stubGlobal("window", {
+      setTimeout: globalThis.setTimeout.bind(globalThis),
+      clearTimeout: globalThis.clearTimeout.bind(globalThis),
+    });
+
+    const joining = runtime.callbacks.manualJoin({ address: "192.168.1.26", port: 47778 });
+    await vi.waitFor(() => expect(bridge.sent.some(({ message }) => message.type === "join-request")).toBe(true));
+    const request = bridge.sent.find(({ message }) => message.type === "join-request")!.message;
+    const resolved = vi.fn();
+    void joining.then(resolved);
+
+    bridge.emit({
+      type: "error", role: "guest", connectionId: "guest-connection-stale",
+      code: "socket-error", message: "stale socket error",
+    });
+    bridge.emit({
+      type: "disconnected", role: "guest", connectionId: "guest-connection-stale", hadError: true,
+    });
+    await flush();
+    expect(resolved).not.toHaveBeenCalled();
+
+    bridge.emit({
+      type: "message", role: "guest", connectionId: bridge.guestConnectionId,
+      messageJson: encodeLanMessage(envelope("join-rejected", { reason: "version-mismatch" }, {
+        roomId: request.roomId, sequence: 1, gameVersion: "0.6.0",
+      })),
+    });
+    await expect(joining).resolves.toEqual({ ok: false, errorSource: "游戏版本不一致，无法加入。" });
+    await runtime.dispose();
+  });
+
+  it("does not open a pending join window when the bridge omits its connection identity", async () => {
+    const bridge = new FakeLanBridge();
+    bridge.connect.mockImplementationOnce(async () => {});
+    const runtime = new LanMultiplayerRuntime(bridge, createDefaultLocalProfile(), {
+      onHostMatchStarted: vi.fn(), onClientMatchStarted: vi.fn(), onLobbyUpdated: vi.fn(),
+      onReturnToMenu: vi.fn(), onNotice: vi.fn(),
+    });
+    vi.stubGlobal("window", {
+      setTimeout: globalThis.setTimeout.bind(globalThis),
+      clearTimeout: globalThis.clearTimeout.bind(globalThis),
+    });
+
+    const joining = runtime.callbacks.manualJoin({ address: "192.168.1.27", port: 47778 });
+    await flush();
+    const sentJoinRequest = bridge.sent.some(({ message }) => message.type === "join-request");
+    await runtime.dispose();
+    const result = await joining;
+
+    expect(sentJoinRequest).toBe(false);
+    expect(result).toEqual({ ok: false, errorSource: "联机操作失败。" });
+  });
+
   it("rolls back an occupied guest seat when the socket disconnects before join acceptance is sent", async () => {
     const profile = createDefaultLocalProfile();
     const build = profile.savedShipBuilds[0]!;
@@ -213,6 +358,66 @@ describe("LanMultiplayerRuntime receive validation", () => {
     expect(runtime.currentGuestConnectionId()).toBeUndefined();
     expect(bridge.acceptConnection).not.toHaveBeenCalledWith("connection-dropped");
     expect((lobbyUpdates.mock.calls.at(-1)?.[0] as LobbySnapshotPayload).players).toHaveLength(1);
+    await runtime.dispose();
+  });
+
+  it("does not let an old connection rollback a same-peer reservation created by a fast reconnect", async () => {
+    const profile = createDefaultLocalProfile();
+    const build = profile.savedShipBuilds[0]!;
+    const buildPayload = {
+      buildId: build.id, buildName: build.name, shipClassId: build.shipClassId, slots: structuredClone(build.slots),
+    };
+    const bridge = new FakeLanBridge();
+    const lobbyUpdates = vi.fn();
+    const runtime = new LanMultiplayerRuntime(bridge, profile, {
+      onHostMatchStarted: vi.fn(), onClientMatchStarted: vi.fn(), onLobbyUpdated: lobbyUpdates,
+      onReturnToMenu: vi.fn(), onNotice: vi.fn(), now: () => 1_000,
+    });
+    await runtime.callbacks.createRoom({ roomName: "Reconnect transaction", buildId: build.id });
+    const roomId = parseLanMessage(JSON.parse(String(bridge.updateAnnouncement.mock.calls.at(-1)?.[0])))!.roomId;
+    const oldRefresh = deferred<void>();
+    bridge.updateAnnouncement.mockImplementationOnce(() => oldRefresh.promise);
+
+    bridge.emit({ type: "connected", role: "host", connectionId: "connection-old" });
+    bridge.emit({
+      type: "message", role: "host", connectionId: "connection-old",
+      messageJson: encodeLanMessage(envelope("join-request", {
+        peerId: "peer-reconnect", commanderName: "Reconnect guest",
+        expectedGameVersion: LAN_GAME_VERSION, expectedContentHash: LAN_CONTENT_HASH, build: buildPayload,
+      }, { roomId, sequence: 1 })),
+    });
+    await vi.waitFor(() => expect(runtime.currentGuestPeerId()).toBe("peer-reconnect"));
+
+    bridge.emit({ type: "disconnected", role: "host", connectionId: "connection-old", hadError: true });
+    await vi.waitFor(() => expect(runtime.currentGuestPeerId()).toBeUndefined());
+
+    bridge.emit({ type: "connected", role: "host", connectionId: "connection-new" });
+    bridge.emit({
+      type: "message", role: "host", connectionId: "connection-new",
+      messageJson: encodeLanMessage(envelope("join-request", {
+        peerId: "peer-reconnect", commanderName: "Reconnect guest",
+        expectedGameVersion: LAN_GAME_VERSION, expectedContentHash: LAN_CONTENT_HASH, build: buildPayload,
+      }, { roomId, sequence: 1 })),
+    });
+    await vi.waitFor(() => expect(runtime.currentGuestConnectionId()).toBe("connection-new"));
+
+    oldRefresh.resolve();
+    await vi.waitFor(() => expect(bridge.closeConnection).toHaveBeenCalledWith("connection-old", "join-failed"));
+    expect(runtime.currentGuestConnectionId()).toBe("connection-new");
+    expect(runtime.currentGuestPeerId()).toBe("peer-reconnect");
+    expect((lobbyUpdates.mock.calls.at(-1)?.[0] as LobbySnapshotPayload).players).toHaveLength(2);
+    expect(bridge.closeConnection).not.toHaveBeenCalledWith("connection-new", expect.anything());
+
+    bridge.emit({
+      type: "message", role: "host", connectionId: "connection-new",
+      messageJson: encodeLanMessage(envelope("ready-request", {
+        peerId: "peer-reconnect", ready: true, build: buildPayload,
+      }, { roomId, sequence: 2 })),
+    });
+    await vi.waitFor(() => expect(
+      (lobbyUpdates.mock.calls.at(-1)?.[0] as LobbySnapshotPayload).players
+        .find(({ peerId }) => peerId === "peer-reconnect")?.ready,
+    ).toBe(true));
     await runtime.dispose();
   });
 
@@ -400,7 +605,7 @@ describe("LanMultiplayerRuntime receive validation", () => {
     expect(request?.roomId).toMatch(/^manual-/);
 
     bridge.emit({
-      type: "message", role: "guest",
+      type: "message", role: "guest", connectionId: bridge.guestConnectionId,
       messageJson: encodeLanMessage(envelope("start-match", {
         seed: 7, serverTick: 0, hostShipId: "host", guestShipId: "guest",
       }, { roomId: request!.roomId, sequence: 10 })),
@@ -418,7 +623,7 @@ describe("LanMultiplayerRuntime receive validation", () => {
       ],
     };
     bridge.emit({
-      type: "message", role: "guest",
+      type: "message", role: "guest", connectionId: bridge.guestConnectionId,
       messageJson: encodeLanMessage(envelope("join-accepted", {
         peerId: runtime.localPeerId, assignedRole: "guest", lobby,
       }, { sequence: 11 })),
@@ -429,7 +634,7 @@ describe("LanMultiplayerRuntime receive validation", () => {
     const readyLobby = structuredClone(lobby);
     readyLobby.players[1]!.ready = true;
     bridge.emit({
-      type: "message", role: "guest",
+      type: "message", role: "guest", connectionId: bridge.guestConnectionId,
       messageJson: encodeLanMessage(envelope("lobby-update", { lobby: readyLobby }, { sequence: 12 })),
     });
     await flush();
@@ -440,18 +645,18 @@ describe("LanMultiplayerRuntime receive validation", () => {
     const spoofed = structuredClone(readyLobby);
     spoofed.players[1]!.ready = false;
     bridge.emit({
-      type: "message", role: "guest",
+      type: "message", role: "guest", connectionId: bridge.guestConnectionId,
       messageJson: encodeLanMessage(envelope("lobby-update", { lobby: spoofed }, { sequence: 12 })),
     });
     bridge.emit({
-      type: "message", role: "guest",
+      type: "message", role: "guest", connectionId: bridge.guestConnectionId,
       messageJson: encodeLanMessage(envelope("lobby-update", { lobby: spoofed }, { sequence: 13, contentHash: "wrong" })),
     });
     await flush();
     expect(lobbyUpdates).toHaveBeenCalledTimes(2);
 
     bridge.emit({
-      type: "message", role: "guest",
+      type: "message", role: "guest", connectionId: bridge.guestConnectionId,
       messageJson: encodeLanMessage(envelope("start-match", {
         seed: 7, serverTick: 0, hostShipId: "host", guestShipId: "guest",
       }, { sequence: 14 })),
@@ -462,11 +667,11 @@ describe("LanMultiplayerRuntime receive validation", () => {
     const matchLobby = structuredClone(readyLobby);
     matchLobby.phase = "in-match";
     bridge.emit({
-      type: "message", role: "guest",
+      type: "message", role: "guest", connectionId: bridge.guestConnectionId,
       messageJson: encodeLanMessage(envelope("lobby-update", { lobby: matchLobby }, { sequence: 15 })),
     });
     bridge.emit({
-      type: "message", role: "guest",
+      type: "message", role: "guest", connectionId: bridge.guestConnectionId,
       messageJson: encodeLanMessage(envelope("start-match", {
         seed: 7, serverTick: 0, hostShipId: "host", guestShipId: "guest",
       }, { sequence: 16 })),
@@ -490,7 +695,7 @@ describe("LanMultiplayerRuntime receive validation", () => {
 
     const joining = runtime.callbacks.manualJoin({ address: "192.168.1.22", port: 47778 });
     await vi.waitFor(() => expect(bridge.sent.some(({ message }) => message.type === "join-request")).toBe(true));
-    bridge.emit({ type: "disconnected", role: "guest", hadError: true });
+    bridge.emit({ type: "disconnected", role: "guest", connectionId: bridge.guestConnectionId, hadError: true });
     await expect(joining).resolves.toEqual({ ok: false, errorSource: "联机连接已断开。" });
     await runtime.dispose();
   });
@@ -731,6 +936,37 @@ describe("LanMultiplayerRuntime receive validation", () => {
     expect(runtime.currentGuestConnectionId()).toBeUndefined();
     expect(runtime.role).toBe("none");
     expect(bridge.closeRoom).not.toHaveBeenCalled();
+    await runtime.dispose();
+  });
+
+  it("does not resume a stale terminal publish after its session is cleared during snapshot send", async () => {
+    const { bridge, runtime, lobbyUpdates } = await createPostMatchHostFixture();
+    const session = runtime.hostSession!;
+    const guestPeerId = runtime.currentGuestPeerId()!;
+    let output = session.step({
+      throttle: 0, rudder: 0, aimPoint: { x: 0, y: 0, z: 1_000 }, fire: false,
+    });
+    for (let attempt = 0; output.snapshots.size === 0 && attempt < 6; attempt += 1) {
+      output = session.step({
+        throttle: 0, rudder: 0, aimPoint: { x: 0, y: 0, z: 1_000 }, fire: false,
+      });
+    }
+    expect(output.snapshots.has(guestPeerId)).toBe(true);
+    const snapshotSend = deferred<void>();
+    const sendCount = bridge.send.mock.calls.length;
+    bridge.send.mockImplementationOnce(() => snapshotSend.promise);
+
+    const publishing = runtime.publishHostStep(output);
+    await vi.waitFor(() => expect(bridge.send.mock.calls.length).toBe(sendCount + 1));
+    bridge.emit({ type: "disconnected", role: "host", connectionId: "connection-post-match", hadError: true });
+    await vi.waitFor(() => expect(runtime.hostSession).toBeUndefined());
+    const lobbyCallCount = lobbyUpdates.mock.calls.length;
+
+    snapshotSend.resolve();
+    await expect(publishing).resolves.toBeUndefined();
+    expect(lobbyUpdates).toHaveBeenCalledTimes(lobbyCallCount);
+    expect(runtime.role).toBe("none");
+    expect(runtime.currentGuestPeerId()).toBeUndefined();
     await runtime.dispose();
   });
 

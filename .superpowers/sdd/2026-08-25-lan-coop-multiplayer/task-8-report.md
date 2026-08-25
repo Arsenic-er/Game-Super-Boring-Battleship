@@ -195,3 +195,68 @@ Size: 105,666,510 bytes
 Type: PE32 executable (GUI), Intel 80386, Windows, NSIS self-extracting archive
 SHA-256: 75e01c8fa1bd8e1786cb0d434dd6888b75a5db92c2db5271c94396a3b242d4ec
 ```
+
+## Final asynchronous-boundary correction (2026-08-26)
+
+The final whole-branch review identified three independent race and compatibility
+boundaries. Deterministic regressions were added before implementation changes.
+
+### RED evidence
+
+The first focused RED run produced six failures across 44 tests:
+
+```text
+guest bridge connected event had no connectionId
+foreign version/content mismatch rejection did not reach the pending join
+forged mismatch reason was accepted despite a matching local envelope
+old same-peer join rollback removed the newly reconnected guest seat
+terminal snapshot continuation dereferenced a cleared host session
+```
+
+A follow-up identity audit added two more RED cases across 25 runtime tests:
+
+```text
+stale guest error/disconnected events terminated the current pending join
+a bridge without a guest connectionId still opened a pending join window
+```
+
+### Corrections
+
+- Desktop guest WebSocket events now carry one stable, monotonically allocated
+  connection ID across connected, message, error and disconnected events.
+- A pending join requires that non-empty connection identity. The same narrow
+  identity gate is applied to response, error and disconnect processing. A
+  missing identity fails before a join request or pending timeout is created.
+- Foreign `version-mismatch` and `content-mismatch` rejections can cross the
+  general fingerprint gate only for the expected pending connection and only
+  when the rejection reason agrees with the envelope version/hash difference.
+- Host-step publication captures both the session instance and a monotonically
+  changing epoch. Every asynchronous continuation revalidates instance, epoch
+  and host role before it can advance the match lifecycle.
+- Pending host joins use a connection-scoped reservation object with a generation
+  token. A delayed rollback can remove only the exact seat reservation it
+  created, never a same-peer reservation from a newer connection.
+
+### Final verification
+
+```text
+focused LAN suite: 8 files passed; 110 tests passed
+final bridge/runtime focus: 2 files passed; 46 tests passed
+npm test: 65 files passed, 2 skipped; 560 tests passed, 2 skipped
+npm run build: passed
+npm run assets:ships:validate -- public/assets/ships: valid true
+node --check desktop/main.cjs desktop/preload.cjs desktop/lanBridge.cjs: passed
+git diff 4767f85 --check: passed
+git diff --check: passed
+npm run desktop:dist: passed
+independent final review: APPROVED, no remaining Critical or Important findings
+```
+
+The prior executable was deleted before the final rebuild:
+
+```text
+Path: /home/ubuntu/battleship/.worktrees/lan-multiplayer/release/battleship-0.7.0-windows-x64.exe
+Size: 105,669,022 bytes
+Type: PE32 executable (GUI), Intel 80386, Windows, NSIS self-extracting archive
+SHA-256: 0db4318c59b82e9b49b94c900bfc619f3096546fd8344d7f29786925468988b1
+```
