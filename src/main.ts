@@ -29,6 +29,7 @@ import { deployFleetAirSupport } from "./sim/airOperations";
 import { PlayerPerceptionTracker } from "./sim/playerPerception";
 import type { BattleState, ControlCommand, GameMode } from "./sim/types";
 import type { GameLaunchRequest } from "./sim/battleSetup";
+import { createLanBridgeClient } from "./net/lanBridge";
 import { GameMenus } from "./ui/gameMenus";
 import { Hud } from "./ui/hud";
 import { auxiliaryHudVisible } from "./ui/auxiliaryHud";
@@ -57,6 +58,7 @@ const session = new LocalBattleSession(state);
 let developerView: DeveloperViewSession = normalDeveloperView();
 const playerPerception = new PlayerPerceptionTracker();
 const audio = new CombatAudio();
+const lanBridge = createLanBridgeClient();
 let started = false;
 let paused = true;
 let accumulator = 0;
@@ -225,6 +227,15 @@ menus = new GameMenus(gameShell, settings, profile, view.getQuality(), {
   onProfileChange: (nextProfile) => {
     profile = nextProfile;
     saveLocalProfile(profile);
+  },
+  multiplayer: {
+    capabilities: () => lanBridge.capabilities(),
+    createRoom: async () => ({ ok: false, errorSource: "房间创建入口已就绪，运行时接线将在后续任务完成。" }),
+    searchRooms: async () => ({ ok: true, rooms: [] }),
+    manualJoin: async () => ({ ok: false, errorSource: "手动连接入口已就绪，运行时连接将在后续任务完成。" }),
+    leaveRoom: async () => ({ ok: true }),
+    readyLobby: async () => ({ ok: false, errorSource: "等待局域网联机运行时接线完成。" }),
+    startLobby: async () => ({ ok: false, errorSource: "等待局域网联机运行时接线完成。" }),
   },
 });
 developerPanel = new DeveloperPanel(gameShell, () => state, {
@@ -448,3 +459,6 @@ view.engine.runRenderLoop(() => {
   developerPanel?.update();
   view.render();
 });
+
+
+

@@ -1732,3 +1732,76 @@ body[data-locale="ru-RU"] .menu-tabs button { font-size: 11px; }
 @media (max-width: 1180px), (max-height: 760px) {
   .battle-setup-grid { grid-template-columns: 1fr; max-height: 60vh; overflow-y: auto; }
 }
+
+.mode-choice { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+.mission-panel.multiplayer-active > :not(.multiplayer-menu-host) { display: none; }
+.multiplayer-menu-host { display: block; min-height: 0; }
+.multiplayer-menu-host[hidden] { display: none; }
+.multiplayer-menu-screen { display: flex; flex-direction: column; gap: 14px; min-height: 0; }
+.multiplayer-screen-heading { margin-bottom: 0; }
+.multiplayer-brief { margin: 0; }
+.multiplayer-grid, .multiplayer-lobby-grid { display: grid; gap: 14px; min-height: 0; }
+.multiplayer-grid { grid-template-columns: minmax(280px, 360px) minmax(0, 1fr); }
+.multiplayer-lobby-grid { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+.multiplayer-panel, .multiplayer-seat-card, .multiplayer-lobby-actions {
+  min-height: 0;
+  padding: 14px;
+  border: 2px solid #37666a;
+  background: rgba(5, 27, 34, .9);
+  box-shadow: 4px 4px 0 rgba(0, 0, 0, .4);
+}
+.multiplayer-actions-panel, .multiplayer-lobby-actions { display: grid; gap: 10px; align-content: start; }
+.multiplayer-stack-field { display: grid; gap: 6px; }
+.multiplayer-stack-field > span, .multiplayer-field-label { color: #8fb1b2; font-size: 9px; }
+.multiplayer-stack-field input, .multiplayer-stack-field select {
+  min-height: 36px;
+  padding: 8px 10px;
+  color: #d9e7e3;
+  border: 1px solid #31595e;
+  background: #09242c;
+}
+.multiplayer-action-buttons { display: grid; grid-template-columns: 1fr; gap: 8px; }
+.multiplayer-directory-heading { display: flex; align-items: end; justify-content: space-between; gap: 10px; margin-bottom: 10px; }
+.multiplayer-directory-heading h3, .multiplayer-seat-card h3, .multiplayer-lobby-actions h3 { margin: 0; color: #d8e7df; font-size: 13px; }
+.multiplayer-directory-heading small, .multiplayer-inline-note, .multiplayer-secondary-note { color: #7f9ea0; font-size: 9px; line-height: 1.5; }
+.multiplayer-room-list {
+  display: grid;
+  gap: 8px;
+  min-height: 0;
+  max-height: min(52vh, 420px);
+  overflow-y: auto;
+  padding-right: 4px;
+  overscroll-behavior: contain;
+}
+.multiplayer-room-state, .multiplayer-status, .multiplayer-warning {
+  margin: 0;
+  padding: 10px 12px;
+  color: #9ed5b4;
+  border: 1px solid #31575b;
+  background: #0a252d;
+  font-size: 9px;
+  line-height: 1.5;
+}
+.multiplayer-warning { color: #e3bd72; }
+.multiplayer-status { margin-top: 10px; }
+.multiplayer-room-card { display: grid; gap: 10px; padding: 12px; border: 1px solid #31595e; background: #09242c; }
+.multiplayer-room-card-header { display: flex; align-items: start; justify-content: space-between; gap: 10px; }
+.multiplayer-room-card-header b { color: #dce8e3; }
+.multiplayer-room-fields, .multiplayer-seat-card dl { display: grid; gap: 5px; margin: 0; }
+.multiplayer-room-fields div, .multiplayer-seat-card dl div {
+  display: flex;
+  justify-content: space-between;
+  gap: 10px;
+  padding: 6px 7px;
+  background: #081f27;
+  font-size: 9px;
+}
+.multiplayer-room-fields dt, .multiplayer-seat-card dt { color: #7f9ea0; }
+.multiplayer-room-fields dd, .multiplayer-seat-card dd { margin: 0; color: #d8e7df; text-align: right; }
+.multiplayer-ready-toggle { display: inline-flex; align-items: center; gap: 8px; color: #d9e7e3; }
+.multiplayer-ready-toggle input { width: 16px; height: 16px; }
+.multiplayer-start { width: 100%; }
+@media (max-width: 1050px) {
+  .mode-choice, .multiplayer-grid, .multiplayer-lobby-grid { grid-template-columns: 1fr; }
+  .multiplayer-room-list { max-height: 34vh; }
+}

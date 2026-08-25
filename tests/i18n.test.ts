@@ -6,6 +6,7 @@ import {
   formatGameNumber,
   translateGameText,
 } from "../src/i18n/gameLocale";
+import { MULTIPLAYER_MENU_SOURCE_STRINGS } from "../src/ui/multiplayerMenu";
 
 describe("game locales", () => {
   it("offers the seven required languages in their native names", () => {
@@ -51,5 +52,15 @@ describe("game locales", () => {
       }
     }
     expect(translateGameText("最后一套基础组件受到保护。", "en-US")).toBe("The last baseline set is protected.");
+  });
+
+  it("covers every multiplayer menu source string in all seven locales", () => {
+    const messageSources = new Set(GAME_LOCALE_MESSAGES.map((row) => row.source));
+    for (const source of MULTIPLAYER_MENU_SOURCE_STRINGS) {
+      expect(messageSources.has(source), source).toBe(true);
+    }
+    expect(translateGameText("多人联机", "en-US")).toBe("LAN Multiplayer");
+    expect(translateGameText("局域网联机仅在桌面版可用。", "ja-JP")).toBe("LAN マルチプレイはデスクトップ版でのみ利用できます。");
+    expect(translateGameText("近似延迟（最近广播）", "de-DE")).toBe("Ungefähre Latenz (letzte Ankündigung)");
   });
 });

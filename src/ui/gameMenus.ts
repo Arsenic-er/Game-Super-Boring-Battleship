@@ -55,6 +55,7 @@ import {
 import { WEATHER_IDS, WEATHER_PRESETS, type WeatherId } from "../sim/weather";
 import { DockPreview } from "../render/dockPreview";
 import { equipmentArtworkMarkup } from "./equipmentArtwork";
+import { MultiplayerMenu, type MultiplayerMenuCallbacks } from "./multiplayerMenu";
 
 export interface GameMenuCallbacks {
   onStart: (request: GameLaunchRequest) => void;
@@ -65,6 +66,7 @@ export interface GameMenuCallbacks {
   onSettingsChange: (settings: GameSettings) => void;
   onQualityChange: (quality: "low" | "medium") => void;
   onProfileChange: (profile: LocalProfile) => void;
+  multiplayer: MultiplayerMenuCallbacks;
 }
 
 type StartTab = "mission" | "store" | "dock" | "codex";
@@ -139,6 +141,7 @@ export class GameMenus {
   private readonly warehouseNotice: HTMLElement;
   private readonly codexBody: HTMLElement;
   private readonly dockPreview: DockPreview;
+  private readonly multiplayerMenu: MultiplayerMenu;
   private settings: GameSettings;
   private profile: LocalProfile;
   private activeCategory: EquipmentCategory | "all" = "all";
@@ -194,8 +197,10 @@ export class GameMenus {
             </div>
             <div class="mode-choice">
               <button class="mode-card start-battle" type="button"><b>单人战斗</b><span>选择规模、天气与已保存旗舰后开始</span></button>
+              <button class="mode-card open-multiplayer-menu" type="button"><b>多人联机</b><span>创建或加入 2 人局域网房间。</span></button>
               <button class="mode-card start-trials" type="button"><b>舰船测试模式</b><span>无攻击 AI · 无时间限制 · 测试装配性能</span></button>
             </div>
+            <div class="multiplayer-menu-host" hidden></div>
             <div class="battle-setup" hidden>
               <div class="screen-heading"><div><p class="eyebrow">单人战斗准备</p><h2>编成与海况</h2></div><button class="text-button battle-setup-back" type="button">返回任务</button></div>
               <div class="battle-setup-grid">
@@ -271,11 +276,18 @@ export class GameMenus {
     this.armoryGrid = find(".armory-grid"); this.armoryDetail = find(".armory-detail"); this.armoryNotice = find(".armory-notice");
     this.warehouseGrid = find(".warehouse-grid"); this.warehouseDetail = find(".warehouse-detail"); this.warehouseNotice = find(".warehouse-notice"); this.codexBody = find(".codex-table tbody");
     this.dockPreview = new DockPreview(find(".dock-preview"));
+    this.multiplayerMenu = new MultiplayerMenu(find(".multiplayer-menu-host"), {
+      locale: this.settings.locale,
+      profile: this.profile,
+      callbacks: this.callbacks.multiplayer,
+      onBack: () => this.closeMultiplayerMenu(),
+    });
     this.steering.value = String(Math.round(this.settings.steeringSensitivity * 100)); this.aim.value = String(Math.round(this.settings.aimSensitivity * 100)); this.masterVolume.value = String(Math.round(this.settings.masterVolume * 100)); this.commanderName.value = this.profile.commanderName;
     for (const selector of this.languageSelectors) selector.value = this.settings.locale;
     this.renderStaticContent(); this.updateSensitivityLabels(); this.setQuality(initialQuality); this.renderProfile(); this.setStartTab("mission");
 
     find<HTMLButtonElement>(".start-battle").addEventListener("click", () => this.openBattleSetup());
+    find<HTMLButtonElement>(".open-multiplayer-menu").addEventListener("click", () => this.openMultiplayerMenu());
     find<HTMLButtonElement>(".start-trials").addEventListener("click", () => this.start({ mode: "sea-trials" }));
     find<HTMLButtonElement>(".battle-setup-back").addEventListener("click", () => this.closeBattleSetup());
     find<HTMLButtonElement>(".confirm-battle-setup").addEventListener("click", () => this.confirmBattleSetup());
@@ -398,6 +410,7 @@ export class GameMenus {
     this.dockPreview.setTorpedo(equipment.torpedoId);
     this.renderDock();
     this.renderSavedBuilds();
+    this.multiplayerMenu.setProfile(this.profile);
     if (this.battleSetupOpen) this.renderBattleSetup();
     this.applyLocale();
   }
@@ -617,6 +630,21 @@ export class GameMenus {
     if (panel) panel.hidden = true;
   }
 
+  private openMultiplayerMenu(): void {
+    this.closeBattleSetup();
+    this.panels.mission.classList.add("multiplayer-active");
+    const panel = this.panels.mission.querySelector<HTMLElement>(".multiplayer-menu-host");
+    if (panel) panel.hidden = false;
+    void this.multiplayerMenu.show();
+  }
+
+  private closeMultiplayerMenu(): void {
+    this.panels.mission.classList.remove("multiplayer-active");
+    const panel = this.panels.mission.querySelector<HTMLElement>(".multiplayer-menu-host");
+    if (panel) panel.hidden = true;
+    this.multiplayerMenu.hide();
+  }
+
   private renderBattleSetup(): void {
     const build = this.profile.savedShipBuilds.find(({ id }) =>
       id === this.profile.selectedBattleBuildId);
@@ -732,6 +760,7 @@ export class GameMenus {
   }
 
   private applyLocale(): void {
+    this.multiplayerMenu.setLocale(this.settings.locale);
     applyDocumentLocale(this.settings.locale);
     localizeElement(document.body, this.settings.locale);
     for (const selector of this.languageSelectors) selector.value = this.settings.locale;
@@ -763,8 +792,11 @@ export class GameMenus {
   isOpen(): boolean { return !this.startOverlay.hidden || this.pauseOpen || this.settingsOpen; }
   closeAll(): void { this.startOverlay.hidden = true; this.pauseOverlay.hidden = true; this.settingsOverlay.hidden = true; this.pauseOpen = false; this.settingsOpen = false; }
   setProfile(profile: LocalProfile): void { this.profile = normalizeLocalProfile(profile); this.renderProfile(); }
-  showStart(): void { this.pauseOverlay.hidden = true; this.settingsOverlay.hidden = true; this.startOverlay.hidden = false; this.pauseOpen = false; this.settingsOpen = false; this.closeBattleSetup(); this.setStartTab("mission"); }
+  showStart(): void { this.pauseOverlay.hidden = true; this.settingsOverlay.hidden = true; this.startOverlay.hidden = false; this.pauseOpen = false; this.settingsOpen = false; this.closeBattleSetup(); this.closeMultiplayerMenu(); this.setStartTab("mission"); }
   setQuality(quality: "low" | "medium"): void { for (const button of this.qualityButtons) button.classList.toggle("active", button.dataset.quality === quality); }
   private emitSettings(): void { this.updateSensitivityLabels(); this.applyLocale(); this.callbacks.onSettingsChange({ ...this.settings }); }
   private updateSensitivityLabels(): void { this.steeringValue.textContent = `${Math.round(this.settings.steeringSensitivity * 100)}%`; this.aimValue.textContent = `${Math.round(this.settings.aimSensitivity * 100)}%`; this.masterVolumeValue.textContent = `${Math.round(this.settings.masterVolume * 100)}%`; this.muteAudio.textContent = this.settings.muted ? "静音：开" : "静音：关"; this.muteAudio.setAttribute("aria-pressed", String(this.settings.muted)); this.muteAudio.classList.toggle("active", this.settings.muted); for (const button of this.uiSoundButtons) { const active = button.dataset.uiSoundStyle === this.settings.uiSoundStyle; button.classList.toggle("active", active); button.setAttribute("aria-pressed", String(active)); } }
 }
+
+
+

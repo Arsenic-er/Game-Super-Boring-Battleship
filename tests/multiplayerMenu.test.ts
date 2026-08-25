@@ -1,0 +1,242 @@
+import { describe, expect, it, vi } from "vitest";
+import { createDefaultLocalProfile, type LocalProfile, type SavedShipBuild } from "../src/profile/localProfile";
+import { RoomDirectory, type DiscoveredRoom } from "../src/net/roomDirectory";
+import { HostLobby, type LobbySnapshot } from "../src/net/lobbyState";
+import type { LanBuildDescriptor } from "../src/net/protocol";
+import {
+  MULTIPLAYER_MENU_SOURCE_STRINGS,
+  MultiplayerMenuController,
+  approximateRoomPingMs,
+  chooseInitialMultiplayerBuildId,
+  deriveLanCapabilityState,
+  deriveLobbyControls,
+  parseManualJoinTarget,
+} from "../src/ui/multiplayerMenu";
+
+function savedBuildToLan(build: SavedShipBuild): LanBuildDescriptor {
+  return {
+    buildId: build.id,
+    buildName: build.name,
+    shipClassId: build.shipClassId,
+    slots: structuredClone(build.slots),
+  };
+}
+
+function makeRoom(overrides: Partial<DiscoveredRoom> = {}): DiscoveredRoom {
+  return {
+    roomId: "room-alpha",
+    roomName: "Alpha Room",
+    hostName: "Host Admiral",
+    address: "192.168.1.24",
+    port: 47778,
+    playerCount: 1,
+    capacity: 2,
+    phase: "lobby",
+    lastSeenAt: 1_000,
+    ...overrides,
+  };
+}
+
+function makeProfileWithUnreadyBuild(): { profile: LocalProfile; readyBuildId: string; unreadyBuildId: string } {
+  const profile = createDefaultLocalProfile();
+  const readyBuild = profile.savedShipBuilds[0]!;
+  const unreadyBuild: SavedShipBuild = {
+    ...readyBuild,
+    id: "unready-build",
+    name: "Unready Build",
+    slots: {
+      mainGun: readyBuild.slots.mainGun.map(() => null),
+      torpedo: readyBuild.slots.torpedo.map(() => null),
+      antiAir: readyBuild.slots.antiAir.map(() => null),
+      sideGun: readyBuild.slots.sideGun.map(() => null),
+      depthCharge: readyBuild.slots.depthCharge.map(() => null),
+      magazine: readyBuild.slots.magazine.map(() => null),
+      engine: readyBuild.slots.engine.map(() => null),
+      steering: readyBuild.slots.steering.map(() => null),
+    },
+  };
+  return {
+    profile: {
+      ...profile,
+      savedShipBuilds: [readyBuild, unreadyBuild],
+      selectedBattleBuildId: unreadyBuild.id,
+    },
+    readyBuildId: readyBuild.id,
+    unreadyBuildId: unreadyBuild.id,
+  };
+}
+
+function createHostSnapshot(profile: LocalProfile, readyBuildId: string, guestReady: boolean): LobbySnapshot {
+  const readyBuild = profile.savedShipBuilds.find(({ id }) => id === readyBuildId)!;
+  const lobby = new HostLobby({
+    roomName: "Atoll Patrol",
+    hostPeerId: "peer-host",
+    hostCommanderName: "Host Admiral",
+    gameVersion: "0.6.13",
+    contentHash: "lan-test",
+    hostBuild: savedBuildToLan(readyBuild),
+  });
+  expect(lobby.join({
+    peerId: "peer-guest",
+    commanderName: "Guest Commander",
+    expectedGameVersion: "0.6.13",
+    expectedContentHash: "lan-test",
+    build: savedBuildToLan(readyBuild),
+  }).accepted).toBe(true);
+  expect(lobby.setReady("peer-host", true).ok).toBe(true);
+  expect(lobby.setReady("peer-guest", guestReady).ok).toBe(true);
+  return lobby.snapshot();
+}
+
+describe("multiplayer menu helpers", () => {
+  it("accepts only canonical IPv4 manual join targets and allowed LAN ports", () => {
+    expect(parseManualJoinTarget("192.168.1.24", "47778")).toEqual({
+      ok: true,
+      address: "192.168.1.24",
+      port: 47778,
+    });
+    expect(parseManualJoinTarget("01.2.3.4", "47778")).toEqual({
+      ok: false,
+      reason: "invalid-address",
+    });
+    expect(parseManualJoinTarget("battleship.local", "47778")).toEqual({
+      ok: false,
+      reason: "invalid-address",
+    });
+    expect(parseManualJoinTarget("192.168.1.24", "47777")).toEqual({
+      ok: false,
+      reason: "invalid-port",
+    });
+  });
+
+  it("keeps multiplayer navigation available while disabling native-only actions in unsupported browsers", () => {
+    expect(deriveLanCapabilityState({
+      desktop: false,
+      canHost: false,
+      canDiscover: false,
+      reason: "unsupported",
+    })).toEqual({
+      canEnter: true,
+      canCreate: false,
+      canSearch: false,
+      canRefresh: false,
+      canManualConnect: false,
+      unsupportedSource: "局域网联机仅在桌面版可用。",
+      manualJoinSource: "手动加入也需要桌面版联机桥。",
+    });
+
+    expect(deriveLanCapabilityState({
+      desktop: true,
+      canHost: true,
+      canDiscover: true,
+    })).toEqual({
+      canEnter: true,
+      canCreate: true,
+      canSearch: true,
+      canRefresh: true,
+      canManualConnect: true,
+      unsupportedSource: null,
+      manualJoinSource: null,
+    });
+  });
+
+  it("sorts fresh discoveries ahead of in-match rooms and expires stale broadcasts", () => {
+    const directory = new RoomDirectory();
+    expect(directory.ingest(makeRoom({ roomId: "room-c", roomName: "Convoy", phase: "in-match", lastSeenAt: 1_000 }))).toBe(true);
+    expect(directory.ingest(makeRoom({ roomId: "room-a", roomName: "Atoll", phase: "lobby", lastSeenAt: 1_500 }))).toBe(true);
+    expect(directory.ingest(makeRoom({ roomId: "room-b", roomName: "Beacon", phase: "lobby", lastSeenAt: 2_000 }))).toBe(true);
+
+    expect(directory.list().map(({ roomId }) => roomId)).toEqual(["room-a", "room-b", "room-c"]);
+    expect(approximateRoomPingMs(2_250, 2_117)).toBe(133);
+
+    directory.expire(5_000);
+    expect(directory.list().map(({ roomId }) => roomId)).toEqual(["room-b"]);
+    expect(Object.isFrozen(directory.list()[0]!)).toBe(true);
+  });
+
+  it("prefers a sea-ready saved build for lobby selection and gates ready/start by role and build readiness", () => {
+    const { profile, readyBuildId, unreadyBuildId } = makeProfileWithUnreadyBuild();
+    expect(chooseInitialMultiplayerBuildId(profile)).toBe(readyBuildId);
+
+    const hostSnapshot = createHostSnapshot(profile, readyBuildId, true);
+    expect(deriveLobbyControls({
+      snapshot: hostSnapshot,
+      localPeerId: "peer-host",
+      profile,
+      selectedBuildId: unreadyBuildId,
+    })).toMatchObject({
+      localRole: "host",
+      canReady: false,
+      canStart: false,
+      showStart: true,
+      selectedBuildReady: false,
+    });
+
+    expect(deriveLobbyControls({
+      snapshot: hostSnapshot,
+      localPeerId: "peer-host",
+      profile,
+      selectedBuildId: readyBuildId,
+    })).toMatchObject({
+      localRole: "host",
+      canReady: true,
+      canStart: true,
+      showStart: true,
+      selectedBuildReady: true,
+    });
+
+    expect(deriveLobbyControls({
+      snapshot: hostSnapshot,
+      localPeerId: "peer-guest",
+      profile,
+      selectedBuildId: readyBuildId,
+    })).toMatchObject({
+      localRole: "guest",
+      canReady: true,
+      canStart: false,
+      showStart: false,
+    });
+  });
+
+  it("dispatches lobby callbacks only when the current local state allows them", async () => {
+    const { profile, readyBuildId, unreadyBuildId } = makeProfileWithUnreadyBuild();
+    const snapshot = createHostSnapshot(profile, readyBuildId, true);
+    const callbacks = {
+      capabilities: vi.fn(async () => ({ desktop: true as const, canHost: true as const, canDiscover: true as const })),
+      createRoom: vi.fn(async () => ({ ok: false, errorSource: "stub" })),
+      searchRooms: vi.fn(async () => ({ ok: true, rooms: [] })),
+      manualJoin: vi.fn(async () => ({ ok: false, errorSource: "stub" })),
+      leaveRoom: vi.fn(async () => ({ ok: true })),
+      readyLobby: vi.fn(async () => ({ ok: true })),
+      startLobby: vi.fn(async () => ({ ok: true })),
+    };
+    const controller = new MultiplayerMenuController(profile, callbacks);
+    controller.setLobby(snapshot, "peer-host");
+    controller.selectBuild(unreadyBuildId);
+
+    await controller.requestReady(true);
+    expect(callbacks.readyLobby).not.toHaveBeenCalled();
+
+    controller.selectBuild(readyBuildId);
+    await controller.requestReady(true);
+    expect(callbacks.readyLobby).toHaveBeenCalledWith({ ready: true, buildId: readyBuildId });
+
+    await controller.requestStart();
+    expect(callbacks.startLobby).toHaveBeenCalledTimes(1);
+
+    const guestController = new MultiplayerMenuController(profile, callbacks);
+    guestController.setLobby(snapshot, "peer-guest");
+    guestController.selectBuild(readyBuildId);
+    await guestController.requestStart();
+    expect(callbacks.startLobby).toHaveBeenCalledTimes(1);
+  });
+
+  it("tracks the full multiplayer source-string surface for locale coverage", () => {
+    expect(MULTIPLAYER_MENU_SOURCE_STRINGS).toContain("多人联机");
+    expect(MULTIPLAYER_MENU_SOURCE_STRINGS).toContain("手动加入也需要桌面版联机桥。");
+    expect(MULTIPLAYER_MENU_SOURCE_STRINGS).toContain("近似延迟（最近广播）");
+    expect(new Set(MULTIPLAYER_MENU_SOURCE_STRINGS).size).toBe(MULTIPLAYER_MENU_SOURCE_STRINGS.length);
+  });
+});
+
+
