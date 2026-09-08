@@ -1,0 +1,108 @@
+.voyage-modal[hidden], .voyage-tutorial[hidden], .voyage-pending[hidden] { display:none !important; }
+.voyage-modal { position:fixed; inset:0; z-index:150; display:grid; place-items:center; padding:22px; background:rgba(3,15,24,.78); overflow:auto; }
+.voyage-dialog-inner { width:min(640px,100%); max-height:calc(100dvh - 44px); overflow:auto; padding:26px; background:#102b35; border:3px solid #67c2cd; box-shadow:6px 6px 0 #061219; color:#e3f3eb; }
+.voyage-dialog-inner h1 { font-size:28px; margin:4px 0 12px; color:#b7eff0; }
+.voyage-dialog-inner p { line-height:1.55; }
+.voyage-actions { display:flex; flex-wrap:wrap; gap:10px; margin-top:18px; }
+.voyage-actions button { flex:1 1 150px; }
+.voyage-modal button,.voyage-pending button { padding:10px 14px; min-height:44px; border:2px solid #67c2cd; background:#163e49; color:#e3f3eb; font:inherit; cursor:pointer; }
+.voyage-modal button:hover,.voyage-modal button:focus-visible,.voyage-pending button:focus-visible { background:#267383; outline:2px solid #edcf86; outline-offset:2px; }
+.voyage-modal button:disabled { opacity:.45; cursor:not-allowed; }
+.voyage-stats { display:grid; grid-template-columns:repeat(3,minmax(0,1fr)); gap:10px; margin:18px 0; }
+.voyage-stats>div { padding:10px; background:#16353e; border-bottom:2px solid #497b82; }
+.voyage-stats dt { color:#95b7b9; font-size:12px; }
+.voyage-stats dd { margin:8px 0 0; font-size:21px; color:#f0e4be; }
+.voyage-economy { width:100%; border-collapse:collapse; font-size:14px; }
+.voyage-economy th,.voyage-economy td { padding:7px 9px; text-align:right; border-bottom:1px solid #33565e; }
+.voyage-economy th:first-child { text-align:left; }
+.voyage-save-state { color:#9cdec0; }
+.voyage-warning { color:#f0cd84; font-size:13px; }
+.voyage-tutorial { position:absolute; z-index:32; top:100px; left:18px; width:min(330px,calc(100% - 36px)); padding:14px 18px; background:rgba(6,27,35,.92); color:#daeddf; border:2px solid #69cbd1; pointer-events:none; }
+.voyage-tutorial b { color:#f0d99c; }.voyage-tutorial p { font-size:14px; line-height:1.5; }.voyage-tutorial small { color:#8eadb1; }
+.voyage-pending { position:fixed; right:20px; bottom:20px; z-index:220; max-width:430px; padding:16px; background:#332d20; border:2px solid #e1c26d; color:#fae9c5; font-size:13px; }
+.voyage-result-active #result { display:none !important; }
+.voyage-result-active .voyage-tutorial { display:none !important; }
+.dock-view-state { display:flex; gap:10px; align-items:center; flex-wrap:wrap; font-size:13px; color:#ead592; }
+.dock-module-callout { position:absolute; transform:translate(-50%,-100%); background:#08222be8; color:#deefdf; border:1px solid #66b9c5; padding:4px 7px; font-size:11px; white-space:nowrap; pointer-events:none; }
+.dock-callouts { position:absolute; inset:0; pointer-events:none; overflow:hidden; }
+.dock-panel.is-inspecting .component-library .equip-selected { display:none; }
+.profile-write-locked { cursor:not-allowed !important; opacity:.5; }
+.voyage-notice[hidden] { display:none !important; }
+.voyage-notice { position:fixed; top:12px; left:50%; transform:translateX(-50%); max-width:min(620px,90vw); z-index:240; padding:12px 18px; background:#263b3d; color:#ffe0a2; border:2px solid #d7b86d; font-size:14px; line-height:1.5; cursor:pointer; }
+@media(max-width:760px),(max-height:740px) {
+  .voyage-dialog-inner { padding:16px; }.voyage-dialog-inner h1 { font-size:23px; }
+  .voyage-stats { gap:6px; margin:10px 0; }.voyage-stats dd { font-size:18px; }.voyage-economy th,.voyage-economy td { padding:5px; }
+  .voyage-tutorial { top:75px; width:270px; padding:10px; }
+}
+
+/* Bound the preview to the visible panel; long inventories scroll independently. */
+.command-center .dock-panel {
+  display:flex; flex-direction:column; min-height:0; overflow:hidden;
+}
+.command-center .dock-panel[hidden] { display:none; }
+.dock-panel > .screen-heading,.dock-panel > .dock-view-state { flex:0 0 auto; }
+.dock-panel > .dock-view-state { min-height:30px; margin-bottom:4px; gap:8px; }
+.dock-panel > .saved-build-list {
+  flex:0 0 auto; min-height:0; max-height:126px; overflow:auto;
+  padding:4px 0 8px; margin-bottom:4px; scrollbar-color:#4d888d #07191f; scrollbar-width:thin;
+}
+.dock-panel .saved-build-card { flex:0 0 auto; min-width:310px; max-width:100%; gap:6px; padding:8px; }
+.dock-panel .saved-build-card > div { align-items:center; gap:6px; }
+.dock-panel .saved-build-card > div:first-child { font-size:12px; }
+.dock-panel .dock-layout {
+  flex:1 1 0; height:0; min-height:0; width:100%;
+  grid-template-columns:minmax(180px,245px) minmax(0,1fr) minmax(270px,365px);
+  grid-template-rows:minmax(0,1fr);
+}
+.dock-panel .hull-list,.dock-panel .component-library,.dock-panel .dock-blueprint {
+  min-width:0; min-height:0; max-height:100%;
+}
+.dock-panel .hull-list,.dock-panel .component-library {
+  overflow-x:hidden; overflow-y:auto; overscroll-behavior:contain;
+  scrollbar-color:#4d888d #07191f; scrollbar-width:thin;
+}
+.dock-panel .dock-blueprint { height:100%; }
+.dock-panel .dock-preview { width:100%; height:100%; min-height:0; }
+.dock-panel .component-filters { grid-template-columns:repeat(4,minmax(0,1fr)); }
+.dock-panel .component-filters button { height:auto; min-height:32px; }
+.dock-panel :is(.saved-build-card,.dock-view-state,.dock-build-tools,.component-filters) button,
+.main-open-settings {
+  min-height:32px; padding:6px 9px; border:2px solid #427a80; border-radius:0;
+  background:#10313a; color:#c7dfd8; box-shadow:2px 2px 0 #02090c;
+  font:inherit; font-size:11px; line-height:1.3; cursor:pointer;
+}
+.dock-panel :is(.saved-build-card,.dock-view-state,.dock-build-tools,.component-filters) button:hover:not(:disabled),
+.main-open-settings:hover:not(:disabled) { background:#20515a; border-color:#73c1c7; color:#eef5e8; }
+.dock-panel :is(.saved-build-card,.dock-view-state,.dock-build-tools,.component-filters) button:focus-visible,
+.main-open-settings:focus-visible { outline:2px solid #ead592; outline-offset:2px; }
+.dock-panel .component-filters button.active { background:#22606a; border-color:#7fd5d8; color:#f0f4dc; }
+.dock-panel :is(.saved-build-card,.dock-view-state,.dock-build-tools,.component-filters) button:disabled,
+.main-open-settings:disabled {
+  color:#738886; background:#152b30; border-color:#344d51; opacity:.65;
+  box-shadow:none; cursor:not-allowed;
+}
+.main-open-settings { margin:12px 0 0; padding:9px 14px; }
+@media(max-height:800px) {
+  .dock-panel > .saved-build-list { max-height:106px; }
+  .dock-panel .saved-build-card { padding:6px; gap:4px; }
+  .dock-panel > .dock-view-state { min-height:28px; font-size:11px; }
+  .dock-panel .dock-layout { gap:10px; grid-template-columns:minmax(165px,210px) minmax(0,1fr) minmax(250px,310px); }
+}
+@media(max-width:1050px) {
+  .dock-panel .dock-layout { grid-template-columns:minmax(150px,190px) minmax(0,1fr); grid-template-rows:minmax(0,1fr) minmax(130px,.55fr); }
+  .dock-panel .component-library { grid-column:1 / -1; }
+}
+
+/* A reserved bottom rail keeps the retry notice from covering menu actions. */
+.voyage-pending {
+  left:28px; right:28px; bottom:20px; max-width:none; max-height:160px;
+  display:grid; grid-template-columns:minmax(0,1fr) auto; gap:4px 16px;
+  padding:12px 16px; overflow:auto; font-size:12px; box-sizing:border-box;
+}
+.voyage-pending > b,.voyage-pending > p { grid-column:1; margin:0; line-height:1.45; }
+.voyage-pending > button { grid-column:2; grid-row:1 / span 2; align-self:center; margin:0; }
+.voyage-save-pending .start-menu { bottom:var(--voyage-pending-height,184px); }
+.voyage-save-pending .command-center {
+  height:calc(100dvh - var(--voyage-pending-height,184px) - 56px);
+  max-height:calc(100dvh - var(--voyage-pending-height,184px) - 56px); min-height:0;
+}

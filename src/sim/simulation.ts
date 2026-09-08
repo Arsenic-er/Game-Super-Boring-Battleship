@@ -35,15 +35,17 @@ import { DEFAULT_TORPEDO_ID, getTorpedo } from "../ships/torpedoes";
 import type { TorpedoId } from "../ships/torpedoes";
 import { getSecondaryGun } from "../ships/secondaryGuns";
 import type { SecondaryGunId } from "../ships/secondaryGuns";
+import { EQUIPMENT_CATALOG } from "../profile/equipmentCatalog";
 import {
   firstNavigationHazard,
+  canExitNavigationContact,
   firstTerrainIntersection,
   shipDraftMeters,
   terrainBlocksLineOfSight,
   terrainNavigationAt,
 } from "../maps/atollMap";
 import {
-  getMainBattery,
+  installedMainBattery,
   effectiveMainBattery,
   mainBatteryMountLocalPosition,
   mainBatteryMuzzleLocalHeight,
@@ -55,6 +57,7 @@ import { effectiveTorpedoDetectionRange } from "./detection";
 import { buildAtollBattleScenario } from "./scenarios";
 import { isFleetSize, type BattleSetup } from "./battleSetup";
 import { normalizeWeatherId, weatherPreset } from "./weather";
+import type { ShipDestroyedAttributionEvent, ShipHullDamageEvent } from "./types";
 import type {
   AmmoType,
   ArmorZoneId,
@@ -181,20 +184,24 @@ function createSecondaryMounts(
   ids: readonly SecondaryGunId[],
   heading: number,
   shipClassId: ShipClassId,
+  slots?: readonly (string | null)[],
 ): ShipState["secondaryMounts"] {
   const definition = getShipClass(shipClassId);
-  const pairCount = Math.max(1, Math.ceil(ids.length / 2));
-  return ids.map((definitionId, index) => {
+  const source = slots ?? ids;
+  const pairCount = Math.max(1, Math.ceil(source.length / 2));
+  return source.flatMap((candidate, index) => {
+    if (candidate === null) return [];
+    const definitionId = getSecondaryGun(candidate as SecondaryGunId).id;
     const pairIndex = Math.floor(index / 2);
     const progress = pairCount <= 1 ? 0.5 : pairIndex / (pairCount - 1);
     const side = (index % 2 === 0 ? -1 : 1) as -1 | 1;
-    return {
+    return [{
       definitionId,
       side,
       longitudinalOffset: definition.length * (0.28 - progress * 0.56),
       heading: wrapAngle(heading + side * Math.PI / 2),
       reloadRemaining: 0,
-    };
+    }];
   });
 }
 
@@ -203,8 +210,9 @@ function createMainBatteryMounts(
   mainGunId: MainGunId,
   equippedMounts: number,
   shipHeading: number,
+  installed?: readonly (string | null)[],
 ): ShipState["mainBatteryMounts"] {
-  const battery = getMainBattery(shipClassId, mainGunId, equippedMounts);
+  const battery = installedMainBattery(shipClassId, mainGunId, equippedMounts, installed);
   return battery.mounts.map((mount, mountIndex) => ({
     mountIndex,
     restHeadingOffset: mainBatteryMountRestHeading(mount),
@@ -275,6 +283,7 @@ function createShip(
       mainGunId,
       Math.max(1, mainGunMounts),
       heading,
+      installedEquipment?.mainGun,
     ),
     torpedoLauncherMounts: Math.max(0, torpedoLauncherMounts),
     depthChargeMounts: Math.max(0, depthChargeMounts),
@@ -290,8 +299,8 @@ function createShip(
       engine: installedEquipment.engine.slice(),
       steering: installedEquipment.steering.slice(),
     } : {
-      mainGun: Array.from({ length: Math.max(1, mainGunMounts) }, () => "mainGun-common"),
-      torpedo: Array.from({ length: Math.max(0, torpedoLauncherMounts) }, () => "torpedo-common"),
+      mainGun: Array.from({ length: Math.max(1, mainGunMounts) }, () => EQUIPMENT_CATALOG.find((item) => item.mainGunId === mainGunId)?.id ?? "mainGun-common"),
+      torpedo: Array.from({ length: Math.max(0, torpedoLauncherMounts) }, () => EQUIPMENT_CATALOG.find((item) => item.torpedoId === torpedoId)?.id ?? "torpedo-common"),
       antiAir: Array.from({ length: Math.max(0, antiAirMounts) }, () => "antiAir-common"),
       sideGun: secondaryGunIds.map((id) => id),
       depthCharge: Array.from({ length: Math.max(0, depthChargeMounts) }, () => "depthCharge-common"),
@@ -299,7 +308,7 @@ function createShip(
       engine: ["engine-common"],
       steering: ["steering-common"],
     },
-    secondaryMounts: createSecondaryMounts(secondaryGunIds, heading, shipClassId),
+    secondaryMounts: createSecondaryMounts(secondaryGunIds, heading, shipClassId, installedEquipment?.sideGun),
     secondaryBatteryStatus: secondaryGunIds.length > 0 ? "searching" : "unavailable",
     secondaryAcquisitionSamples: 0,
     performance,
@@ -398,6 +407,7 @@ export function createDeveloperShipState(options: DeveloperShipStateOptions): Sh
       ship.mainGunId,
       ship.mainGunMounts,
       heading,
+      ship.installedEquipment.mainGun,
     );
   }
   ship.developerSpawned = options.developerSpawned;
@@ -563,6 +573,57 @@ function moduleRatio(ship: ShipState, id: ModuleId): number {
   return module.maxHealth === 0 ? 0 : module.health / module.maxHealth;
 }
 
+interface LocalAttributionBucket {
+  events: ShipDestroyedAttributionEvent[];
+  hullDamage: ShipHullDamageEvent[];
+  emitted: Set<string>;
+}
+interface LocalShipAttribution {
+  bucket: LocalAttributionBucket;
+  current?: { ownerId?: string; cause: ShipDestroyedAttributionEvent["cause"] };
+  fireOwnerId?: string;
+  floodOwnerId?: string;
+}
+const localAttributionByState = new WeakMap<BattleState, LocalAttributionBucket>();
+const localAttributionByShip = new WeakMap<ShipState, LocalShipAttribution>();
+function prepareLocalAttribution(state: BattleState): void {
+  let bucket = localAttributionByState.get(state);
+  if (!bucket) {
+    bucket = { events: [], hullDamage: [], emitted: new Set() };
+    localAttributionByState.set(state, bucket);
+  }
+  bucket.events = [];
+  bucket.hullDamage = [];
+  for (const ship of state.ships) {
+    let attribution = localAttributionByShip.get(ship);
+    if (!attribution || attribution.bucket !== bucket) {
+      attribution = { bucket };
+      localAttributionByShip.set(ship, attribution);
+    }
+    attribution.current = undefined;
+    if (ship.fireIntensity <= 0) attribution.fireOwnerId = undefined;
+    if (ship.flooding <= 0) attribution.floodOwnerId = undefined;
+  }
+}
+export function takeLocalShipDestroyedEvents(state: BattleState): ShipDestroyedAttributionEvent[] {
+  const bucket = localAttributionByState.get(state);
+  if (!bucket) return [];
+  const events = bucket.events;
+  bucket.events = [];
+  return events;
+}
+export function takeLocalHullDamageEvents(state: BattleState): ShipHullDamageEvent[] {
+  const bucket = localAttributionByState.get(state);
+  if (!bucket) return [];
+  const events = bucket.hullDamage;
+  bucket.hullDamage = [];
+  return events;
+}
+
+function setLocalDamageSource(ship: ShipState, cause: ShipDestroyedAttributionEvent["cause"], ownerId?: string): void {
+  const attribution = localAttributionByShip.get(ship);
+  if (attribution) attribution.current = { cause, ownerId };
+}
 function applyHullDamage(
   ship: ShipState,
   requestedDamage: number,
@@ -570,6 +631,15 @@ function applyHullDamage(
 ): number {
   const actualDamage = Math.min(ship.hull, Math.max(0, requestedDamage));
   ship.hull -= actualDamage;
+  const attribution = localAttributionByShip.get(ship);
+  if (actualDamage > 0 && attribution) {
+    attribution.bucket.hullDamage.push({ targetId: ship.id, creditedOwnerId: attribution.current?.ownerId,
+      cause: attribution.current?.cause ?? "unknown", damage: actualDamage });
+  }
+  if (actualDamage > 0 && ship.hull <= 0 && attribution && !attribution.bucket.emitted.has(ship.id)) {
+    attribution.bucket.emitted.add(ship.id);
+    attribution.bucket.events.push({ targetId: ship.id, creditedOwnerId: attribution.current?.ownerId, cause: attribution.current?.cause ?? "unknown" });
+  }
   const recoverableFraction = clamp(options.recoverableFraction, 0, 1);
   ship.recoverableHull = Math.max(
     ship.hull,
@@ -888,12 +958,13 @@ function gunMuzzleOriginsForMount(ship: ShipState, mountIndex: number): Vec3[] {
   const turretHeading = ship.mainBatteryMounts[mountIndex]?.heading ?? ship.turretHeading;
   const hardpoint = mainBatteryMountLocalPosition(mount);
   const barrelScale = hull.renderScale.x;
-  const barrelDistance = gunDefinition.visual.barrelLength * .88 * hull.renderScale.z;
+  const visual = mount.visual ?? gunDefinition.visual;
+  const barrelDistance = visual.barrelLength * .88 * hull.renderScale.z;
   const longitudinal = hardpoint.z * hull.renderScale.z;
   const lateral = hardpoint.x * hull.renderScale.x;
   const offsets = Array.from(
     { length: mount.barrelCount },
-    (_, index) => (index - (mount.barrelCount - 1) / 2) * gunDefinition.visual.barrelSpacing,
+    (_, index) => (index - (mount.barrelCount - 1) / 2) * visual.barrelSpacing,
   );
   const center = {
     x: ship.position.x
@@ -1993,6 +2064,7 @@ function applyHit(
   ship: ShipState,
   contact: ProjectileHitContact,
 ): void {
+  setLocalDamageSource(ship, "direct", projectile.ownerId);
   const compartment = compartmentAt(contact.localPoint.longitudinal, ship.shipClassId);
   const hullDefinition = getShipClass(ship.shipClassId);
   const armorThicknessMm = armorThicknessFor(
@@ -2075,6 +2147,12 @@ function applyHit(
     0,
     100,
   );
+  const attribution = localAttributionByShip.get(ship);
+  if (attribution) {
+    if (startedFire) attribution.fireOwnerId = projectile.ownerId;
+    if (startedFlooding) attribution.floodOwnerId = projectile.ownerId;
+    attribution.current = undefined;
+  }
   state.impacts.push({
     id: state.nextEntityId++,
     kind: "hit",
@@ -2184,6 +2262,7 @@ function applyCollisionDamage(
   baseDamage: number,
   position: Vec3,
 ): void {
+  setLocalDamageSource(ship, "collision");
   const compartment = collisionCompartment(ship, other);
   const damage = baseDamage * collisionDamageMultiplierFor(compartment);
   const compartmentHealth = ship.compartments[compartment];
@@ -2192,6 +2271,11 @@ function applyCollisionDamage(
   const moduleHit = damageModule(state, ship, compartment, damage);
   const startedFlooding = random(state) < Math.min(0.68, 0.12 + damage / 210);
   if (startedFlooding) ship.flooding = clamp(ship.flooding + 10 + damage * 0.22, 0, 100);
+  const attribution = localAttributionByShip.get(ship);
+  if (attribution) {
+    if (startedFlooding) attribution.floodOwnerId = undefined;
+    attribution.current = undefined;
+  }
   state.impacts.push({
     id: state.nextEntityId++,
     kind: "collision",
@@ -2276,7 +2360,9 @@ function resolveShipTerrainContact(state: BattleState, ship: ShipState): void {
   const navigation = terrainNavigationAt(
     state.mapId, ship.position.x, ship.position.z, draft,
   );
-  if (!hazard && navigation.kind !== "grounded") {
+  const exitingMargin = hazard?.distanceFraction === 0 && navigation.kind !== "grounded"
+    && canExitNavigationContact(state.mapId, ship.previousPosition, ship.position, draft, hull.beam * .42);
+  if ((!hazard || exitingMargin) && navigation.kind !== "grounded") {
     ship.navigationZone = navigation.kind;
     ship.waterDepthMeters = navigation.depthMeters;
     return;
@@ -2300,7 +2386,10 @@ function resolveShipTerrainContact(state: BattleState, ship: ShipState): void {
     ship.compartments[compartment] = Math.max(
       0, ship.compartments[compartment] - damage * 0.48,
     );
+    setLocalDamageSource(ship, "terrain");
     applyHullDamage(ship, damage, { recoverableFraction: 0.38 });
+    const attribution = localAttributionByShip.get(ship);
+    if (attribution) attribution.current = undefined;
   }
   state.impacts.push({
     id: state.nextEntityId++,
@@ -2587,6 +2676,7 @@ function updateDamageControl(
   const crewRatio = moduleRatio(ship, "crew");
   const damageControl = 0.18 + crewRatio * 0.82;
   if (ship.fireIntensity > 0) {
+    setLocalDamageSource(ship, "fire", localAttributionByShip.get(ship)?.fireOwnerId);
     applyHullDamage(
       ship,
       ship.maxHull * DAMAGE_CONTROL.fireMaxHullFractionPerSecondAtFullIntensity
@@ -2603,6 +2693,7 @@ function updateDamageControl(
     );
   }
   if (ship.flooding > 0) {
+    setLocalDamageSource(ship, "flood", localAttributionByShip.get(ship)?.floodOwnerId);
     applyHullDamage(
       ship,
       ship.maxHull * DAMAGE_CONTROL.floodingMaxHullFractionPerSecondAtFullIntensity
@@ -2618,6 +2709,8 @@ function updateDamageControl(
         * dt,
     );
   }
+  const attribution = localAttributionByShip.get(ship);
+  if (attribution) attribution.current = undefined;
 }
 
 function repairHull(ship: ShipState, allocation: number, dt: number): void {
@@ -2712,6 +2805,10 @@ function updateStatus(state: BattleState): void {
     state.status = "running";
     state.endReason = undefined;
     return;
+  }
+  // Accumulating 60 Hz floating-point steps may land just below 1200; end on that tick.
+  if (state.mode === "battle" && state.time >= BATTLE_DURATION_SECONDS - 1e-6) {
+    state.time = BATTLE_DURATION_SECONDS;
   }
   const friendlies = state.ships.filter(
     (ship) => ship.team === "player" && ship.countsForVictory !== false,
@@ -3795,6 +3892,7 @@ export function stepSimulation(
   dt = FIXED_STEP,
 ): void {
   if (state.status !== "running") return;
+  prepareLocalAttribution(state);
   state.shots = [];
   state.impacts = [];
   state.airEvents = [];

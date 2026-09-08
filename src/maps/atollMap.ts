@@ -203,6 +203,46 @@ export function terrainZoneContains(
   return normalizedRadius <= 1 + paddingRatio;
 }
 
+/** Signed radial clearance uses exactly the same coast/padding boundary as containment. */
+export function terrainZoneClearance(
+  zone: Readonly<AtollTerrainZone>, x: number, z: number, paddingMeters = 0,
+): number {
+  const local = localEllipsePoint(zone, x, z);
+  return (normalizedTerrainRadius(zone, local.x, local.z) - 1)
+    * Math.max(1, Math.min(zone.radiusX, zone.radiusZ)) - paddingMeters;
+}
+
+/** Allow only small, monotonically outward steps out of an existing hull-margin overlap. */
+export function canExitNavigationContact(
+  mapId: BattleMapId, from: Readonly<Vec3>, to: Readonly<Vec3>, draftMeters: number, paddingMeters: number,
+): boolean {
+  const map = battleMapDefinition(mapId);
+  const distance = Math.hypot(to.x - from.x, to.z - from.z);
+  if (distance <= 1e-10 || distance > Math.max(2, paddingMeters)
+    || Math.abs(to.x) > map.halfExtentMeters || Math.abs(to.z) > map.halfExtentMeters) return false;
+  let exitsContact = false;
+  for (const zone of map.terrain) {
+    if (zone.kind === "shallow" && (zone.depthMeters ?? 80) - draftMeters > .5) continue;
+    const fromClearance = terrainZoneClearance(zone, from.x, from.z, paddingMeters);
+    if (fromClearance > 0) {
+      if (segmentTerrainInterval(zone, from, to, paddingMeters)) return false;
+      continue;
+    }
+    // A hull-width safety overlap is not permission to sail on dry land or across a shoal.
+    if (fromClearance < -paddingMeters - 1e-7) return false;
+    let prior = fromClearance;
+    for (let index = 1; index <= 4; ++index) {
+      const fraction = index / 4;
+      const clearance = terrainZoneClearance(zone, from.x + (to.x - from.x) * fraction,
+        from.z + (to.z - from.z) * fraction, paddingMeters);
+      if (clearance <= prior + 1e-10) return false;
+      prior = clearance;
+    }
+    exitsContact = true;
+  }
+  return exitsContact;
+}
+
 export function terrainContour(
   zone: Readonly<AtollTerrainZone>,
   segments = 32,
@@ -421,8 +461,9 @@ function headingRisk(
   position: Readonly<Vec3>,
   heading: number,
   draftMeters: number,
+  paddingMeters: number,
 ): number {
-  const distances = [220, 430, 700, 1_000];
+  const distances = [25, 65, 120, 220, 430, 700, 1_000];
   let risk = 0;
   for (const distance of distances) {
     const x = position.x + Math.sin(heading) * distance;
@@ -431,6 +472,9 @@ function headingRisk(
     if (navigation.kind === "grounded") risk += 100 + (1_100 - distance) * 0.1;
     else if (navigation.kind === "shallow") risk += (1 - navigation.speedMultiplier) * 8;
   }
+  const end = { x: position.x + Math.sin(heading) * 1_000, y: 0, z: position.z + Math.cos(heading) * 1_000 };
+  const hazard = firstNavigationHazard(mapId, position, end, draftMeters, paddingMeters);
+  if (hazard && hazard.distanceFraction > 0) risk += 800 * (1 - hazard.distanceFraction);
   return risk;
 }
 
@@ -442,12 +486,12 @@ export function terrainSafeHeading(
 ): number {
   if (mapId === "open-sea-range") return desiredHeading;
   const draft = shipDraftMeters(shipClassId);
-  const offsets = [0, degrees(22.5), degrees(-22.5), degrees(45), degrees(-45), degrees(67.5), degrees(-67.5), degrees(90), degrees(-90)];
+  const offsets = [0, 22.5, -22.5, 45, -45, 67.5, -67.5, 90, -90, 112.5, -112.5, 135, -135, 157.5, -157.5, 180].map(degrees);
   let bestHeading = desiredHeading;
   let bestRisk = Number.POSITIVE_INFINITY;
   for (const offset of offsets) {
     const candidate = desiredHeading + offset;
-    const risk = headingRisk(mapId, position, candidate, draft) + Math.abs(offset) * 0.8;
+    const risk = headingRisk(mapId, position, candidate, draft, getShipClass(shipClassId).beam * .6 + 12) + Math.abs(offset) * 4;
     if (risk < bestRisk) {
       bestRisk = risk;
       bestHeading = candidate;

@@ -29,6 +29,40 @@ interface LocaleMessageRow {
 // Source text remains Simplified Chinese while stable game data continues to use IDs.
 // Longest phrases are translated first so short naval terms can also localize dynamic text.
 export const GAME_LOCALE_MESSAGES: readonly LocaleMessageRow[] = [
+  { source: "拖动舰船预览可旋转 · 滚轮缩放", "zh-TW": "拖曳艦船預覽可旋轉 · 滾輪縮放", "en-US": "Drag the ship preview to rotate · Scroll to zoom", "ja-JP": "艦船プレビューをドラッグして回転 · ホイールで拡大縮小", "es-ES": "Arrastra la vista previa del buque para girar · Usa la rueda para acercar o alejar", "de-DE": "Schiffsvorschau zum Drehen ziehen · Mit dem Mausrad zoomen", "ru-RU": "Перетаскивайте модель корабля для вращения · Колесо мыши изменяет масштаб" },
+  { source: "二战海战 · 单人与双人局域网合作", "zh-TW": "二戰海戰 · 單人與雙人區域網路合作", "en-US": "WWII naval combat · Solo and two-player LAN co-op", "ja-JP": "第二次大戦の海戦 · ソロ・2人LAN協力プレイ", "es-ES": "Combate naval de la SGM · Individual y cooperativo LAN para dos", "de-DE": "Seekampf im Zweiten Weltkrieg · Solo und LAN-Koop für zwei", "ru-RU": "Морские бои Второй мировой · Одиночная игра и кооператив по LAN на двоих" },
+  { source: "防空炮已接入舰载机空战，其防空效能随装备数量与性能变化。", "zh-TW": "防空炮已接入艦載機空戰，其防空效能隨裝備數量與性能變化。", "en-US": "Anti-aircraft guns now engage carrier aircraft; their effectiveness varies with the number and performance of installed mounts.", "ja-JP": "対空砲は艦載機との航空戦に対応し、その対空能力は装備数と性能に応じて変化します。", "es-ES": "Los cañones antiaéreos ya combaten contra aeronaves embarcadas; su eficacia varía según la cantidad y el rendimiento de los montajes instalados.", "de-DE": "Flugabwehrgeschütze bekämpfen nun Trägerflugzeuge; ihre Wirksamkeit hängt von Anzahl und Leistung der eingebauten Lafetten ab.", "ru-RU": "Зенитные орудия уже участвуют в боях с палубной авиацией; их эффективность зависит от числа и характеристик установленных орудий." },
+  { source: "历史鱼雷与侧炮型号已接入实际战斗性能；轻巡洋舰和战列舰的侧炮会在火控连续确认目标后自动接战。防空炮已接入舰载机空战，其防空效能随装备数量与性能变化。", "zh-TW": "歷史魚雷與副炮型號已接入實際戰鬥性能；輕巡洋艦和戰列艦的副炮會在火控持續確認目標後自動接戰。防空炮已接入艦載機空戰，其防空效能隨裝備數量與性能變化。", "en-US": "Historical torpedo and secondary-gun models now have distinct combat performance. Light-cruiser and battleship secondary batteries engage automatically after fire control maintains target confirmation. Anti-aircraft guns now engage carrier aircraft; their effectiveness varies with the number and performance of installed mounts.", "ja-JP": "史実の魚雷と副砲の型式が実際の戦闘性能に反映されています。軽巡洋艦と戦艦の副砲は、射撃管制が目標を継続確認した後に自動交戦します。対空砲は艦載機との航空戦に対応し、その対空能力は装備数と性能に応じて変化します。", "es-ES": "Los modelos históricos de torpedos y artillería secundaria ya tienen prestaciones de combate propias. Las baterías secundarias de cruceros ligeros y acorazados abren fuego automáticamente tras la confirmación continua del objetivo por el control de tiro. Los cañones antiaéreos ya combaten contra aeronaves embarcadas; su eficacia varía según la cantidad y el rendimiento de los montajes instalados.", "de-DE": "Historische Torpedo- und Sekundärgeschützmodelle besitzen nun eigene Gefechtseigenschaften. Die Sekundärartillerie leichter Kreuzer und Schlachtschiffe eröffnet nach anhaltender Zielbestätigung durch die Feuerleitung automatisch das Feuer. Flugabwehrgeschütze bekämpfen nun Trägerflugzeuge; ihre Wirksamkeit hängt von Anzahl und Leistung der eingebauten Lafetten ab.", "ru-RU": "Исторические модели торпед и вспомогательных орудий уже имеют собственные боевые характеристики. Вспомогательная артиллерия лёгких крейсеров и линкоров автоматически вступает в бой после непрерывного подтверждения цели системой управления огнём. Зенитные орудия уже участвуют в боях с палубной авиацией; их эффективность зависит от числа и характеристик установленных орудий." },
+  { source: "灰海行动", "zh-TW": "灰海行動", "en-US": "Grey Sea Action", "ja-JP": "グレイ・シー作戦", "es-ES": "Operación Mar Gris", "de-DE": "Operation Graue See", "ru-RU": "Операция «Серое море»" },
+  { source: "视角", "zh-TW": "視角", "en-US": "View", "ja-JP": "視点", "es-ES": "Vista", "de-DE": "Ansicht", "ru-RU": "Обзор" },
+  { source: "核心增益", "zh-TW": "核心增益", "en-US": "Core bonus", "ja-JP": "コア効果", "es-ES": "Bonificación central", "de-DE": "Kernbonus", "ru-RU": "Основной бонус" },
+  { source: "全部", "zh-TW": "全部", "en-US": "All", "ja-JP": "すべて", "es-ES": "Todo", "de-DE": "Alle", "ru-RU": "Все" },
+  { source: "槽", "zh-TW": "槽", "en-US": "slots", "ja-JP": "スロット", "es-ES": "ranuras", "de-DE": "Plätze", "ru-RU": "слотов" },
+  { source: "弗莱彻级", "zh-TW": "弗萊徹級", "en-US": "Fletcher class", "ja-JP": "フレッチャー級", "es-ES": "Clase Fletcher", "de-DE": "Fletcher-Klasse", "ru-RU": "Тип «Флетчер»" },
+  { source: "J级", "zh-TW": "J級", "en-US": "J class", "ja-JP": "J級", "es-ES": "Clase J", "de-DE": "J-Klasse", "ru-RU": "Тип J" },
+  { source: "阳炎级", "zh-TW": "陽炎級", "en-US": "Kagerō class", "ja-JP": "陽炎型", "es-ES": "Clase Kagerō", "de-DE": "Kagerō-Klasse", "ru-RU": "Тип «Кагэро»" },
+  { source: "1936A型（Z23）", "zh-TW": "1936A型（Z23）", "en-US": "Type 1936A (Z23)", "ja-JP": "1936A型（Z23）", "es-ES": "Tipo 1936A (Z23)", "de-DE": "Typ 1936A (Z23)", "ru-RU": "Тип 1936A (Z23)" },
+  { source: "塔什干级", "zh-TW": "塔什干級", "en-US": "Tashkent class", "ja-JP": "タシュケント級", "es-ES": "Clase Tashkent", "de-DE": "Taschkent-Klasse", "ru-RU": "Тип «Ташкент»" },
+  { source: "克利夫兰级", "zh-TW": "克利夫蘭級", "en-US": "Cleveland class", "ja-JP": "クリーブランド級", "es-ES": "Clase Cleveland", "de-DE": "Cleveland-Klasse", "ru-RU": "Тип «Кливленд»" },
+  { source: "爱丁堡级", "zh-TW": "愛丁堡級", "en-US": "Edinburgh subclass", "ja-JP": "エディンバラ級", "es-ES": "Subclase Edinburgh", "de-DE": "Edinburgh-Unterklasse", "ru-RU": "Подтип «Эдинбург»" },
+  { source: "纽伦堡级", "zh-TW": "紐倫堡級", "en-US": "Nürnberg class", "ja-JP": "ニュルンベルク級", "es-ES": "Clase Nürnberg", "de-DE": "Nürnberg-Klasse", "ru-RU": "Тип «Нюрнберг»" },
+  { source: "阿贺野级", "zh-TW": "阿賀野級", "en-US": "Agano class", "ja-JP": "阿賀野型", "es-ES": "Clase Agano", "de-DE": "Agano-Klasse", "ru-RU": "Тип «Агано»" },
+  { source: "黛朵级", "zh-TW": "黛朵級", "en-US": "Dido class", "ja-JP": "ダイドー級", "es-ES": "Clase Dido", "de-DE": "Dido-Klasse", "ru-RU": "Тип «Дидо»" },
+  { source: "北卡罗来纳级", "zh-TW": "北卡羅來納級", "en-US": "North Carolina class", "ja-JP": "ノースカロライナ級", "es-ES": "Clase North Carolina", "de-DE": "North-Carolina-Klasse", "ru-RU": "Тип «Норт Кэролайна»" },
+  { source: "乔治五世级", "zh-TW": "喬治五世級", "en-US": "King George V class", "ja-JP": "キング・ジョージ5世級", "es-ES": "Clase King George V", "de-DE": "King-George-V-Klasse", "ru-RU": "Тип «Кинг Джордж V»" },
+  { source: "俾斯麦级", "zh-TW": "俾斯麥級", "en-US": "Bismarck class", "ja-JP": "ビスマルク級", "es-ES": "Clase Bismarck", "de-DE": "Bismarck-Klasse", "ru-RU": "Тип «Бисмарк»" },
+  { source: "大和级", "zh-TW": "大和級", "en-US": "Yamato class", "ja-JP": "大和型", "es-ES": "Clase Yamato", "de-DE": "Yamato-Klasse", "ru-RU": "Тип «Ямато»" },
+  { source: "黎塞留级", "zh-TW": "黎塞留級", "en-US": "Richelieu class", "ja-JP": "リシュリュー級", "es-ES": "Clase Richelieu", "de-DE": "Richelieu-Klasse", "ru-RU": "Тип «Ришелье»" },
+  { source: "1942改装型", "zh-TW": "1942改裝型", "en-US": "1942 refit", "ja-JP": "1942年改装型", "es-ES": "Reforma de 1942", "de-DE": "Umbau 1942", "ru-RU": "Модернизация 1942 г." },
+  { source: "1941战斗形态", "zh-TW": "1941戰鬥形態", "en-US": "1941 combat configuration", "ja-JP": "1941年戦闘仕様", "es-ES": "Configuración de combate de 1941", "de-DE": "Gefechtsausführung 1941", "ru-RU": "Боевая конфигурация 1941 г." },
+  { source: "1940完整设计型", "zh-TW": "1940完整設計型", "en-US": "1940 full design", "ja-JP": "1940年原設計仕様", "es-ES": "Diseño completo de 1940", "de-DE": "Vollentwurf 1940", "ru-RU": "Полный проект 1940 г." },
+  { source: "1943形态", "zh-TW": "1943形態", "en-US": "1943 configuration", "ja-JP": "1943年仕様", "es-ES": "Configuración de 1943", "de-DE": "Ausführung 1943", "ru-RU": "Конфигурация 1943 г." },
+  { source: "1943完成态", "zh-TW": "1943完成態", "en-US": "1943 completed configuration", "ja-JP": "1943年完成仕様", "es-ES": "Configuración final de 1943", "de-DE": "Fertiggestellte Ausführung 1943", "ru-RU": "Завершённая конфигурация 1943 г." },
+  { source: "房主已断开 · 已返回多人目录。", "zh-TW": "房主已斷線 · 已返回多人目錄。", "en-US": "Host disconnected · Returned to the multiplayer directory.", "ja-JP": "ホスト切断 · マルチプレイ一覧に戻りました。", "es-ES": "Anfitrión desconectado · Se volvió al directorio multijugador.", "de-DE": "Host getrennt · Zum Mehrspieler-Verzeichnis zurückgekehrt.", "ru-RU": "Ведущий отключился · выполнен возврат к списку сетевых комнат." },
+  { source: "房间已关闭 · 已返回多人目录。", "zh-TW": "房間已關閉 · 已返回多人目錄。", "en-US": "Room closed · Returned to the multiplayer directory.", "ja-JP": "部屋が終了 · マルチプレイ一覧に戻りました。", "es-ES": "Sala cerrada · Se volvió al directorio multijugador.", "de-DE": "Raum geschlossen · Zum Mehrspieler-Verzeichnis zurückgekehrt.", "ru-RU": "Комната закрыта · выполнен возврат к списку сетевых комнат." },
+  { source: "目标积分达到胜利门槛", "zh-TW": "目標積分達到勝利門檻", "en-US": "Objective score reached the victory threshold", "ja-JP": "目標スコアが勝利条件に到達", "es-ES": "La puntuación de objetivo alcanzó el umbral de victoria", "de-DE": "Zielpunktzahl hat die Siegschwelle erreicht", "ru-RU": "Очки целей достигли порога победы" },
+  { source: "战斗时间结束", "zh-TW": "戰鬥時間結束", "en-US": "Battle time limit reached", "ja-JP": "戦闘制限時間に到達", "es-ES": "Se agotó el tiempo de batalla", "de-DE": "Gefechtszeit abgelaufen", "ru-RU": "Время боя истекло" },
+  { source: "一方舰队被击沉", "zh-TW": "一方艦隊被擊沉", "en-US": "One fleet was sunk", "ja-JP": "一方の艦隊が全滅", "es-ES": "Una flota fue hundida", "de-DE": "Eine Flotte wurde versenkt", "ru-RU": "Один из флотов потоплен" },
   { source: "主机地址已复制。", "zh-TW": "主機位址已複製。", "en-US": "Host address copied.", "ja-JP": "ホストアドレスをコピーしました。", "es-ES": "Dirección del anfitrión copiada.", "de-DE": "Host-Adresse kopiert.", "ru-RU": "Адрес хоста скопирован." },
   { source: "无法复制主机地址。", "zh-TW": "無法複製主機位址。", "en-US": "Could not copy the host address.", "ja-JP": "ホストアドレスをコピーできませんでした。", "es-ES": "No se pudo copiar la dirección del anfitrión.", "de-DE": "Host-Adresse konnte nicht kopiert werden.", "ru-RU": "Не удалось скопировать адрес хоста." },
   { source: "返回联机大厅", "zh-TW": "返回連線大廳", "en-US": "Return to Lobby", "ja-JP": "ロビーに戻る", "es-ES": "Volver a la sala", "de-DE": "Zurück zur Lobby", "ru-RU": "Вернуться в лобби" },
@@ -375,11 +409,13 @@ export function localizeElement(root: Element, locale: GameLocale): void {
   let node = walker.nextNode();
   while (node) {
     const next = walker.nextNode();
+    if (node.parentElement?.closest("[data-i18n-keyed]")) { node = next; continue; }
     const translated = translateGameText(node.textContent ?? "", locale);
     if (translated !== node.textContent) node.textContent = translated;
     node = next;
   }
   for (const element of [root, ...Array.from(root.querySelectorAll("[aria-label],[title],[placeholder]"))]) {
+    if (element.closest("[data-i18n-keyed]")) continue;
     for (const attribute of ["aria-label", "title", "placeholder"]) {
       const value = element.getAttribute(attribute);
       if (!value) continue;

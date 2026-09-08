@@ -1,4 +1,8 @@
 import { DEFAULT_MAIN_GUN_ID } from "../ships/components";
+import { createOnboardingState, normalizeOnboardingState } from "../progression/onboarding";
+import type { OnboardingState } from "../progression/onboarding";
+import { normalizeSettledBattles } from "../progression/settlementRecords";
+import type { SettledBattleRecord } from "../progression/settlementRecords";
 import type { MainGunId } from "../ships/components";
 import { DEFAULT_HULL_ID, isHullId } from "../ships/hulls";
 import type { HullId } from "../ships/hulls";
@@ -37,7 +41,9 @@ export interface SavedBuildReadiness {
 }
 
 export interface LocalProfile {
-  version: 6;
+  version: 7;
+  onboarding: OnboardingState;
+  settledBattles: SettledBattleRecord[];
   commanderName: string;
   credits: number;
   researchPoints: number;
@@ -98,8 +104,8 @@ export interface BattleLoadout {
   installedEquipment: InstalledEquipmentIds;
 }
 
-const STORAGE_KEY = "grey-sea-local-profile-v6";
-const LEGACY_STORAGE_KEYS = ["grey-sea-local-profile-v5", "grey-sea-local-profile-v4", "grey-sea-local-profile-v3", "grey-sea-local-profile-v1"] as const;
+export const PROFILE_STORAGE_KEY = "grey-sea-local-profile-v7";
+const LEGACY_STORAGE_KEYS = ["grey-sea-local-profile-v6", "grey-sea-local-profile-v5", "grey-sea-local-profile-v4", "grey-sea-local-profile-v3", "grey-sea-local-profile-v1"] as const;
 const MAX_SAVED_SHIP_BUILDS = 24;
 const categories = Object.keys(CATEGORY_META) as EquipmentCategory[];
 
@@ -143,7 +149,9 @@ export function createDefaultLocalProfile(): LocalProfile {
   };
   const loadout = primaryLoadout(slotLoadoutsByShipClass[DEFAULT_SHIP_CLASS_ID]);
   return {
-    version: 6,
+    version: 7,
+    onboarding: createOnboardingState(),
+    settledBattles: [],
     commanderName: "本地舰长",
     credits: 12_000,
     researchPoints: 220,
@@ -299,7 +307,9 @@ export function normalizeLocalProfile(value: unknown): LocalProfile {
     ? requestedBuildId
     : savedShipBuilds[0]?.id ?? null;
   return {
-    version: 6,
+    version: 7,
+    onboarding: normalizeOnboardingState(candidate.onboarding, candidate.version !== 7 && finiteInt(candidate.battlesCompleted, 0, 999_999) > 0),
+    settledBattles: normalizeSettledBattles(candidate.settledBattles),
     commanderName: requestedName || defaults.commanderName,
     credits: finiteInt(candidate.credits, defaults.credits, 999_999),
     researchPoints: finiteInt(candidate.researchPoints, defaults.researchPoints, 999_999),
@@ -596,23 +606,61 @@ export function guaranteeProgress(drawCount: number, threshold: 10 | 50 | 100): 
   return remainder === 0 && drawCount > 0 ? threshold : remainder;
 }
 
-export function loadLocalProfile(): LocalProfile {
-  try {
-    const stored = window.localStorage.getItem(STORAGE_KEY);
-    if (stored) return normalizeLocalProfile(JSON.parse(stored));
-    for (const legacyKey of LEGACY_STORAGE_KEYS) {
-      const legacy = window.localStorage.getItem(legacyKey);
-      if (!legacy) continue;
-      const migrated = normalizeLocalProfile(JSON.parse(legacy));
-      window.localStorage.setItem(STORAGE_KEY, JSON.stringify(migrated));
-      return migrated;
-    }
-    return createDefaultLocalProfile();
-  } catch {
-    return createDefaultLocalProfile();
-  }
+export type ProfileSaveResult = { ok: true } | { ok: false; error: "storage-unavailable" | "quota" | "unknown" };
+export interface ProfileStorage { getItem(key: string): string | null; setItem(key: string, value: string): void }
+const record = (value: unknown): value is Record<string, unknown> => !!value && typeof value === "object" && !Array.isArray(value);
+/** Reject broken top-level storage; repair catalog entries and bounded values during normalization. */
+export function isUsableProfileV7(value: unknown): boolean {
+  if (!record(value) || value.version !== 7) return false;
+  if (!["commanderName", "hullId", "shipClassId"].every((key) => typeof value[key] === "string")) return false;
+  if (!["credits", "researchPoints", "supplyTokens", "drawCount", "battlesCompleted"].every((key) => typeof value[key] === "number" && Number.isFinite(value[key]))) return false;
+  if (!["credits", "researchPoints", "supplyTokens"].every((key) => (value[key] as number) >= 0)) return false;
+  if (!isShipClassId(value.shipClassId)) return false;
+  if (!["materials", "inventory", "unlockedEquipment", "loadout", "slotLoadoutsByShipClass", "onboarding"].every((key) => record(value[key]))) return false;
+  if (!["recentDraws", "savedShipBuilds", "settledBattles"].every((key) => Array.isArray(value[key]))) return false;
+  return value.selectedBattleBuildId === null || typeof value.selectedBattleBuildId === "string";
 }
-
-export function saveLocalProfile(profile: LocalProfile): void {
-  try { window.localStorage.setItem(STORAGE_KEY, JSON.stringify(normalizeLocalProfile(profile))); } catch { /* optional */ }
+function availableStorage(storage?: ProfileStorage): ProfileStorage | undefined {
+  if (storage) return storage;
+  try { return typeof window !== "undefined" ? window.localStorage : undefined; } catch { return undefined; }
+}
+export interface ProfileLoadResult {
+  profile: LocalProfile;
+  source: "v7" | "legacy" | "default";
+  migrationSaveResult?: ProfileSaveResult;
+}
+export function loadLocalProfile(storage?: ProfileStorage): LocalProfile {
+  return loadLocalProfileWithStatus(storage).profile;
+}
+/** A failed migration continues from a normalized legacy view, without claiming v7 was committed. */
+export function loadLocalProfileWithStatus(storage?: ProfileStorage): ProfileLoadResult {
+  const target = availableStorage(storage);
+  if (!target) return { profile: createDefaultLocalProfile(), source: "default",
+    migrationSaveResult: { ok: false, error: "storage-unavailable" } };
+  const read = (key: string): unknown => {
+    try { const raw = target.getItem(key); return raw ? JSON.parse(raw) : undefined; } catch { return undefined; }
+  };
+  const current = read(PROFILE_STORAGE_KEY);
+  if (isUsableProfileV7(current)) return { profile: normalizeLocalProfile(current), source: "v7" };
+  for (const legacyKey of LEGACY_STORAGE_KEYS) {
+    const legacy = read(legacyKey);
+    if (!record(legacy) || typeof legacy.commanderName !== "string" || typeof legacy.credits !== "number"
+      || !Number.isFinite(legacy.credits) || !record(legacy.loadout)) continue;
+    const migrated = normalizeLocalProfile(legacy);
+    // The source key is deliberately retained even when this write fails.
+    const migrationSaveResult = saveLocalProfile(migrated, target);
+    return { profile: migrated, source: migrationSaveResult.ok ? "v7" : "legacy", migrationSaveResult };
+  }
+  return { profile: createDefaultLocalProfile(), source: "default" };
+}
+export function saveLocalProfile(profile: LocalProfile, storage?: ProfileStorage): ProfileSaveResult {
+  const target = availableStorage(storage);
+  if (!target) return { ok: false, error: "storage-unavailable" };
+  try {
+    target.setItem(PROFILE_STORAGE_KEY, JSON.stringify(normalizeLocalProfile(profile)));
+    return { ok: true };
+  } catch (error) {
+    const name = error && typeof error === "object" && "name" in error ? String(error.name) : "";
+    return { ok: false, error: name === "QuotaExceededError" || name === "NS_ERROR_DOM_QUOTA_REACHED" ? "quota" : name === "SecurityError" ? "storage-unavailable" : "unknown" };
+  }
 }

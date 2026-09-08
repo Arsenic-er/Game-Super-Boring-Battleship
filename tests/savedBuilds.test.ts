@@ -21,7 +21,7 @@ describe("saved ship builds", () => {
       savedShipBuilds: undefined,
       selectedBattleBuildId: undefined,
     });
-    expect(migrated.version).toBe(6);
+    expect(migrated.version).toBe(7);
     expect(migrated.savedShipBuilds).toHaveLength(1);
     expect(migrated.savedShipBuilds[0]?.shipClassId).toBe("bismarck");
     expect(savedBuildReadiness(migrated, migrated.savedShipBuilds[0]!).ready).toBe(true);

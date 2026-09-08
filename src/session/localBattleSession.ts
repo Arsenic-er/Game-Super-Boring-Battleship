@@ -1,6 +1,6 @@
 import { RuleBasedAi } from "../controllers/ruleBasedAi";
 import { FIXED_STEP } from "../sim/config";
-import { observe, stepSimulation } from "../sim/simulation";
+import { observe, stepSimulation, takeLocalShipDestroyedEvents, takeLocalHullDamageEvents } from "../sim/simulation";
 import type { BattleState, ControlCommand } from "../sim/types";
 import type {
   AuthoritativeBattleSession,
@@ -62,6 +62,8 @@ export class LocalBattleSession implements AuthoritativeBattleSession {
       shots: [...this.currentState.shots],
       impacts: [...this.currentState.impacts],
       airEvents: [...this.currentState.airEvents],
+      destroyedShips: takeLocalShipDestroyedEvents(this.currentState),
+      hullDamage: takeLocalHullDamageEvents(this.currentState),
     };
   }
 

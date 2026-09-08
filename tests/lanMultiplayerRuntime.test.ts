@@ -76,8 +76,90 @@ function envelope<T extends LanMessage["type"]>(
 }
 
 afterEach(() => {
+  vi.useRealTimers();
   vi.restoreAllMocks();
   vi.unstubAllGlobals();
+});
+
+describe("LanMultiplayerRuntime structured guidance", () => {
+  function fixture() {
+    vi.stubGlobal("window", { setTimeout: globalThis.setTimeout.bind(globalThis), clearTimeout: globalThis.clearTimeout.bind(globalThis) });
+    const bridge = new FakeLanBridge();
+    const profile = createDefaultLocalProfile();
+    const onGuidance = vi.fn();
+    const onReturnToMenu = vi.fn();
+    const runtime = new LanMultiplayerRuntime(bridge, profile, {
+      onHostMatchStarted: vi.fn(), onClientMatchStarted: vi.fn(), onNotice: vi.fn(), onGuidance, onReturnToMenu,
+    });
+    return { bridge, profile, runtime, onGuidance, onReturnToMenu };
+  }
+
+  it("returns search-empty after the discovery window and emits structured guidance", async () => {
+    vi.useFakeTimers();
+    const { runtime, onGuidance } = fixture();
+    const search = runtime.callbacks.searchRooms();
+    await vi.advanceTimersByTimeAsync(351);
+    await expect(search).resolves.toMatchObject({ ok: true, rooms: [], guidanceReason: "search-empty" });
+    expect(onGuidance).toHaveBeenCalledExactlyOnceWith("search-empty");
+    await runtime.dispose();
+  });
+
+  it("reports a failed room creation without changing the transport protocol", async () => {
+    const { bridge, profile, runtime, onGuidance } = fixture();
+    bridge.createRoom.mockRejectedValueOnce(new Error("address-in-use"));
+    const result = await runtime.callbacks.createRoom({ roomName: "Test", buildId: profile.selectedBattleBuildId });
+    expect(result).toMatchObject({ ok: false, guidanceReason: "host-create-failed" });
+    expect(onGuidance).toHaveBeenCalledExactlyOnceWith("host-create-failed");
+    expect(bridge.closeRoom).toHaveBeenCalledOnce();
+    expect(runtime.role).toBe("none");
+    await runtime.dispose();
+  });
+
+  it("reports a manual-join timeout distinctly from a disconnection", async () => {
+    vi.useFakeTimers();
+    const { bridge, runtime, onGuidance } = fixture();
+    const joining = runtime.callbacks.manualJoin({ address: "192.168.1.8", port: 47778 });
+    await vi.advanceTimersByTimeAsync(4_001);
+    await expect(joining).resolves.toMatchObject({ ok: false, guidanceReason: "manual-join-timeout" });
+    expect(onGuidance).toHaveBeenCalledExactlyOnceWith("manual-join-timeout");
+    expect(bridge.disconnect).toHaveBeenCalledOnce();
+    await runtime.dispose();
+  });
+
+  it.each(["room-full", "invalid-build"] as const)("preserves the exact %s rejection", async (reason) => {
+    const { bridge, runtime, onGuidance } = fixture();
+    const joining = runtime.callbacks.manualJoin({ address: "192.168.1.8", port: 47778 });
+    await vi.waitFor(() => expect(bridge.sent.some(({ message }) => message.type === "join-request")).toBe(true));
+    const request = bridge.sent.find(({ message }) => message.type === "join-request")!.message;
+    bridge.emit({ type: "message", role: "guest", connectionId: bridge.guestConnectionId,
+      messageJson: encodeLanMessage(envelope("join-rejected", { reason }, { roomId: request.roomId })) });
+    await expect(joining).resolves.toMatchObject({ ok: false, guidanceReason: reason });
+    expect(onGuidance).toHaveBeenCalledExactlyOnceWith(reason);
+    await runtime.dispose();
+  });
+
+  it("emits host-disconnected after cleanup and before directory navigation", async () => {
+    const { bridge, profile, runtime, onGuidance, onReturnToMenu } = fixture();
+    const joining = runtime.callbacks.manualJoin({ address: "192.168.1.8", port: 47778 });
+    await vi.waitFor(() => expect(bridge.sent.some(({ message }) => message.type === "join-request")).toBe(true));
+    const build = profile.savedShipBuilds[0]!;
+    const buildPayload = { buildId: build.id, buildName: build.name, shipClassId: build.shipClassId, slots: structuredClone(build.slots) };
+    const lobby: LobbySnapshotPayload = { phase: "lobby", roomName: "Test", hostPeerId: "host", players: [
+      { peerId: "host", commanderName: "Host", role: "host", connected: true, ready: false, build: buildPayload },
+      { peerId: runtime.localPeerId, commanderName: "Guest", role: "guest", connected: true, ready: false, build: buildPayload },
+    ] };
+    bridge.emit({ type: "message", role: "guest", connectionId: bridge.guestConnectionId,
+      messageJson: encodeLanMessage(envelope("join-accepted", { peerId: runtime.localPeerId, assignedRole: "guest", lobby })) });
+    await expect(joining).resolves.toMatchObject({ ok: true });
+    bridge.emit({ type: "disconnected", role: "guest", connectionId: bridge.guestConnectionId, hadError: false });
+    await vi.waitFor(() => expect(onReturnToMenu).toHaveBeenCalledOnce());
+    expect(onGuidance).toHaveBeenCalledExactlyOnceWith("host-disconnected");
+    expect(onGuidance.mock.invocationCallOrder[0]).toBeLessThan(onReturnToMenu.mock.invocationCallOrder[0]!);
+    expect(bridge.closeRoom.mock.invocationCallOrder[0]).toBeLessThan(onGuidance.mock.invocationCallOrder[0]!);
+    expect(runtime.clientSession).toBeUndefined();
+    expect(runtime.role).toBe("none");
+    await runtime.dispose();
+  });
 });
 
 async function createPostMatchHostFixture(): Promise<{
@@ -232,8 +314,8 @@ describe("LanMultiplayerRuntime receive validation", () => {
         roomId: request.roomId, sequence: 2, gameVersion, contentHash,
       })),
     });
-    await vi.waitFor(() => expect(resolved).toHaveBeenCalledWith({ ok: false, errorSource }));
-    await expect(joining).resolves.toEqual({ ok: false, errorSource });
+    await vi.waitFor(() => expect(resolved).toHaveBeenCalledWith({ ok: false, errorSource, guidanceReason: reason }));
+    await expect(joining).resolves.toEqual({ ok: false, errorSource, guidanceReason: reason });
     expect(bridge.disconnect).toHaveBeenCalledTimes(1);
     await runtime.dispose();
   });
@@ -301,7 +383,7 @@ describe("LanMultiplayerRuntime receive validation", () => {
         roomId: request.roomId, sequence: 1, gameVersion: "0.6.0",
       })),
     });
-    await expect(joining).resolves.toEqual({ ok: false, errorSource: "游戏版本不一致，无法加入。" });
+    await expect(joining).resolves.toEqual({ ok: false, errorSource: "游戏版本不一致，无法加入。", guidanceReason: "version-mismatch" });
     await runtime.dispose();
   });
 
@@ -324,7 +406,7 @@ describe("LanMultiplayerRuntime receive validation", () => {
     const result = await joining;
 
     expect(sentJoinRequest).toBe(false);
-    expect(result).toEqual({ ok: false, errorSource: "联机操作失败。" });
+    expect(result).toEqual({ ok: false, errorSource: "联机操作失败。", guidanceReason: "manual-join-disconnected" });
   });
 
   it("rolls back an occupied guest seat when the socket disconnects before join acceptance is sent", async () => {
@@ -696,7 +778,7 @@ describe("LanMultiplayerRuntime receive validation", () => {
     const joining = runtime.callbacks.manualJoin({ address: "192.168.1.22", port: 47778 });
     await vi.waitFor(() => expect(bridge.sent.some(({ message }) => message.type === "join-request")).toBe(true));
     bridge.emit({ type: "disconnected", role: "guest", connectionId: bridge.guestConnectionId, hadError: true });
-    await expect(joining).resolves.toEqual({ ok: false, errorSource: "联机连接已断开。" });
+    await expect(joining).resolves.toEqual({ ok: false, errorSource: "联机连接已断开。", guidanceReason: "manual-join-disconnected" });
     await runtime.dispose();
   });
 

@@ -2,6 +2,7 @@ import type { ShellPenetrationProfile, ShipState } from "../sim/types";
 import type { MainGunId, MainGunVisualDefinition } from "./components";
 import { getMainGun } from "./components";
 import type { ShipClassId } from "./classes";
+import { EQUIPMENT_BY_ID } from "../profile/equipmentCatalog";
 
 export const MAIN_BATTERY_MODEL_LENGTH = 112;
 export const MAIN_BATTERY_MODEL_BEAM = 11;
@@ -17,6 +18,9 @@ export interface MainBatteryMountDefinition {
   /** Unscaled vertical hardpoint in the shared 112 m hull model. */
   localHeight: number;
   barrelCount: 1 | 2 | 3 | 4;
+  /** Local derived geometry only; these fields are never serialized as ship state. */
+  slotIndex?: number;
+  visual?: MainGunVisualDefinition;
 }
 
 export interface MainBatteryLocalPosition {
@@ -289,16 +293,38 @@ export function getMainBattery(
   };
 }
 
+/** Preserve physical hardpoints through empty slots without changing aggregate weapon tuning. */
+export function installedMainBattery(
+  shipClassId: ShipClassId,
+  mainGunId: MainGunId,
+  equippedMounts: number,
+  installed?: readonly (string | null)[],
+): EffectiveMainBatteryDefinition {
+  const battery = getMainBattery(shipClassId, mainGunId, equippedMounts);
+  if (!installed) return battery;
+  const mounts = installed.flatMap((equipmentId, slotIndex): MainBatteryMountDefinition[] => {
+    if (equipmentId === null) return [];
+    const item = EQUIPMENT_BY_ID[equipmentId];
+    const id = item?.category === "mainGun" ? item.mainGunId ?? "mk1-single" : "mk1-single";
+    const slotBattery = getMainBattery(shipClassId, id, installed.length);
+    const hardpoint = slotBattery.mounts[slotIndex] ?? genericMounts(installed.length, slotBattery.visual.barrelCount)[slotIndex];
+    if (!hardpoint) return [];
+    return [{ ...hardpoint, slotIndex, visual: { ...slotBattery.visual, barrelCount: hardpoint.barrelCount } }];
+  });
+  return { ...battery, mounts };
+}
+
 /** Resolves an optional developer-only historical battery independently of the hull. */
 export function effectiveMainBattery(
-  ship: Readonly<Pick<ShipState, "shipClassId" | "mainGunId" | "mainGunMounts" | "developer">>,
+  ship: Readonly<Pick<ShipState, "shipClassId" | "mainGunId" | "mainGunMounts" | "developer"> & Partial<Pick<ShipState, "installedEquipment">>>,
 ): EffectiveMainBatteryDefinition {
-  return getMainBattery(
+  return installedMainBattery(
     ship.developer?.enabled && ship.developer.mainBatteryClassId
       ? ship.developer.mainBatteryClassId
       : ship.shipClassId,
     ship.mainGunId,
     ship.mainGunMounts,
+    ship.installedEquipment?.mainGun,
   );
 }
 

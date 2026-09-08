@@ -1,5 +1,6 @@
 import "./style.css";
 import "./pixel.css";
+import "./voyage.css";
 import "@fortawesome/fontawesome-free/css/all.min.css";
 import { PlayerInput } from "./controllers/playerInput";
 import {
@@ -13,13 +14,13 @@ import {
 import { GameView } from "./render/gameView";
 import { CombatAudio } from "./render/combatAudio";
 import {
-  awardBattleResult,
   battleLoadout,
-  loadLocalProfile,
-  saveLocalProfile,
+  loadLocalProfileWithStatus,
 } from "./profile/localProfile";
 import type { LocalProfile } from "./profile/localProfile";
-import { battleLoadoutForSavedBuild } from "./profile/savedBuilds";
+import { VoyageSession } from "./app/voyageSession";
+import { VoyagePanel, type VoyageResultView } from "./ui/voyagePanel";
+import { shouldOfferOnboarding } from "./progression/onboarding";
 import { loadGameSettings, saveGameSettings } from "./settings/gameSettings";
 import type { GameSettings } from "./settings/gameSettings";
 import { LocalBattleSession } from "./session/localBattleSession";
@@ -41,7 +42,11 @@ import { translateGameText } from "./i18n/gameLocale";
 const root = document.querySelector<HTMLElement>("#app");
 if (!root) throw new Error("Missing #app root");
 
-let profile: LocalProfile = loadLocalProfile();
+const loadedProfile = loadLocalProfileWithStatus();
+let profile: LocalProfile = loadedProfile.profile;
+const voyageSession = new VoyageSession(profile);
+let voyagePanel: VoyagePanel;
+let resultPresented = false;
 const initialEquipment = battleLoadout(profile);
 let state: BattleState = createInitialState(
   undefined,
@@ -71,7 +76,6 @@ let currentLaunchRequest: GameLaunchRequest = {
   teamSize: 5,
   weatherId: "clear",
 };
-let battleRewarded = false;
 const CLIENT_INPUT_INTERVAL_MS = 1_000 / 30;
 let lastClientInputSentAt = -Infinity;
 let lanRuntime: LanMultiplayerRuntime;
@@ -80,15 +84,22 @@ const consumedClientEvents = new Set<string>();
 const localizedMultiplayerNotice = (source: string): string =>
   translateGameText(source, settings.locale);
 
-function enterActiveBattle(nextState: BattleState): void {
+function enterActiveBattle(nextState: BattleState, scope = `lan:${crypto.randomUUID()}`): void {
   gameShell?.classList.remove("hud-details-held");
   state = nextState;
   input.reset();
+  input.setSuppressed(false);
+  view.setCameraInputEnabled(true);
   view.resetTransient();
+  view.beginVisualSession(scope, nextState.ships);
+  voyagePanel?.clearBattle();
+  resultPresented = false;
   tacticalMap?.close();
   tacticalMap?.resetForBattle();
   developerPanel?.close();
   menus?.closeAll();
+  input.setSuppressed(false);
+  view.setCameraInputEnabled(true);
   hud.resetMetrics();
   hud.setResultReturnLabel(localizedMultiplayerNotice(
     lanRuntime?.role !== "none" ? "返回联机大厅" : "返回主菜单",
@@ -104,14 +115,25 @@ function enterActiveBattle(nextState: BattleState): void {
   view.requestPointerLock();
 }
 
-function startMode(request: GameLaunchRequest): void {
+function syncVoyageProfile(): void {
+  profile = voyageSession.profile;
+  menus?.setProfile(profile);
+  lanRuntime?.setProfile(profile);
+  voyagePanel?.setPending(voyageSession.progression.profileLocked);
+  if (voyageSession.tutorialSaveFailure?.ok === false) {
+    voyagePanel?.showNotice("saveFailed");
+    voyageSession.tutorialSaveFailure = undefined;
+  }
+}
+
+function startMode(request: GameLaunchRequest, tutorial = false): boolean {
+  const launch = voyageSession.launch(request, tutorial);
+  syncVoyageProfile();
+  if (!launch.ok) { voyagePanel.showNotice(launch.reason); return false; }
   const mode = request.mode;
   currentMode = mode;
   currentLaunchRequest = request;
-  battleRewarded = false;
-  const equipment = request.mode === "battle"
-    ? battleLoadoutForSavedBuild(profile, request.buildId) ?? battleLoadout(profile)
-    : battleLoadout(profile);
+  const equipment = launch.equipment;
   state = createInitialState(
     undefined,
     mode,
@@ -125,7 +147,31 @@ function startMode(request: GameLaunchRequest): void {
   );
   if (state.airSupport === "fleet-edge") deployFleetAirSupport(state);
   session.reset(state);
-  enterActiveBattle(state);
+  enterActiveBattle(state, launch.visualScope);
+  return true;
+}
+
+function requestSolo(): void {
+  const saved = voyageSession.progression.prepareRewardBattle();
+  syncVoyageProfile();
+  if (!saved.ok) { voyagePanel.showNotice("profileLocked"); return; }
+  if (!shouldOfferOnboarding(profile.onboarding)) { menus.showBattleSetup(); return; }
+  voyagePanel.showBriefing(() => {
+    const request = voyageSession.tutorialRequest();
+    if (!request) { voyagePanel.showNotice("buildUnavailable"); menus.showBattleSetup(); return; }
+    startMode(request, true);
+  }, () => { voyageSession.skipTutorial(); syncVoyageProfile(); menus.showBattleSetup(); });
+}
+
+function presentVoyageResult(): void {
+  const completion = voyageSession.result;
+  if (!completion) return;
+  const report: VoyageResultView = { status: completion.result.status,
+    reason: completion.result.endReason === "score" ? "目标积分达到胜利门槛" : completion.result.endReason === "time" ? "战斗时间结束" : "一方舰队被击沉",
+    ...completion.result.performance, reward: completion.settlement?.reward,
+    balances: completion.settlement?.balancesAfter,
+    saveState: !completion.eligible ? "ineligible" : completion.saveResult?.ok ? "saved" : "pending" };
+  voyagePanel.showResult(report);
 }
 
 function restart(): void {
@@ -134,11 +180,13 @@ function restart(): void {
     else returnToMainMenu();
     return;
   }
-  startMode(currentLaunchRequest);
+  const tutorial = voyageSession.hasQueuedReplay && currentLaunchRequest.mode === "battle";
+  const request = tutorial ? voyageSession.tutorialRequest() : currentLaunchRequest;
+  if (!request || !startMode(request, tutorial)) returnToMainMenu();
 }
 
-function returnToMainMenu(): void {
-  if (lanRuntime?.role !== "none") void lanRuntime.callbacks.leaveRoom();
+function returnToMainMenu(leaveRoom = true): void {
+  if (leaveRoom && lanRuntime?.role !== "none") void lanRuntime.callbacks.leaveRoom();
   gameShell?.classList.remove("hud-details-held");
   started = false;
   paused = true;
@@ -163,6 +211,10 @@ function returnToMainMenu(): void {
   developerView = normalDeveloperView();
   playerPerception.reset();
   view.resetTransient();
+  voyageSession.leave();
+  voyagePanel?.clearBattle();
+  voyagePanel?.setPending(voyageSession.progression.profileLocked);
+  resultPresented = false;
   hud.resetMetrics();
   menus?.showStart();
 }
@@ -191,16 +243,32 @@ input = new PlayerInput(hud.canvas, view);
 const settings = loadGameSettings();
 
 function applyControlSettings(next: GameSettings): void {
+  Object.assign(settings, next);
   input.setSteeringSensitivity(next.steeringSensitivity);
   view.setAimSensitivity(next.aimSensitivity);
   audio.configure(next.masterVolume, next.muted, next.uiSoundStyle);
   tacticalMap?.setLocale(next.locale);
+  voyagePanel?.setLocale(next.locale);
   saveGameSettings(next);
 }
 
 applyControlSettings(settings);
 const gameShell = root.querySelector<HTMLElement>(".game-shell");
 if (!gameShell) throw new Error("Missing game shell");
+voyagePanel = new VoyagePanel(gameShell, settings.locale, {
+  skip: () => { voyageSession.skipTutorial(); syncVoyageProfile(); },
+  retry: () => {
+    const saved = voyageSession.retry(); syncVoyageProfile();
+    if (voyageSession.result) presentVoyageResult();
+    if (!saved.ok) voyagePanel.showNotice("saveFailed");
+  },
+  again: restart,
+  dock: () => {
+    const target = voyageSession.getDockTarget();
+    returnToMainMenu(); menus.showDock(target?.shipClassId, target?.savedBuildId); voyageSession.clearDockTarget();
+  },
+  menu: returnToMainMenu,
+});
 gameShell.addEventListener("click", (event) => {
   const target = event.target;
   if (!(target instanceof Element)) return;
@@ -220,6 +288,7 @@ tacticalMap = new TacticalMap(gameShell, {
     input.setSuppressed(true);
     view.releasePointerLock();
     gameShell.classList.add("map-active");
+    if (voyageSession.advance({ mapOpened: true })) syncVoyageProfile();
   },
   onClose: () => {
     gameShell.classList.remove("map-active");
@@ -240,30 +309,40 @@ lanRuntime = new LanMultiplayerRuntime(lanBridge, profile, {
   onHostMatchStarted: (hostSession) => {
     consumedClientEvents.clear();
     currentMode = "battle";
-    battleRewarded = false;
+    voyageSession.leave();
     enterActiveBattle(hostSession.state);
   },
   onClientMatchStarted: (clientSession) => {
     consumedClientEvents.clear();
     currentMode = "battle";
-    battleRewarded = false;
+    voyageSession.leave();
     enterActiveBattle(clientSession.renderState(performance.now()).state);
   },
   onReturnToMenu: (notice) => {
     hud.showMultiplayerNotice(localizedMultiplayerNotice(notice));
     returnToMainMenu();
+    menus?.showMultiplayerDirectory();
   },
+  onGuidance: (reason) => menus?.setLanGuidance(reason),
   onNotice: (notice) => {
     hud.showMultiplayerNotice(localizedMultiplayerNotice(notice));
   },
   onLobbyUpdated: (snapshot, localPeerId) => menus?.setMultiplayerLobby(snapshot, localPeerId),
   onLobbyReturned: (snapshot, localPeerId) => {
-    returnToMainMenu();
+    returnToMainMenu(false);
     menus?.showMultiplayerLobby(snapshot, localPeerId);
   },
 });
 menus = new GameMenus(gameShell, settings, profile, view.getQuality(), {
   onStart: startMode,
+  onRequestSolo: requestSolo,
+  isProfileLocked: () => voyageSession.progression.profileLocked,
+  onReplayTutorial: (fromBattle) => {
+    const saved = voyageSession.queueTutorialReplay(); syncVoyageProfile();
+    if (!saved.ok) { voyagePanel.showNotice(saved.error === "pending-settlement" ? "profileLocked" : "saveFailed"); return; }
+    if (fromBattle) voyagePanel.showNotice("replayQueued");
+    else { menus.showStart(); requestSolo(); }
+  },
   onPause: () => {
     gameShell?.classList.remove("hud-details-held");
     view.releasePointerLock();
@@ -299,13 +378,16 @@ menus = new GameMenus(gameShell, settings, profile, view.getQuality(), {
   onSettingsChange: applyControlSettings,
   onQualityChange: applyQuality,
   onProfileChange: (nextProfile) => {
-    profile = nextProfile;
-    saveLocalProfile(profile);
-    lanRuntime.setProfile(profile);
+    const result = voyageSession.progression.updateProfile(nextProfile);
+    syncVoyageProfile();
+    if (!result.ok) voyagePanel.showNotice(result.error === "pending-settlement" ? "profileLocked" : "saveFailed");
+    return result.ok;
   },
   multiplayer: lanRuntime.callbacks,
 });
+if (loadedProfile.migrationSaveResult?.ok === false) voyagePanel.showNotice("saveFailed");
 developerPanel = new DeveloperPanel(gameShell, () => state, {
+  onMutation: () => voyageSession.invalidateRewards(),
   onOpen: () => {
     gameShell?.classList.remove("hud-details-held");
     paused = true;
@@ -337,6 +419,7 @@ developerPanel = new DeveloperPanel(gameShell, () => state, {
   onControlShip: (id) => {
     const next = controlDeveloperShip(state, id);
     if (!next) return;
+    voyageSession.invalidateRewards();
     developerView = next;
     input.reset();
     playerPerception.reset();
@@ -356,7 +439,15 @@ developerPanel = new DeveloperPanel(gameShell, () => state, {
 });
 
 window.addEventListener("keydown", (event) => {
+  if (voyagePanel.isBriefingOpen()) {
+    if (event.code === "Escape") { event.preventDefault(); voyagePanel.hideBriefing(); }
+    return;
+  }
+  if (!started && event.code === "Escape") { if (menus.isSettingsOpen()) { event.preventDefault(); menus.handleEscape(); } return; }
   if (!started || state.status !== "running") return;
+  if (event.code === "F1" && voyageSession.tutorialActive && !menus.isOpen()) {
+    event.preventDefault(); voyageSession.skipTutorial(); syncVoyageProfile(); return;
+  }
   if (event.code === "Tab" && !event.altKey && !event.ctrlKey && !event.metaKey && !event.shiftKey) {
     const visible = auxiliaryHudVisible(true, {
       started,
@@ -479,18 +570,20 @@ function finishFrame(
   if (activeState.status !== "running") {
     gameShell?.classList.remove("hud-details-held");
     tacticalMap.close();
-    if (!multiplayerActive && currentMode === "battle" && !battleRewarded) {
-      const economy = awardBattleResult(profile, activeState.status);
-      profile = economy.profile;
-      saveLocalProfile(profile);
-      menus.setProfile(profile);
-      battleRewarded = true;
+    if (!multiplayerActive && started && currentMode === "battle" && !resultPresented) {
+      if (voyageSession.finish(activeState)) {
+        syncVoyageProfile(); presentVoyageResult();
+        input.setSuppressed(true); view.setCameraInputEnabled(false);
+      }
+      resultPresented = true;
     }
     gameShell?.classList.remove("game-active");
     view.releasePointerLock();
   }
   hud.setAimMode(input.isAiming);
   hud.update(activeState, input.aimRange, input.selectedWeapon, perceivedTarget, observerShipId);
+  voyagePanel.setTutorial(voyageSession.tutorialActive ? profile.onboarding.currentStepId ?? "move" : null,
+    started && !paused && activeState.status === "running" && !multiplayerActive && !menus.isOpen() && !tacticalMap.isExpanded() && !developerPanel?.isOpen());
   tacticalMap.update(activeState, perceivedTarget, contactViews);
   developerObserverHud.hidden = multiplayerActive || !developerView.active;
   if (!multiplayerActive && developerView.active) {
@@ -634,6 +727,7 @@ view.engine.runRenderLoop(() => {
       const stepOutput = session.step(commands, FIXED_STEP, {
         includeDeveloperAi: developerView.active,
       });
+      if (voyageSession.observe(stepOutput, input.isAiming)) syncVoyageProfile();
       tacticalMap.handleAirEvents(stepOutput.airEvents);
       perceivedTarget = state.mode === "battle"
         ? playerPerception.update(observe(state, observerShipId))

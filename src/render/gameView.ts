@@ -30,27 +30,19 @@ import {
   torpedoLaunchSolution,
   turretAimPoint,
 } from "../sim/simulation";
-import {
-  effectiveMainBattery,
-  mainBatteryMountLocalPosition,
-} from "../ships/mainBatteries";
+import { effectiveMainBattery } from "../ships/mainBatteries";
 import type { HullId } from "../ships/hulls";
 import { getShipClass } from "../ships/classes";
 import type { ShipClassId } from "../ships/classes";
 import { getTorpedo } from "../ships/torpedoes";
-import {
-  createMainGunVisual,
-  createTorpedoLauncherVisual,
-} from "./shipGeometry";
 import { createProceduralShipHull } from "./shipHullVisual";
 import { importExternalShipModel } from "./externalShipModel";
 import { loadShipModelCatalog } from "./shipModelCatalog";
 import { loadRegisteredShipModel } from "./shipModelFactory";
 import { createPixelShipPalette } from "./shipMaterials";
-import {
-  combatEquipmentVisualPlan,
-  createCombatEquipmentVisual,
-} from "./combatEquipmentVisuals";
+import { createLoadoutEquipmentVisual } from "./loadoutEquipmentVisual";
+import { LoadoutVisualRegistry } from "./loadoutVisualRegistry";
+import { resolveLoadoutVisualPlan, VISUAL_EQUIPMENT_CATEGORIES } from "./loadoutVisualPlan";
 import {
   applyPixelSkyWeather,
   applyWaterAtmosphere,
@@ -170,10 +162,7 @@ const shipArmamentSignature = (ship: ShipState): string => [
   ship.mainGunMounts,
   ship.torpedoId,
   ship.torpedoLauncherMounts,
-  ship.installedEquipment?.torpedo.join(",") ?? "",
-  ship.installedEquipment?.sideGun.join(",") ?? "",
-  ship.installedEquipment?.antiAir.join(",") ?? "",
-  ship.installedEquipment?.depthCharge.join(",") ?? "",
+  ...VISUAL_EQUIPMENT_CATEGORIES.map((category) => ship.installedEquipment[category].map((id) => id ?? "_").join(",")),
 ].join(":");
 
 const wrapAngle = (angle: number): number => {
@@ -190,6 +179,7 @@ export class GameView implements AimProvider {
   private readonly ambientLight: HemisphericLight;
   private readonly sunLight: DirectionalLight;
   private readonly ships = new Map<string, ShipVisual>();
+  private readonly loadoutVisualRegistry = new LoadoutVisualRegistry();
   private readonly contactVisuals = new Map<string, ContactVisual>();
   private readonly shipModelCatalogReady = loadShipModelCatalog();
   private readonly airSquadronVisuals = new Map<string, AirSquadronVisual>();
@@ -564,36 +554,12 @@ export class GameView implements AimProvider {
       ally ? "ally" : testTarget ? "target" : "enemy",
     );
     const motion = createProceduralShipHull(this.scene, root, ship.id, ship.shipClassId, palette);
-    const gunDefinition = effectiveMainBattery(ship);
-    const guns = gunDefinition.mounts.map((mount, index) => {
-      const gun = createMainGunVisual(this.scene, root, `${ship.id}-mount-${index}`, {
-        ...gunDefinition,
-        visual: { ...gunDefinition.visual, barrelCount: mount.barrelCount },
-      }, palette);
-      const hardpoint = mainBatteryMountLocalPosition(mount);
-      gun.root.position.set(hardpoint.x, hardpoint.y, hardpoint.z);
-      return gun;
-    });
-    const equipmentPlan = combatEquipmentVisualPlan(ship);
-    const torpedoLaunchers = equipmentPlan.torpedoDefinitionIds.map((definitionId, index, definitions) => {
-      const torpedo = createTorpedoLauncherVisual(
-        this.scene,
-        root,
-        `${ship.id}-launcher-${index}`,
-        getTorpedo(definitionId),
-        palette,
-      );
-      torpedo.root.position.z += (index - (definitions.length - 1) / 2) * 7;
-      return torpedo.root;
-    });
-    const equipment = createCombatEquipmentVisual(
-      this.scene,
-      root,
-      ship,
-      palette,
-      hullDefinition.renderScale.z,
-    );
-    const secondaryTurrets = equipment.secondaryTurrets;
+    const scope = this.loadoutVisualRegistry.sessionScope;
+    const batteryClassId = ship.developer?.enabled ? ship.developer.mainBatteryClassId : undefined;
+    const plan = scope
+      ? this.loadoutVisualRegistry.register(scope, ship.id, ship.shipClassId, ship.installedEquipment, batteryClassId)
+      : resolveLoadoutVisualPlan(ship.shipClassId, ship.installedEquipment, batteryClassId);
+    const equipment = createLoadoutEquipmentVisual(this.scene, root, ship.id, plan, palette);
     const bodyMeshes = root.getChildMeshes(false)
       .filter((mesh): mesh is Mesh => mesh instanceof Mesh);
 
@@ -670,12 +636,12 @@ export class GameView implements AimProvider {
       proceduralHullRoot: motion.root,
       bodyMeshes,
       bodyVisibility: 1,
-      turrets: guns.map((gun) => gun.root),
-      gunCradles: guns.map((gun) => gun.cradle),
-      gunBarrels: guns.flatMap((gun) => gun.barrels),
-      gunBarrelRestZ: guns.flatMap((gun) => gun.barrelRestZ),
-      torpedoLaunchers,
-      secondaryTurrets,
+      turrets: equipment.turrets,
+      gunCradles: equipment.gunCradles,
+      gunBarrels: equipment.gunBarrels,
+      gunBarrelRestZ: equipment.gunBarrelRestZ,
+      torpedoLaunchers: equipment.torpedoLaunchers,
+      secondaryTurrets: equipment.secondaryTurrets,
       rudder: motion.rudder,
       propellers: motion.propellers,
       wakes,
@@ -856,6 +822,8 @@ export class GameView implements AimProvider {
       if (activeIds.has(id)) continue;
       this.disposeShipVisual(visual);
       this.ships.delete(id);
+      const scope = this.loadoutVisualRegistry.sessionScope;
+      if (scope) this.loadoutVisualRegistry.remove(scope, id);
     }
     const developerMode = omniscient || Boolean(
       state.ships.find(({ id }) => id === "player")?.developer?.enabled,
@@ -2061,7 +2029,24 @@ export class GameView implements AimProvider {
     this.scene.imageProcessingConfiguration.contrast = underwater ? 1.02 : preset.contrast;
   }
 
+  beginVisualSession(scope: string, ships: readonly ShipState[] = []): void {
+    this.endVisualSession();
+    this.loadoutVisualRegistry.begin(scope);
+    for (const ship of ships) this.loadoutVisualRegistry.register(scope, ship.id, ship.shipClassId,
+      ship.installedEquipment, ship.developer?.enabled ? ship.developer.mainBatteryClassId : undefined);
+  }
+
+  endVisualSession(): void {
+    // Disposing the old roots also invalidates their pending external-model callbacks.
+    for (const visual of this.ships.values()) this.disposeShipVisual(visual);
+    this.ships.clear();
+    for (const contact of this.contactVisuals.values()) contact.root.dispose(false, true);
+    this.contactVisuals.clear();
+    this.loadoutVisualRegistry.clear();
+  }
+
   resetTransient(): void {
+    this.endVisualSession();
     for (const visual of this.airSquadronVisuals.values()) visual.root.dispose(false, true);
     this.airSquadronVisuals.clear();
     for (const visual of this.projectileMeshes.values()) visual.root.dispose(false, true);

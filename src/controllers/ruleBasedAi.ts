@@ -8,6 +8,7 @@ import {
   shipSpeedMetersPerSecond,
 } from "../sim/config";
 import { terrainSafeHeading } from "../maps/atollMap";
+import { AiNavigationRecovery } from "../sim/aiNavigation";
 import { getShipClass } from "../ships/classes";
 import { getTorpedo } from "../ships/torpedoes";
 import { effectiveMainBattery } from "../ships/mainBatteries";
@@ -257,6 +258,7 @@ export class RuleBasedAi implements Controller {
   private lastTime = 0;
   private plannedTerrainHeading?: number;
   private nextTerrainPlanAt = 0;
+  private readonly navigationRecovery = new AiNavigationRecovery();
   private randomSeed: number;
   private selectedAmmo: AmmoType = "he";
   private nextAmmoDecisionAt = 0;
@@ -632,6 +634,8 @@ export class RuleBasedAi implements Controller {
     desiredHeading = this.plannedTerrainHeading;
     const collisionRisk = friendlyCollisionRisk(observation.self, friendlies);
     if (collisionRisk) desiredHeading = collisionRisk.avoidanceHeading;
+    const navigation = this.navigationRecovery.command(observation.mapId, observation.self, desiredHeading, observation.time);
+    desiredHeading = navigation.desiredHeading;
     const headingError = wrapAngle(desiredHeading - observation.self.heading);
     let tacticalThrottle = evadingTorpedo
       ? 1
@@ -647,6 +651,7 @@ export class RuleBasedAi implements Controller {
       tacticalThrottle = Math.min(tacticalThrottle, 0.74);
     }
     if (collisionRisk) tacticalThrottle = Math.min(tacticalThrottle, 0.35);
+    if (navigation.throttleLimit !== undefined) tacticalThrottle = Math.min(tacticalThrottle, navigation.throttleLimit);
     const priority = damageControlPriority(observation);
     const recoverableDamage = observation.self.recoverableHull - observation.self.hull;
     const repairHull = priority === "balanced"

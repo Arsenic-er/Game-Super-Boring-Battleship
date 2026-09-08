@@ -424,6 +424,21 @@ export interface UnderwaterTargetState {
   isTrainingTarget?: boolean;
 }
 
+/** Exact hull loss for local telemetry, including overkill clamping and damage over time. */
+export interface ShipHullDamageEvent {
+  targetId: string;
+  creditedOwnerId?: string;
+  cause: ShipDestroyedAttributionEvent["cause"];
+  damage: number;
+}
+
+/** Local-only attribution. Never include this in BattleState or replication payloads. */
+export interface ShipDestroyedAttributionEvent {
+  targetId: string;
+  creditedOwnerId?: string;
+  cause: "direct" | "fire" | "flood" | "collision" | "terrain" | "unknown";
+}
+
 export interface ShotEvent {
   id: number;
   ownerId: string;

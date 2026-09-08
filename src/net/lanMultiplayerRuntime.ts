@@ -21,6 +21,7 @@ import {
 } from "./protocol";
 import { replicationViewFor } from "./replicationView";
 import { RoomDirectory } from "./roomDirectory";
+import { rejectionGuidance, type LanGuidanceReason } from "./lanGuidance";
 
 const JOIN_TIMEOUT_MS = 4_000;
 const SEARCH_WINDOW_MS = 350;
@@ -50,6 +51,7 @@ export interface LanMultiplayerRuntimeHooks {
   onClientMatchStarted: (session: ClientBattleSession) => void;
   onReturnToMenu: (notice: string) => void;
   onNotice: (notice: string) => void;
+  onGuidance?: (reason: LanGuidanceReason) => void;
   onLobbyUpdated?: (snapshot: LobbySnapshot, localPeerId: string) => void;
   onLobbyReturned?: (snapshot: LobbySnapshot, localPeerId: string) => void;
   now?: () => number;
@@ -166,18 +168,33 @@ export class LanMultiplayerRuntime {
     });
     this.callbacks = {
       capabilities: async () => await this.bridge.capabilities(),
-      createRoom: async ({ roomName, buildId }) => await this.createRoom(roomName, buildId),
-      searchRooms: async () => await this.searchRooms(),
-      manualJoin: async ({ address, port }) => await this.manualJoin(address, port),
+      createRoom: async ({ roomName, buildId }) => this.guidedOperation(() => this.createRoom(roomName, buildId), "host-create-failed"),
+      searchRooms: async () => this.guidedOperation(() => this.searchRooms(), "search-empty"),
+      manualJoin: async ({ address, port }) => this.guidedOperation(() => this.manualJoin(address, port), "manual-join-disconnected"),
       leaveRoom: async () => await this.leaveRoom(),
-      readyLobby: async ({ ready, buildId }) => await this.readyLobby(ready, buildId),
-      startLobby: async () => await this.startLobby(),
+      readyLobby: async ({ ready, buildId }) => this.publishActionGuidance(await this.readyLobby(ready, buildId)),
+      startLobby: async () => this.publishActionGuidance(await this.startLobby()),
       returnToLobby: async () => await this.returnToLobby(),
     };
   }
 
   get role(): LanRole {
     return this.roleValue;
+  }
+
+  private async guidedOperation<T extends MultiplayerActionResult>(operation: () => Promise<T>, fallback: LanGuidanceReason): Promise<T | MultiplayerActionResult> {
+    try {
+      const result = await operation();
+      return this.publishActionGuidance(result);
+    } catch (error) {
+      this.hooks.onGuidance?.(fallback);
+      return { ok: false, errorSource: operationErrorSource(error), guidanceReason: fallback };
+    }
+  }
+
+  private publishActionGuidance<T extends MultiplayerActionResult>(result: T): T {
+    if (result.guidanceReason) this.hooks.onGuidance?.(result.guidanceReason);
+    return result;
   }
 
   get localPeerId(): string {
@@ -368,7 +385,7 @@ export class LanMultiplayerRuntime {
 
   private async createRoom(roomName: string, buildId: string | null): Promise<MultiplayerActionResult> {
     const build = this.readyBuild(buildId);
-    if (!build) return { ok: false, errorSource: "请先选择一套可出海的本地方案。" };
+    if (!build) return { ok: false, errorSource: "请先选择一套可出海的本地方案。", guidanceReason: "invalid-build" };
     await this.bridge.stopDiscovery();
     this.roomId = globalThis.crypto?.randomUUID?.() ?? `room-${Date.now()}`;
     this.sequence = 0;
@@ -405,7 +422,7 @@ export class LanMultiplayerRuntime {
       };
     } catch (error) {
       await this.cleanupTransport();
-      return { ok: false, errorSource: operationErrorSource(error) };
+      return { ok: false, errorSource: operationErrorSource(error), guidanceReason: "host-create-failed" };
     }
   }
 
@@ -414,15 +431,16 @@ export class LanMultiplayerRuntime {
       await this.bridge.startDiscovery();
       await wait(SEARCH_WINDOW_MS);
       this.discoveredRooms.expire(this.now());
-      return { ok: true, rooms: this.discoveredRooms.list() };
+      const rooms = this.discoveredRooms.list();
+      return { ok: true, rooms, guidanceReason: rooms.length === 0 ? "search-empty" : undefined };
     } catch (error) {
-      return { ok: false, errorSource: operationErrorSource(error), rooms: this.discoveredRooms.list() };
+      return { ok: false, errorSource: operationErrorSource(error), rooms: this.discoveredRooms.list(), guidanceReason: "search-empty" };
     }
   }
 
   private async manualJoin(address: string, port: LanGamePort): Promise<MultiplayerActionResult> {
     const build = this.readyBuild(this.profile.selectedBattleBuildId);
-    if (!build) return { ok: false, errorSource: "请先选择一套可出海的本地方案。" };
+    if (!build) return { ok: false, errorSource: "请先选择一套可出海的本地方案。", guidanceReason: "invalid-build" };
     await this.bridge.stopDiscovery();
     const targetRoomId = this.roomIdForTarget(address, port);
     this.roomId = targetRoomId;
@@ -438,7 +456,7 @@ export class LanMultiplayerRuntime {
           connectionId,
           timeout: window.setTimeout(() => {
             this.pendingJoin = undefined;
-            resolve({ ok: false, errorSource: "加入房间超时。" });
+            resolve({ ok: false, errorSource: "加入房间超时。", guidanceReason: "manual-join-timeout" });
           }, JOIN_TIMEOUT_MS),
         };
         void this.send(this.nextEnvelope("join-request", {
@@ -448,15 +466,15 @@ export class LanMultiplayerRuntime {
           expectedContentHash: LAN_CONTENT_HASH,
           build: savedBuildToLan(build),
         }, targetRoomId)).catch((error) => {
-          this.resolvePendingJoin({ ok: false, errorSource: operationErrorSource(error) });
+          this.resolvePendingJoin({ ok: false, errorSource: operationErrorSource(error), guidanceReason: "manual-join-disconnected" });
         });
       });
       if (!result.ok) await this.bridge.disconnect();
       return result;
     } catch (error) {
-      this.resolvePendingJoin({ ok: false, errorSource: operationErrorSource(error) });
+      this.resolvePendingJoin({ ok: false, errorSource: operationErrorSource(error), guidanceReason: "manual-join-disconnected" });
       await this.bridge.disconnect();
-      return { ok: false, errorSource: operationErrorSource(error) };
+      return { ok: false, errorSource: operationErrorSource(error), guidanceReason: "manual-join-disconnected" };
     }
   }
 
@@ -532,12 +550,12 @@ export class LanMultiplayerRuntime {
 
   private async readyLobby(ready: boolean, buildId: string): Promise<MultiplayerActionResult> {
     const build = this.readyBuild(buildId);
-    if (!build) return { ok: false, errorSource: "请先选择一套可出海的本地方案。" };
+    if (!build) return { ok: false, errorSource: "请先选择一套可出海的本地方案。", guidanceReason: "invalid-build" };
     if (this.hostLobby) {
       const buildResult = this.hostLobby.setBuild(this.peerId, savedBuildToLan(build));
-      if (!buildResult.ok) return { ok: false, errorSource: "当前方案未通过联机校验。" };
+      if (!buildResult.ok) return { ok: false, errorSource: "当前方案未通过联机校验。", guidanceReason: "invalid-build" };
       const readyResult = this.hostLobby.setReady(this.peerId, ready);
-      if (!readyResult.ok) return { ok: false, errorSource: "当前方案未通过联机校验。" };
+      if (!readyResult.ok) return { ok: false, errorSource: "当前方案未通过联机校验。", guidanceReason: "invalid-build" };
       this.lobby = cloneLobby(readyResult.lobby);
       this.publishLobby();
       await this.refreshAnnouncement();
@@ -571,7 +589,7 @@ export class LanMultiplayerRuntime {
     this.publishLobby();
     const host = this.lobby.players.find((player) => player.role === "host");
     const guest = this.lobby.players.find((player) => player.role === "guest");
-    if (!host?.build || !guest?.build) return { ok: false, errorSource: "当前方案未通过联机校验。" };
+    if (!host?.build || !guest?.build) return { ok: false, errorSource: "当前方案未通过联机校验。", guidanceReason: "invalid-build" };
     const seed = Math.max(1, Math.round(this.now()));
     const session = new HostBattleSession({
       hostPeerId: host.peerId,
@@ -661,7 +679,7 @@ export class LanMultiplayerRuntime {
       const source = bridgeErrorSource(event.code, event.message);
       if (event.role === "guest" && this.pendingJoin) {
         if (this.isPendingGuestConnection(event.connectionId)) {
-          this.resolvePendingJoin({ ok: false, errorSource: source });
+          this.resolvePendingJoin({ ok: false, errorSource: source, guidanceReason: "manual-join-disconnected" });
         }
         return;
       }
@@ -719,7 +737,7 @@ export class LanMultiplayerRuntime {
       }
       if (event.role === "guest" && this.pendingJoin) {
         if (!this.isPendingGuestConnection(event.connectionId)) return;
-        this.resolvePendingJoin({ ok: false, errorSource: "联机连接已断开。" });
+        this.resolvePendingJoin({ ok: false, errorSource: "联机连接已断开。", guidanceReason: "manual-join-disconnected" });
         this.roomId = undefined;
         this.guestInboundSequence = 0;
         this.guestJoinAccepted = false;
@@ -729,7 +747,8 @@ export class LanMultiplayerRuntime {
       if (event.role === "guest" && (this.clientSessionValue || this.lobby)) {
         this.resolvePendingJoin({ ok: false, errorSource: "房主已断开。" });
         await this.cleanupTransport();
-        this.hooks.onReturnToMenu("房主已断开 · 已返回主菜单。") ;
+        this.hooks.onGuidance?.("host-disconnected");
+        this.hooks.onReturnToMenu("房主已断开 · 已返回多人目录。");
       }
     }
   }
@@ -1047,7 +1066,7 @@ export class LanMultiplayerRuntime {
       }
       case "join-rejected": {
         if (!this.pendingJoin || this.guestJoinAccepted) return;
-        this.resolvePendingJoin({ ok: false, errorSource: joinRejectedSource(message.payload.reason, message.payload.detail) });
+        this.resolvePendingJoin({ ok: false, errorSource: joinRejectedSource(message.payload.reason, message.payload.detail), guidanceReason: rejectionGuidance(message.payload.reason) });
         return;
       }
       case "lobby-update": {
@@ -1080,7 +1099,8 @@ export class LanMultiplayerRuntime {
       }
       case "peer-disconnected": {
         await this.cleanupTransport();
-        this.hooks.onReturnToMenu("房主已断开 · 已返回主菜单。");
+        this.hooks.onGuidance?.("host-disconnected");
+        this.hooks.onReturnToMenu("房主已断开 · 已返回多人目录。");
         return;
       }
       case "return-to-lobby": {
@@ -1094,7 +1114,8 @@ export class LanMultiplayerRuntime {
           return;
         }
         await this.cleanupTransport();
-        this.hooks.onReturnToMenu("房间已关闭 · 已返回主菜单。");
+        this.hooks.onGuidance?.("host-disconnected");
+        this.hooks.onReturnToMenu("房间已关闭 · 已返回多人目录。");
         return;
       }
       default:

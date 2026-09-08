@@ -10,6 +10,8 @@ import { RoomDirectory, type DiscoveredRoom } from "../net/roomDirectory";
 import { LAN_GAME_PORTS, type LanGamePort } from "../net/protocol";
 import type { LocalProfile, SavedShipBuild } from "../profile/localProfile";
 import { savedBuildReadiness } from "../profile/savedBuilds";
+import { lanText } from "../i18n/lanLocale";
+import { lanTroubleshootingState, type LanGuidanceReason, type LanTroubleshootingState } from "../net/lanGuidance";
 
 export const MULTIPLAYER_MENU_SOURCE_STRINGS = [
   "多人联机",
@@ -85,6 +87,8 @@ export const MULTIPLAYER_MENU_SOURCE_STRINGS = [
   "客席已离开 · AI 已接管。",
   "房主已断开 · 已返回主菜单。",
   "房间已关闭 · 已返回主菜单。",
+  "房主已断开 · 已返回多人目录。",
+  "房间已关闭 · 已返回多人目录。",
   "多人联机已禁用开发者改动。",
   "主机地址",
   "复制地址",
@@ -227,6 +231,7 @@ export function deriveLobbyControls(options: {
 
 export interface MultiplayerActionResult {
   ok: boolean;
+  guidanceReason?: LanGuidanceReason;
   errorSource?: string;
   lobby?: LobbySnapshot;
   localPeerId?: string;
@@ -372,6 +377,7 @@ export class MultiplayerMenu {
   private loadingRooms = false;
 
   private statusSource: string | null = null;
+  private guidance?: LanTroubleshootingState;
 
   private screen: "directory" | "lobby" = "directory";
 
@@ -400,6 +406,39 @@ export class MultiplayerMenu {
     this.controller.setLobby(snapshot, localPeerId);
     this.screen = "lobby";
     this.render();
+  }
+
+  setGuidance(reason: LanGuidanceReason): void {
+    this.guidance = lanTroubleshootingState(reason);
+    this.render();
+  }
+
+  dismissGuidance(): void {
+    this.guidance = undefined;
+    this.render();
+  }
+
+  returnToDirectory(): void {
+    this.controller.clearLobby();
+    this.hostEndpoint = undefined;
+    this.screen = "directory";
+    this.statusSource = null;
+    this.render();
+  }
+
+  private beginNetworkOperation(): void {
+    this.guidance = undefined;
+    this.statusSource = null;
+    this.render();
+  }
+
+  private guidanceMarkup(): string {
+    if (!this.guidance) return "";
+    return `<section class="multiplayer-panel multiplayer-guidance" data-i18n-keyed data-guidance-reason="${this.guidance.reason}" role="status" aria-live="polite">
+      <h3>${escapeMarkup(lanText(this.locale, this.guidance.titleKey))}</h3>
+      ${this.guidance.actionKeys.length ? `<ol>${this.guidance.actionKeys.map((key) => `<li>${escapeMarkup(lanText(this.locale, key))}</li>`).join("")}</ol>` : ""}
+      <button class="text-button multiplayer-dismiss-guidance" type="button">${escapeMarkup(lanText(this.locale, "dismiss"))}</button>
+    </section>`;
   }
 
   async show(): Promise<void> {
@@ -572,14 +611,19 @@ export class MultiplayerMenu {
     this.root.innerHTML = this.screen === "lobby" && lobby.snapshot && lobby.localPeerId
       ? this.lobbyMarkup(lobby.snapshot, lobby.localPeerId)
       : this.directoryMarkup();
-    this.bindEvents();
     const status = this.statusSource ? `<p class="multiplayer-status" aria-live="polite">${escapeMarkup(this.statusSource)}</p>` : "";
     if (status) this.root.insertAdjacentHTML("beforeend", status);
     applyDocumentLocale(this.locale);
     localizeElement(this.root, this.locale);
+    // Keyed guidance is already localized; never run legacy source-text replacement over it.
+    this.root.insertAdjacentHTML("beforeend", this.guidanceMarkup());
+    this.bindEvents();
   }
 
   private bindEvents(): void {
+    this.root.querySelector<HTMLButtonElement>(".multiplayer-dismiss-guidance")?.addEventListener("click", () => {
+      this.dismissGuidance();
+    });
     this.root.querySelector<HTMLButtonElement>(".multiplayer-back")?.addEventListener("click", () => this.options.onBack());
     this.root.querySelector<HTMLInputElement>(".multiplayer-room-name")?.addEventListener("input", (event) => {
       this.roomName = (event.currentTarget as HTMLInputElement).value;
@@ -629,8 +673,10 @@ export class MultiplayerMenu {
   }
 
   private async handleCreateRoom(): Promise<void> {
+    this.beginNetworkOperation();
     const roomName = this.roomName.trim() || "本地房间";
     const result = await this.options.callbacks.createRoom({ roomName, buildId: this.controller.getSelectedBuildId() });
+    if (result.guidanceReason) this.guidance = lanTroubleshootingState(result.guidanceReason);
     this.statusSource = result.ok
       ? this.statusSource
       : result.errorSource ?? "创建房间失败。";
@@ -645,10 +691,12 @@ export class MultiplayerMenu {
   }
 
   private async handleSearchRooms(trigger: "search" | "refresh"): Promise<void> {
+    this.beginNetworkOperation();
     this.loadingRooms = true;
     this.statusSource = null;
     this.render();
     const result = await this.options.callbacks.searchRooms();
+    if (result.guidanceReason) this.guidance = lanTroubleshootingState(result.guidanceReason);
     this.loadingRooms = false;
     if (result.ok) {
       this.applySearchResults(result.rooms);
@@ -662,6 +710,7 @@ export class MultiplayerMenu {
   }
 
   private async handleManualJoin(): Promise<void> {
+    this.beginNetworkOperation();
     const capabilityState = this.currentCapabilities();
     if (!capabilityState.canManualConnect) {
       this.statusSource = capabilityState.manualJoinSource;
@@ -677,6 +726,7 @@ export class MultiplayerMenu {
       return;
     }
     const result = await this.options.callbacks.manualJoin(target);
+    if (result.guidanceReason) this.guidance = lanTroubleshootingState(result.guidanceReason);
     this.statusSource = result.ok
       ? this.statusSource
       : result.errorSource ?? "加入房间失败。";

@@ -22,6 +22,7 @@ export interface DeveloperViewStatus {
 }
 
 export interface DeveloperPanelCallbacks {
+  onMutation?: () => void;
   onOpen: () => void;
   onClose: () => void;
   onDebugColliders: (visible: boolean) => void;
@@ -262,6 +263,17 @@ export class DeveloperPanel {
   }
 
   private bindControls(): void {
+    // Observe UI events before individual handlers mutate the battle; viewing alone stays read-only.
+    for (const eventName of ["input", "change"] as const) {
+      this.element.addEventListener(eventName, (event) => {
+        const control = event.target as HTMLElement;
+        if (control.matches("[data-field],[data-module],[data-compartment],[data-number],[data-dev-field],[data-role^='developer-']")) this.callbacks.onMutation?.();
+      }, true);
+    }
+    this.element.addEventListener("click", (event) => {
+      const action = (event.target as Element).closest<HTMLElement>("button[data-action]")?.dataset.action;
+      if (action && !["close", "observe-entity", "release-control"].includes(action)) this.callbacks.onMutation?.();
+    }, true);
     this.element.querySelector('[data-action="close"]')?.addEventListener("click", () => this.close());
     this.shipSelect.addEventListener("change", () => this.refresh());
     this.entitySelect.addEventListener("change", () => {

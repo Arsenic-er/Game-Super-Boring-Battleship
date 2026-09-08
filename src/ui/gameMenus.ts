@@ -8,24 +8,17 @@ import {
   translateGameText,
 } from "../i18n/gameLocale";
 import {
-  autoEquipBestOwnedComponents,
-  battleLoadout,
   drawSupplies,
-  equipComponent,
   guaranteeProgress,
   installedCopies,
   normalizeLocalProfile,
   purchaseComponent,
   researchComponent,
   salvageComponent,
-  selectShipClass,
   sellComponent,
   setCommanderName,
 } from "../profile/localProfile";
 import {
-  deleteShipBuild,
-  overwriteShipBuild,
-  saveCurrentShipBuild,
   savedBuildReadiness,
   selectBattleBuild,
 } from "../profile/savedBuilds";
@@ -54,18 +47,25 @@ import {
 } from "../sim/battleSetup";
 import { WEATHER_IDS, WEATHER_PRESETS, type WeatherId } from "../sim/weather";
 import { DockPreview } from "../render/dockPreview";
+import { DockPanel } from "./dockPanel";
+import { equipmentLocale } from "../i18n/equipmentLocale";
+import { voyageText } from "../i18n/voyageLocale";
+import type { LanGuidanceReason } from "../net/lanGuidance";
 import { equipmentArtworkMarkup } from "./equipmentArtwork";
 import { MultiplayerMenu, type MultiplayerMenuCallbacks } from "./multiplayerMenu";
 
 export interface GameMenuCallbacks {
-  onStart: (request: GameLaunchRequest) => void;
+  onStart: (request: GameLaunchRequest) => void | boolean;
+  onRequestSolo?: () => void;
+  onReplayTutorial?: (fromBattle: boolean) => void;
+  isProfileLocked?: () => boolean;
   onPause: () => void;
   onResume: () => void;
   onRestart: () => void;
   onExitToMenu: () => void;
   onSettingsChange: (settings: GameSettings) => void;
   onQualityChange: (quality: "low" | "medium") => void;
-  onProfileChange: (profile: LocalProfile) => void;
+  onProfileChange: (profile: LocalProfile) => void | boolean;
   multiplayer: MultiplayerMenuCallbacks;
 }
 
@@ -131,8 +131,6 @@ export class GameMenus {
   private readonly materialSummary: HTMLElement;
   private readonly guaranteePanel: HTMLElement;
   private readonly drawResults: HTMLElement;
-  private readonly inventoryGrid: HTMLElement;
-  private readonly componentDetail: HTMLElement;
   private readonly armoryGrid: HTMLElement;
   private readonly armoryDetail: HTMLElement;
   private readonly armoryNotice: HTMLElement;
@@ -141,11 +139,11 @@ export class GameMenus {
   private readonly warehouseNotice: HTMLElement;
   private readonly codexBody: HTMLElement;
   private readonly dockPreview: DockPreview;
+  private readonly dockPanel: DockPanel;
+  private settingsFromStart = false;
   private readonly multiplayerMenu: MultiplayerMenu;
   private settings: GameSettings;
   private profile: LocalProfile;
-  private activeCategory: EquipmentCategory | "all" = "all";
-  private selectedItemId?: string;
   private armoryCategory: EquipmentCategory | "all" = "all";
   private warehouseCategory: EquipmentCategory | "all" = "all";
   private selectedArmoryItemId?: string;
@@ -187,7 +185,7 @@ export class GameMenus {
             <button type="button" role="tab" data-menu-tab="codex" aria-selected="false"><i class="fa-solid fa-book"></i> 图鉴</button>
           </div>
           <div class="menu-tab-panel mission-panel" data-menu-panel="mission">
-            <p class="eyebrow">单人战术原型 · 1943</p><h1>灰海行动</h1>
+            <p class="eyebrow">二战海战 · 单人与双人局域网合作</p><h1>灰海行动</h1>
             <p>从船坞保存舰船方案，再选择舰队规模、天气与旗舰出击；海试仍使用当前船坞配装。</p>
             <div class="mission-brief">击沉敌舰，或控制中央 A 区率先达到 2000 分。双方争夺时，舰体状态更好的一方会缓慢建立区域优势。当前本地配装会真实影响战斗性能。</div>
             <div class="menu-controls">
@@ -241,7 +239,7 @@ export class GameMenus {
           <div class="menu-tab-panel codex-panel" data-menu-panel="codex" hidden>
             <div class="screen-heading"><div><p class="eyebrow">二战舰装档案</p><h2>组件图鉴</h2></div><span>边框表示舰装档位 · 名称采用历史型号</span></div>
             <div class="codex-table-wrap"><table class="codex-table"><thead><tr><th>类别</th><th>常备舰装</th><th>改装舰装</th><th>精锐舰装</th><th>舰队试验</th><th>当前舰型</th></tr></thead><tbody></tbody></table></div>
-            <p class="codex-note">历史鱼雷与侧炮型号已接入实际战斗性能；轻巡洋舰和战列舰的侧炮会在火控连续确认目标后自动接战。防空炮等待舰载机系统。</p>
+            <p class="codex-note">历史鱼雷与侧炮型号已接入实际战斗性能；轻巡洋舰和战列舰的侧炮会在火控连续确认目标后自动接战。防空炮已接入舰载机空战，其防空效能随装备数量与性能变化。</p>
           </div>
         </section>
       </div>
@@ -272,10 +270,12 @@ export class GameMenus {
     this.languageSelectors = Array.from(parent.querySelectorAll(".menu-language"));
     this.panels = { mission: find(".mission-panel"), store: find(".store-panel"), dock: find(".dock-panel"), codex: find(".codex-panel") };
     this.commanderName = find(".commander-name"); this.credits = find(".profile-credits"); this.researchPoints = find(".profile-research"); this.supplyTokens = find(".profile-tokens"); this.materialSummary = find(".material-summary");
-    this.guaranteePanel = find(".guarantee-panel"); this.drawResults = find(".draw-results"); this.inventoryGrid = find(".inventory-grid"); this.componentDetail = find(".component-detail");
+    this.guaranteePanel = find(".guarantee-panel"); this.drawResults = find(".draw-results");
     this.armoryGrid = find(".armory-grid"); this.armoryDetail = find(".armory-detail"); this.armoryNotice = find(".armory-notice");
     this.warehouseGrid = find(".warehouse-grid"); this.warehouseDetail = find(".warehouse-detail"); this.warehouseNotice = find(".warehouse-notice"); this.codexBody = find(".codex-table tbody");
     this.dockPreview = new DockPreview(find(".dock-preview"));
+    this.dockPanel = new DockPanel(this.panels.dock, this.dockPreview, () => this.profile, () => this.settings.locale,
+      () => Boolean(this.callbacks.isProfileLocked?.()), (next) => { this.profile = next; return this.emitProfile(); });
     this.multiplayerMenu = new MultiplayerMenu(find(".multiplayer-menu-host"), {
       locale: this.settings.locale,
       profile: this.profile,
@@ -286,13 +286,11 @@ export class GameMenus {
     for (const selector of this.languageSelectors) selector.value = this.settings.locale;
     this.renderStaticContent(); this.updateSensitivityLabels(); this.setQuality(initialQuality); this.renderProfile(); this.setStartTab("mission");
 
-    find<HTMLButtonElement>(".start-battle").addEventListener("click", () => this.openBattleSetup());
+    find<HTMLButtonElement>(".start-battle").addEventListener("click", () => this.callbacks.onRequestSolo ? this.callbacks.onRequestSolo() : this.openBattleSetup());
     find<HTMLButtonElement>(".open-multiplayer-menu").addEventListener("click", () => this.openMultiplayerMenu());
     find<HTMLButtonElement>(".start-trials").addEventListener("click", () => this.start({ mode: "sea-trials" }));
     find<HTMLButtonElement>(".battle-setup-back").addEventListener("click", () => this.closeBattleSetup());
     find<HTMLButtonElement>(".confirm-battle-setup").addEventListener("click", () => this.confirmBattleSetup());
-    find<HTMLButtonElement>(".save-ship-build").addEventListener("click", () => this.saveShipBuild());
-    find<HTMLButtonElement>(".auto-equip-ship").addEventListener("click", () => this.autoEquipCurrentShip());
     find<HTMLButtonElement>(".resume-battle").addEventListener("click", () => this.resume()); find<HTMLButtonElement>(".open-settings").addEventListener("click", () => this.openSettings());
     find<HTMLButtonElement>(".restart-battle").addEventListener("click", () => this.restart()); find<HTMLButtonElement>(".exit-main-menu").addEventListener("click", () => this.exitToMenu()); find<HTMLButtonElement>(".settings-back").addEventListener("click", () => this.backToPause());
     find<HTMLButtonElement>(".draw-once").addEventListener("click", () => this.draw(1)); find<HTMLButtonElement>(".draw-ten").addEventListener("click", () => this.draw(10)); find<HTMLButtonElement>(".open-codex").addEventListener("click", () => this.setStartTab("codex"));
@@ -302,13 +300,6 @@ export class GameMenus {
       button.addEventListener("click", () => this.setArmoryView(button.dataset.armoryViewButton === "inventory" ? "inventory" : "catalog"));
     }
     for (const button of this.tabButtons) button.addEventListener("click", () => this.setStartTab((button.dataset.menuTab as StartTab) ?? "mission"));
-    for (const button of parent.querySelectorAll<HTMLButtonElement>("[data-ship-class-id]")) {
-      button.addEventListener("click", () => {
-        const shipClassId = button.dataset.shipClassId as ShipClassId;
-        this.profile = selectShipClass(this.profile, shipClassId);
-        this.emitProfile();
-      });
-    }
     this.commanderName.addEventListener("change", () => { this.profile = setCommanderName(this.profile, this.commanderName.value); this.commanderName.value = this.profile.commanderName; this.emitProfile(); });
     this.steering.addEventListener("input", () => { this.settings = { ...this.settings, steeringSensitivity: Number(this.steering.value) / 100 }; this.emitSettings(); });
     this.aim.addEventListener("input", () => { this.settings = { ...this.settings, aimSensitivity: Number(this.aim.value) / 100 }; this.emitSettings(); });
@@ -328,6 +319,23 @@ export class GameMenus {
       this.emitSettings();
     });
     for (const button of this.qualityButtons) button.addEventListener("click", () => { const quality = button.dataset.quality === "medium" ? "medium" : "low"; this.setQuality(quality); this.callbacks.onQualityChange(quality); });
+    const settingsButton = document.createElement("button"); settingsButton.className = "main-open-settings"; settingsButton.type = "button";
+    settingsButton.setAttribute("data-i18n-keyed", "");
+    this.panels.mission.querySelector(".mode-choice")?.after(settingsButton);
+    settingsButton.addEventListener("click", () => { this.settingsFromStart = true; this.openSettings(); });
+    const replay = document.createElement("button"); replay.type = "button"; replay.className = "replay-voyage";
+    replay.setAttribute("data-i18n-keyed", "");
+    this.settingsOverlay.querySelector(".menu-buttons")?.prepend(replay);
+    replay.addEventListener("click", () => this.callbacks.onReplayTutorial?.(!this.settingsFromStart));
+    this.startOverlay.addEventListener("click", (event) => {
+      if (!this.callbacks.isProfileLocked?.()) return;
+      const target = (event.target as Element).closest(".armory-action,.warehouse-sell,.warehouse-salvage,.draw-once,.draw-ten,[data-battle-build]");
+      if (target) { event.preventDefault(); event.stopImmediatePropagation(); }
+    }, true);
+    this.commanderName.addEventListener("change", (event) => {
+      if (!this.callbacks.isProfileLocked?.()) return;
+      event.stopImmediatePropagation(); this.commanderName.value = this.profile.commanderName;
+    }, true);
     this.applyLocale();
   }
 
@@ -351,31 +359,7 @@ export class GameMenus {
     };
     createCategoryFilters(".armory-filters", (category) => { this.armoryCategory = category; this.renderStore(); });
     createCategoryFilters(".warehouse-filters", (category) => { this.warehouseCategory = category; this.renderWarehouse(); });
-    this.renderHullSlots();
-    const callouts = this.startOverlay.querySelector<HTMLElement>(".dock-callouts");
-    if (callouts) callouts.innerHTML = categories.filter(([category]) => category !== "sideGun").map(([, meta], index) => `<span class="callout c${index}"><i class="${meta.icon}"></i>${meta.label}</span>`).join("");
-    const filters = this.startOverlay.querySelector<HTMLElement>(".component-filters");
-    if (filters) {
-      filters.innerHTML = `<button class="active" data-category="all">全部</button>${categories.map(([category, meta]) => `<button data-category="${category}" title="${meta.label}"><i class="${meta.icon}"></i></button>`).join("")}`;
-      for (const button of filters.querySelectorAll<HTMLButtonElement>("button")) button.addEventListener("click", () => { this.activeCategory = (button.dataset.category as EquipmentCategory | "all") ?? "all"; for (const item of filters.querySelectorAll("button")) item.classList.toggle("active", item === button); this.renderDock(); });
-    }
     this.renderCodex();
-  }
-
-  private renderHullSlots(): void {
-    const slots = this.startOverlay.querySelector<HTMLElement>(".slot-list");
-    if (!slots) return;
-    const counts = SHIP_CLASS_SLOT_COUNTS[this.profile.shipClassId];
-    const loadout = this.profile.slotLoadoutsByShipClass[this.profile.shipClassId];
-    const shipClass = SHIP_CLASSES[this.profile.shipClassId];
-    slots.innerHTML = (Object.entries(CATEGORY_META) as [
-      EquipmentCategory,
-      typeof CATEGORY_META[EquipmentCategory],
-    ][]).map(([category, meta]) => {
-      const filled = loadout[category].filter(Boolean).length;
-      const note = category === "depthCharge" && counts[category] > 0 ? "<small>无水下目标 · 战斗中暂不可用</small>" : "";
-      return `<div class="${counts[category] === 0 ? "locked" : filled < counts[category] ? "partially-filled" : ""}"><i class="${meta.icon}"></i><span>${meta.label}${note}</span><b>${counts[category] === 0 ? "锁定" : `${filled}/${counts[category]}`}</b></div>`;
-    }).join("") + `<p class="stock-armament"><b>${shipClass.englishName}</b><span>${shipClass.role}</span><small>${shipClass.historicalArmament}</small></p>`;
   }
 
   private renderCodex(): void {
@@ -383,53 +367,42 @@ export class GameMenus {
     this.codexBody.innerHTML = (Object.entries(CATEGORY_META) as [
       EquipmentCategory,
       typeof CATEGORY_META[EquipmentCategory],
-    ][]).map(([category, meta]) => `<tr><th><i class="${meta.icon}"></i>${meta.label}</th>${(["common", "purple", "gold", "redGold"] as EquipmentRarity[]).map((rarity) => { const item = EQUIPMENT_BY_ID[`${category}-${rarity}`]; return `<td class="rarity-${rarity}"><b>${item.name}</b><small>${item.origin}<br>${equipmentSummary(item)}</small></td>`; }).join("")}<td>${counts[category] > 0 ? `可装 ×${counts[category]}` : "不可安装"}</td></tr>`).join("");
+    ][]).map(([category, meta]) => `<tr><th><i class="${meta.icon}"></i>${meta.label}</th>${(["common", "purple", "gold", "redGold"] as EquipmentRarity[]).map((rarity) => { const item = this.localizedEquipment(EQUIPMENT_BY_ID[`${category}-${rarity}`]); return `<td class="rarity-${rarity}"><b>${this.equipmentTextMarkup(item, "name")}</b><small>${this.equipmentTextMarkup(item, "origin")}<br>${equipmentSummary(item)}</small></td>`; }).join("")}<td>${counts[category] > 0 ? `可装 ×${counts[category]}` : "不可安装"}</td></tr>`).join("");
   }
 
   private renderProfile(): void {
+    this.commanderName.disabled = Boolean(this.callbacks.isProfileLocked?.());
     this.credits.textContent = formatGameNumber(this.profile.credits, this.settings.locale);
     this.researchPoints.textContent = formatGameNumber(this.profile.researchPoints, this.settings.locale);
     this.supplyTokens.textContent = String(this.profile.supplyTokens);
     this.materialSummary.textContent = `钢材 ${this.profile.materials.steel} · 零件 ${this.profile.materials.parts}`;
-    for (const button of this.startOverlay.querySelectorAll<HTMLButtonElement>("[data-ship-class-id]")) {
-      const shipClassId = button.dataset.shipClassId as ShipClassId;
-      const shipClass = SHIP_CLASSES[shipClassId];
-      button.classList.toggle("active", shipClassId === this.profile.shipClassId);
-      const title = button.querySelector<HTMLElement>("b");
-      const metadata = button.querySelector<HTMLElement>("span");
-      if (title) title.textContent = this.localizedShipClassName(shipClassId);
-      if (metadata) metadata.textContent = `${this.t(shipClass.country)} · ${shipClass.serviceYear}`;
-    }
-    this.renderHullSlots();
     this.renderCodex();
     this.renderStore();
     this.renderWarehouse();
-    const equipment = battleLoadout(this.profile);
-    this.dockPreview.setShipClass(equipment.shipClassId);
-    this.dockPreview.setMainGun(equipment.mainGunId);
-    this.dockPreview.setTorpedo(equipment.torpedoId);
-    this.renderDock();
-    this.renderSavedBuilds();
+    this.dockPanel.render();
     this.multiplayerMenu.setProfile(this.profile);
     if (this.battleSetupOpen) this.renderBattleSetup();
+    for (const button of this.startOverlay.querySelectorAll<HTMLButtonElement>(".armory-action,.warehouse-sell,.warehouse-salvage,.draw-once,.draw-ten,[data-battle-build]")) {
+      if (this.callbacks.isProfileLocked?.()) { button.disabled = true; button.title = voyageText(this.settings.locale, "profileLocked"); }
+    }
     this.applyLocale();
   }
 
   private renderStore(): void {
-    const listed = EQUIPMENT_CATALOG.filter((item) => this.armoryCategory === "all" || item.category === this.armoryCategory);
+    const listed = EQUIPMENT_CATALOG.map((item) => this.localizedEquipment(item)).filter((item) => this.armoryCategory === "all" || item.category === this.armoryCategory);
     if (!this.selectedArmoryItemId || !listed.some((item) => item.id === this.selectedArmoryItemId)) this.selectedArmoryItemId = listed[0]?.id;
     this.armoryGrid.innerHTML = listed.map((item) => {
       const unlocked = Boolean(this.profile.unlockedEquipment[item.id]);
       const owned = this.profile.inventory[item.id] ?? 0;
       const cost = item.purchaseCost;
-      return `<button class="armory-item rarity-${item.rarity}${unlocked ? " researched" : " locked"}" data-armory-item="${item.id}" type="button"><i class="${CATEGORY_META[item.category].icon}"></i><span>${item.name}</span><small>${item.origin}</small><b>${unlocked ? `${formatGameNumber(cost.credits, this.settings.locale)} ${this.t("银币")}` : `${item.researchCost} ${this.t("研发解锁")}`}</b><em>${this.t("持有")} ×${owned}</em></button>`;
+      return `<button class="armory-item rarity-${item.rarity}${unlocked ? " researched" : " locked"}" data-armory-item="${item.id}" type="button"><i class="${CATEGORY_META[item.category].icon}"></i><span>${this.equipmentTextMarkup(item, "name")}</span><small>${this.equipmentTextMarkup(item, "origin")}</small><b>${unlocked ? `${formatGameNumber(cost.credits, this.settings.locale)} ${this.t("银币")}` : `${item.researchCost} ${this.t("研发解锁")}`}</b><em>${this.t("持有")} ×${owned}</em></button>`;
     }).join("");
     this.decorateEquipmentCards(this.armoryGrid, "[data-armory-item]", "armoryItem");
     for (const button of this.armoryGrid.querySelectorAll<HTMLButtonElement>("[data-armory-item]")) {
       button.addEventListener("click", () => { this.selectedArmoryItemId = button.dataset.armoryItem; this.renderStore(); });
     }
     const selected = this.selectedArmoryItemId ? EQUIPMENT_BY_ID[this.selectedArmoryItemId] : undefined;
-    if (selected) this.renderArmoryDetail(selected);
+    if (selected) this.renderArmoryDetail(this.localizedEquipment(selected));
     this.guaranteePanel.innerHTML = `<h4>公开保底</h4>${([10, 50, 100] as const).map((threshold) => { const rarity: EquipmentRarity = threshold === 10 ? "purple" : threshold === 50 ? "gold" : "redGold"; const progress = guaranteeProgress(this.profile.drawCount, threshold); return `<div class="guarantee rarity-${rarity}"><div><span>${threshold} 次</span><b>${progress}/${threshold}</b></div><i><em style="width:${progress / threshold * 100}%"></em></i></div>`; }).join("")}<p>仅使用免费战斗补给券 · 累计 ${this.profile.drawCount} 次</p>`;
     const recent = this.profile.recentDraws;
     this.drawResults.innerHTML = recent.length ? recent.slice(0, 3).map((result) => this.resultMarkup(result)).join("") : "<small>尚无补给记录</small>";
@@ -449,12 +422,12 @@ export class GameMenus {
       && this.profile.materials.steel >= cost.steel
       && this.profile.materials.parts >= cost.parts;
     const currentId = this.profile.loadout[item.category];
-    const current = currentId ? EQUIPMENT_BY_ID[currentId] : undefined;
+    const current = currentId ? this.localizedEquipment(EQUIPMENT_BY_ID[currentId]) : undefined;
     const difference = item.bonus - (current?.bonus ?? 0);
     const compatibility = isEquipmentCompatible(item, this.profile.shipClassId)
       ? `${this.localizedShipClassName(this.profile.shipClassId)} · ${this.t("可安装")}`
       : this.t("当前舰型无可用槽位");
-    this.armoryDetail.innerHTML = `<div class="detail-heading rarity-${item.rarity}"><i class="${CATEGORY_META[item.category].icon}"></i><div><b>${item.name}</b><small>${this.t(CATEGORY_META[item.category].label)} · ${item.origin}</small></div></div><p>${item.description}</p><dl>${equipmentDetailRows(item)}<div><dt>当前装备</dt><dd>${current?.name ?? this.t("无")}</dd></div><div><dt>相对核心增益</dt><dd class="${difference >= 0 ? "stat-positive" : "stat-negative"}">${difference >= 0 ? "+" : ""}${Math.round(difference * 100)}%</dd></div><div><dt>适配</dt><dd>${compatibility}</dd></div><div><dt>当前持有</dt><dd>×${this.profile.inventory[item.id] ?? 0}</dd></div></dl><div class="armory-price">${unlocked ? this.priceMarkup(item) : `<span><i class="fa-solid fa-flask"></i>${item.researchCost} ${this.t("研发资料")}</span>`}</div><button class="armory-action" type="button" ${unlocked && !affordable ? "disabled" : ""}>${this.t(unlocked ? affordable ? "采购组件" : "资源不足" : this.profile.researchPoints >= item.researchCost ? "研发解锁" : "研发资料不足")}</button>`;
+    this.armoryDetail.innerHTML = `<div class="detail-heading rarity-${item.rarity}"><i class="${CATEGORY_META[item.category].icon}"></i><div><b>${this.equipmentTextMarkup(item, "name")}</b><small>${this.t(CATEGORY_META[item.category].label)} · ${this.equipmentTextMarkup(item, "origin")}</small></div></div><p>${this.equipmentTextMarkup(item, "description")}</p><dl>${equipmentDetailRows(item)}<div><dt>当前装备</dt><dd>${current ? this.equipmentTextMarkup(current, "name") : this.t("无")}</dd></div><div><dt>相对核心增益</dt><dd class="${difference >= 0 ? "stat-positive" : "stat-negative"}">${difference >= 0 ? "+" : ""}${Math.round(difference * 100)}%</dd></div><div><dt>适配</dt><dd>${compatibility}</dd></div><div><dt>当前持有</dt><dd>×${this.profile.inventory[item.id] ?? 0}</dd></div></dl><div class="armory-price">${unlocked ? this.priceMarkup(item) : `<span><i class="fa-solid fa-flask"></i>${item.researchCost} ${this.t("研发资料")}</span>`}</div><button class="armory-action" type="button" ${unlocked && !affordable ? "disabled" : ""}>${this.t(unlocked ? affordable ? "采购组件" : "资源不足" : this.profile.researchPoints >= item.researchCost ? "研发解锁" : "研发资料不足")}</button>`;
     this.decorateEquipmentDetail(this.armoryDetail, item);
     const action = this.armoryDetail.querySelector<HTMLButtonElement>(".armory-action");
     if (!action) return;
@@ -463,8 +436,8 @@ export class GameMenus {
       const transaction = unlocked
         ? purchaseComponent(this.profile, item.id)
         : researchComponent(this.profile, item.id);
-      this.armoryNotice.textContent = transaction.success
-        ? `${this.t(unlocked ? "已采购" : "研发完成")}：${item.name}`
+      this.armoryNotice.innerHTML = transaction.success
+        ? `${this.t(unlocked ? "已采购" : "研发完成")}：${this.equipmentTextMarkup(item, "name")}`
         : this.t("交易未完成，请检查资源与研发状态。");
       if (transaction.success) { this.profile = transaction.profile; this.emitProfile(); }
     });
@@ -472,8 +445,8 @@ export class GameMenus {
 
   private resultMarkup(result: SupplyDrawResult): string {
     if (result.kind === "material") return `<span class="draw-result rarity-common"><i class="fa-solid fa-cubes"></i><b>${result.material === "steel" ? "钢材" : "零件"}</b><small>+${result.amount}</small></span>`;
-    const item = result.itemId ? EQUIPMENT_BY_ID[result.itemId] : undefined;
-    return item ? `<span class="draw-result rarity-${item.rarity}">${equipmentArtworkMarkup(item, "result")}<b>${item.name}</b><small>${item.origin}</small></span>` : "";
+    const item = result.itemId ? this.localizedEquipment(EQUIPMENT_BY_ID[result.itemId]) : undefined;
+    return item ? `<span class="draw-result rarity-${item.rarity}">${equipmentArtworkMarkup(item, "result")}<b>${this.equipmentTextMarkup(item, "name")}</b><small>${this.equipmentTextMarkup(item, "origin")}</small></span>` : "";
   }
 
   private draw(count: 1 | 10): void {
@@ -482,7 +455,7 @@ export class GameMenus {
   }
 
   private renderWarehouse(): void {
-    const owned = EQUIPMENT_CATALOG.filter((item) =>
+    const owned = EQUIPMENT_CATALOG.map((item) => this.localizedEquipment(item)).filter((item) =>
       (this.profile.inventory[item.id] ?? 0) > 0
       && (this.warehouseCategory === "all" || item.category === this.warehouseCategory));
     if (!this.selectedWarehouseItemId || !owned.some((item) => item.id === this.selectedWarehouseItemId)) this.selectedWarehouseItemId = owned[0]?.id;
@@ -492,13 +465,13 @@ export class GameMenus {
     this.warehouseGrid.innerHTML = owned.map((item) => {
       const installed = installedCopies(this.profile, item.id);
       const quantity = this.profile.inventory[item.id] ?? 0;
-      return `<button class="warehouse-item rarity-${item.rarity}${installed ? " installed" : ""}" data-warehouse-item="${item.id}" type="button"><i class="${CATEGORY_META[item.category].icon}"></i><span>${item.name}</span><small>${item.origin}</small><b>×${quantity}</b><em>${installed ? `${this.t("已安装")} ×${installed}` : this.t(quantity > 1 ? "有重复件" : "在库")}</em></button>`;
+      return `<button class="warehouse-item rarity-${item.rarity}${installed ? " installed" : ""}" data-warehouse-item="${item.id}" type="button"><i class="${CATEGORY_META[item.category].icon}"></i><span>${this.equipmentTextMarkup(item, "name")}</span><small>${this.equipmentTextMarkup(item, "origin")}</small><b>×${quantity}</b><em>${installed ? `${this.t("已安装")} ×${installed}` : this.t(quantity > 1 ? "有重复件" : "在库")}</em></button>`;
     }).join("") || '<p class="empty-inventory">该分类暂无组件</p>';
     this.decorateEquipmentCards(this.warehouseGrid, "[data-warehouse-item]", "warehouseItem");
     for (const button of this.warehouseGrid.querySelectorAll<HTMLButtonElement>("[data-warehouse-item]")) {
       button.addEventListener("click", () => { this.selectedWarehouseItemId = button.dataset.warehouseItem; this.renderWarehouse(); });
     }
-    const item = this.selectedWarehouseItemId ? EQUIPMENT_BY_ID[this.selectedWarehouseItemId] : undefined;
+    const item = this.selectedWarehouseItemId ? this.localizedEquipment(EQUIPMENT_BY_ID[this.selectedWarehouseItemId]) : undefined;
     if (!item) { this.warehouseDetail.innerHTML = "<p>选择组件查看库存详情</p>"; this.localizeNodes(this.warehouseGrid, this.warehouseDetail, this.warehouseNotice, count); return; }
     const quantity = this.profile.inventory[item.id] ?? 0;
     const installed = installedCopies(this.profile, item.id);
@@ -506,16 +479,16 @@ export class GameMenus {
     const baselineProtected = item.rarity === "common" && quantity <= 1;
     const canRecycle = disposable > 0 && !baselineProtected;
     const currentId = this.profile.loadout[item.category];
-    const current = currentId ? EQUIPMENT_BY_ID[currentId] : undefined;
+    const current = currentId ? this.localizedEquipment(EQUIPMENT_BY_ID[currentId]) : undefined;
     const difference = item.bonus - (current?.bonus ?? 0);
-    this.warehouseDetail.innerHTML = `<div class="detail-heading rarity-${item.rarity}"><i class="${CATEGORY_META[item.category].icon}"></i><div><b>${item.name}</b><small>${this.t(CATEGORY_META[item.category].label)} · ${item.origin}</small></div></div><p>${item.description}</p><dl>${equipmentDetailRows(item)}<div><dt>当前装备</dt><dd>${current?.name ?? this.t("无")}</dd></div><div><dt>相对核心增益</dt><dd class="${difference >= 0 ? "stat-positive" : "stat-negative"}">${difference >= 0 ? "+" : ""}${Math.round(difference * 100)}%</dd></div><div><dt>持有 / 已安装</dt><dd>${quantity} / ${installed}</dd></div><div><dt>可处理</dt><dd>${canRecycle ? disposable : 0}</dd></div></dl><div class="warehouse-actions"><button class="warehouse-sell" type="button" ${canRecycle ? "" : "disabled"}>${this.t("出售")} 1 ${this.t("件")} · +${item.sellCredits} ${this.t("银币")}</button><button class="warehouse-salvage" type="button" ${canRecycle ? "" : "disabled"}>${this.t("拆解")} 1 ${this.t("件")} · +${item.salvageParts} ${this.t("零件")}</button></div><small class="warehouse-protection">${this.t(canRecycle ? "只处理未安装的副本。" : installed ? "舰队预设中的副本已安装，无法处理。" : "最后一套基础组件受到保护。")}</small>`;
+    this.warehouseDetail.innerHTML = `<div class="detail-heading rarity-${item.rarity}"><i class="${CATEGORY_META[item.category].icon}"></i><div><b>${this.equipmentTextMarkup(item, "name")}</b><small>${this.t(CATEGORY_META[item.category].label)} · ${this.equipmentTextMarkup(item, "origin")}</small></div></div><p>${this.equipmentTextMarkup(item, "description")}</p><dl>${equipmentDetailRows(item)}<div><dt>当前装备</dt><dd>${current ? this.equipmentTextMarkup(current, "name") : this.t("无")}</dd></div><div><dt>相对核心增益</dt><dd class="${difference >= 0 ? "stat-positive" : "stat-negative"}">${difference >= 0 ? "+" : ""}${Math.round(difference * 100)}%</dd></div><div><dt>持有 / 已安装</dt><dd>${quantity} / ${installed}</dd></div><div><dt>可处理</dt><dd>${canRecycle ? disposable : 0}</dd></div></dl><div class="warehouse-actions"><button class="warehouse-sell" type="button" ${canRecycle ? "" : "disabled"}>${this.t("出售")} 1 ${this.t("件")} · +${item.sellCredits} ${this.t("银币")}</button><button class="warehouse-salvage" type="button" ${canRecycle ? "" : "disabled"}>${this.t("拆解")} 1 ${this.t("件")} · +${item.salvageParts} ${this.t("零件")}</button></div><small class="warehouse-protection">${this.t(canRecycle ? "只处理未安装的副本。" : installed ? "舰队预设中的副本已安装，无法处理。" : "最后一套基础组件受到保护。")}</small>`;
     this.decorateEquipmentDetail(this.warehouseDetail, item);
     const transact = (mode: "sell" | "salvage"): void => {
       const result = mode === "sell"
         ? sellComponent(this.profile, item.id)
         : salvageComponent(this.profile, item.id);
-      this.warehouseNotice.textContent = result.success
-        ? `${this.t(mode === "sell" ? "已出售" : "已拆解")}：${item.name}`
+      this.warehouseNotice.innerHTML = result.success
+        ? `${this.t(mode === "sell" ? "已出售" : "已拆解")}：${this.equipmentTextMarkup(item, "name")}`
         : this.t("无法处理已安装组件或最后一套基础组件。");
       if (result.success) { this.profile = result.profile; this.emitProfile(); }
     };
@@ -524,90 +497,7 @@ export class GameMenus {
     this.localizeNodes(this.warehouseGrid, this.warehouseDetail, this.warehouseNotice, count);
   }
 
-  private renderDock(): void {
-    const owned = EQUIPMENT_CATALOG.filter((item) => (this.profile.inventory[item.id] ?? 0) > 0 && (this.activeCategory === "all" || item.category === this.activeCategory));
-    if (!this.selectedItemId || !owned.some((item) => item.id === this.selectedItemId)) this.selectedItemId = owned[0]?.id;
-    this.inventoryGrid.innerHTML = owned.map((item) => { const installed = this.profile.loadout[item.category] === item.id; return `<button class="inventory-item rarity-${item.rarity}${installed ? " installed" : ""}" data-item="${item.id}" type="button"><i class="${CATEGORY_META[item.category].icon}"></i><span>${item.name}</span><small>${this.t(CATEGORY_META[item.category].label)} · ${item.origin} · ×${this.profile.inventory[item.id]}</small></button>`; }).join("") || '<p class="empty-inventory">该分类暂无组件</p>';
-    this.decorateEquipmentCards(this.inventoryGrid, "[data-item]", "item");
-    for (const button of this.inventoryGrid.querySelectorAll<HTMLButtonElement>("[data-item]")) button.addEventListener("click", () => { this.selectedItemId = button.dataset.item; this.renderDock(); });
-    const item = this.selectedItemId ? EQUIPMENT_BY_ID[this.selectedItemId] : undefined;
-    this.dockPreview.previewEquipment(item);
-    const previewStatus = this.startOverlay.querySelector<HTMLElement>(".dock-preview-status");
-    if (!item && previewStatus) previewStatus.textContent = "\u9009\u62e9\u7ec4\u4ef6\u5373\u53ef\u4e34\u65f6\u9884\u89c8";
-
-    if (!item) { this.componentDetail.innerHTML = "<p>选择组件查看详情</p>"; this.localizeNodes(this.inventoryGrid, this.componentDetail, previewStatus); return; }
-    const compatible = isEquipmentCompatible(item, this.profile.shipClassId);
-    const slots = this.profile.slotLoadoutsByShipClass[this.profile.shipClassId][item.category];
-    const filled = slots.filter(Boolean).length;
-    const installed = slots.includes(item.id);
-    if (previewStatus) {
-      const state = installed ? "\u5f53\u524d\u5df2\u5b89\u88c5" : compatible ? "\u5019\u9009\u88c5\u914d\u9884\u89c8" : "\u4e0d\u517c\u5bb9\u68c0\u89c6\u9884\u89c8";
-      previewStatus.textContent = `${this.t(state)} \u00b7 ${item.name}`;
-      previewStatus.dataset.state = compatible ? installed ? "installed" : "candidate" : "incompatible";
-    }
-    this.componentDetail.innerHTML = `<div class="detail-heading rarity-${item.rarity}"><i class="${CATEGORY_META[item.category].icon}"></i><div><b>${item.name}</b><small>${this.t(CATEGORY_META[item.category].label)} · ${item.origin}</small></div></div><p>${item.description}</p><dl>${equipmentDetailRows(item)}<div><dt>适配</dt><dd>${compatible ? this.localizedShipClassName(this.profile.shipClassId) : this.t("当前舰级不可用")}</dd></div><div><dt>槽位占用</dt><dd>${filled}/${slots.length}</dd></div></dl><button class="equip-selected" type="button" ${!compatible ? "disabled" : ""}>${this.t(compatible ? filled < slots.length ? "安装到空槽" : "替换首个槽位" : "该舰级不可安装")}</button>`;
-    this.decorateEquipmentDetail(this.componentDetail, item);
-    this.componentDetail.querySelector<HTMLButtonElement>(".equip-selected")?.addEventListener("click", () => { this.profile = equipComponent(this.profile, item.id); this.emitProfile(); });
-    this.localizeNodes(this.inventoryGrid, this.componentDetail, previewStatus);
-  }
-
-  private autoEquipCurrentShip(): void {
-    const status = this.startOverlay.querySelector<HTMLElement>(".dock-save-state");
-    const result = autoEquipBestOwnedComponents(this.profile);
-    this.profile = result.profile;
-    if (status) status.textContent = result.changedSlots > 0
-      ? this.t("自动装配完成")
-      : this.t("当前已是库存最优配置");
-    this.emitProfile();
-  }
-
-  private saveShipBuild(): void {
-    const input = this.startOverlay.querySelector<HTMLInputElement>(".build-name");
-    const status = this.startOverlay.querySelector<HTMLElement>(".dock-save-state");
-    const fallback = `${this.localizedShipClassName(this.profile.shipClassId)} ${this.t("配置")} ${this.profile.savedShipBuilds.length + 1}`;
-    const result = saveCurrentShipBuild(this.profile, input?.value || fallback);
-    if (status) status.textContent = this.t(result.success
-      ? "方案已保存（本机）"
-      : result.reason === "limit" ? "最多保存 24 套方案" : "请输入方案名称");
-    if (!result.success) return;
-    this.profile = result.profile;
-    if (input) input.value = "";
-    this.emitProfile();
-  }
-
-  private renderSavedBuilds(): void {
-    const host = this.startOverlay.querySelector<HTMLElement>(".saved-build-list");
-    if (!host) return;
-    host.innerHTML = this.profile.savedShipBuilds.length
-      ? this.profile.savedShipBuilds.map((build) => {
-        const readiness = savedBuildReadiness(this.profile, build);
-        const shipClass = SHIP_CLASSES[build.shipClassId];
-        const state = this.t(readiness.ready ? "可出击" : readiness.missingSlots.length ? "未达到最低出海配置" : "组件不足");
-        const buildName = this.localizedBuildName(build);
-        const shipName = this.localizedShipClassName(build.shipClassId);
-        const country = this.t(shipClass.country);
-        return `<article class="saved-build-card${this.profile.selectedBattleBuildId === build.id ? " selected" : ""}"><div><b>${buildName}</b><span>${shipName} · ${country} · ${state}</span></div><div><button data-build-select="${build.id}" type="button">设为出击舰</button><button data-build-overwrite="${build.id}" type="button">以当前配装覆盖</button><button data-build-delete="${build.id}" type="button">删除</button></div></article>`;
-      }).join("")
-      : "<p class=\"empty-inventory\">尚未保存舰船方案。当前配装仍会保存在船坞中。</p>";
-    for (const button of host.querySelectorAll<HTMLButtonElement>("[data-build-select]")) {
-      button.addEventListener("click", () => {
-        this.profile = selectBattleBuild(this.profile, button.dataset.buildSelect ?? "");
-        this.emitProfile();
-      });
-    }
-    for (const button of host.querySelectorAll<HTMLButtonElement>("[data-build-overwrite]")) {
-      button.addEventListener("click", () => {
-        this.profile = overwriteShipBuild(this.profile, button.dataset.buildOverwrite ?? "");
-        this.emitProfile();
-      });
-    }
-    for (const button of host.querySelectorAll<HTMLButtonElement>("[data-build-delete]")) {
-      button.addEventListener("click", () => {
-        this.profile = deleteShipBuild(this.profile, button.dataset.buildDelete ?? "");
-        this.emitProfile();
-      });
-    }
-  }
+  showBattleSetup(): void { this.openBattleSetup(); }
 
   private openBattleSetup(): void {
     this.battleSetupOpen = true;
@@ -616,9 +506,9 @@ export class GameMenus {
     if (panel) panel.hidden = false;
     const selected = this.profile.savedShipBuilds.find(({ id }) =>
       id === this.profile.selectedBattleBuildId);
-    if (!selected || !savedBuildReadiness(this.profile, selected).ready) {
-      this.profile.selectedBattleBuildId = this.profile.savedShipBuilds
-        .find((build) => savedBuildReadiness(this.profile, build).ready)?.id ?? null;
+    if ((!selected || !savedBuildReadiness(this.profile, selected).ready) && !this.callbacks.isProfileLocked?.()) {
+      const id = this.profile.savedShipBuilds.find((build) => savedBuildReadiness(this.profile, build).ready)?.id;
+      if (id) { this.profile = selectBattleBuild(this.profile, id); this.emitProfile(); }
     }
     this.renderBattleSetup();
   }
@@ -687,12 +577,13 @@ export class GameMenus {
         button.addEventListener("click", () => {
           this.profile = selectBattleBuild(this.profile, button.dataset.battleBuild ?? "");
           this.callbacks.onProfileChange(this.profile);
+          this.dockPanel.inspect(this.profile.selectedBattleBuildId ?? undefined);
           this.renderBattleSetup();
         });
       }
     }
     const ready = Boolean(build && savedBuildReadiness(this.profile, build).ready);
-    if (confirm) confirm.disabled = !ready;
+    if (confirm) confirm.disabled = !ready || Boolean(this.callbacks.isProfileLocked?.());
     if (status) status.textContent = ready
       ? `${this.localizedBuildName(build!)} · ${this.selectedFleetSize}v${this.selectedFleetSize} · ${this.t(WEATHER_PRESETS[this.selectedWeatherId].name)}`
       : this.t("请先选择一套装备完整的舰船方案");
@@ -735,6 +626,14 @@ export class GameMenus {
     icon.remove();
   }
 
+  private localizedEquipment(item: EquipmentDefinition): EquipmentDefinition { return { ...item, ...equipmentLocale(this.settings.locale, item.id) }; }
+
+  private equipmentTextMarkup(item: EquipmentDefinition, field: "name" | "origin" | "description" | "modelName"): string {
+    const value = equipmentLocale(this.settings.locale, item.id)[field]
+      .replaceAll("&", "&amp;").replaceAll("<", "&lt;").replaceAll(">", "&gt;");
+    return `<span data-i18n-keyed data-equipment-id="${item.id}" data-equipment-field="${field}">${value}</span>`;
+  }
+
   private t(source: string): string {
     return translateGameText(source, this.settings.locale);
   }
@@ -761,7 +660,18 @@ export class GameMenus {
 
   private applyLocale(): void {
     this.multiplayerMenu.setLocale(this.settings.locale);
+    const settings = this.startOverlay.querySelector<HTMLElement>(".main-open-settings");
+    if (settings) settings.textContent = voyageText(this.settings.locale, "settings");
+    const replay = this.settingsOverlay.querySelector<HTMLElement>(".replay-voyage");
+    if (replay) replay.textContent = voyageText(this.settings.locale, "replayTutorial");
     applyDocumentLocale(this.settings.locale);
+    for (const node of this.startOverlay.querySelectorAll<HTMLElement>("[data-equipment-id][data-equipment-field]")) {
+      const id = node.dataset.equipmentId!;
+      const field = node.dataset.equipmentField;
+      if (EQUIPMENT_BY_ID[id] && (field === "name" || field === "origin" || field === "description" || field === "modelName")) {
+        node.textContent = equipmentLocale(this.settings.locale, id)[field];
+      }
+    }
     localizeElement(document.body, this.settings.locale);
     for (const selector of this.languageSelectors) selector.value = this.settings.locale;
     document.body.dataset.locale = this.settings.locale;
@@ -789,19 +699,33 @@ export class GameMenus {
     }
   }
 
-  private emitProfile(): void { this.renderProfile(); this.callbacks.onProfileChange(normalizeLocalProfile(this.profile)); }
-  private setStartTab(tab: StartTab): void { for (const [id, panel] of Object.entries(this.panels)) panel.hidden = id !== tab; for (const button of this.tabButtons) { const active = button.dataset.menuTab === tab; button.classList.toggle("active", active); button.setAttribute("aria-selected", String(active)); } if (tab === "store") this.setArmoryView(this.armoryView); if (tab === "dock") setTimeout(() => this.dockPreview.resize(), 0); }
-  private start(request: GameLaunchRequest): void { this.startOverlay.hidden = true; this.callbacks.onStart(request); }
+  private emitProfile(): boolean { const saved = this.callbacks.onProfileChange(normalizeLocalProfile(this.profile)); this.renderProfile(); return saved !== false; }
+  private setStartTab(tab: StartTab): void {
+    const enteringDock = tab === "dock" && this.panels.dock.hidden;
+    for (const [id, panel] of Object.entries(this.panels)) panel.hidden = id !== tab;
+    for (const button of this.tabButtons) { const active = button.dataset.menuTab === tab; button.classList.toggle("active", active); button.setAttribute("aria-selected", String(active)); }
+    if (tab === "store") this.setArmoryView(this.armoryView);
+    if (tab === "dock") {
+      if (enteringDock) this.dockPanel.inspect(this.profile.selectedBattleBuildId ?? undefined); else this.dockPanel.render();
+      setTimeout(() => this.dockPreview.resize(), 0);
+    }
+  }
+  private start(request: GameLaunchRequest): void { if (this.callbacks.onStart(request) !== false) this.startOverlay.hidden = true; }
   openPause(): void { this.pauseOpen = true; this.settingsOpen = false; this.pauseOverlay.hidden = false; this.settingsOverlay.hidden = true; this.callbacks.onPause(); }
   private resume(): void { this.pauseOpen = false; this.pauseOverlay.hidden = true; this.callbacks.onResume(); }
   private restart(): void { this.closeAll(); this.callbacks.onRestart(); }
   private exitToMenu(): void { this.showStart(); this.callbacks.onExitToMenu(); }
-  private openSettings(): void { this.settingsOpen = true; this.pauseOverlay.hidden = true; this.settingsOverlay.hidden = false; }
-  private backToPause(): void { this.settingsOpen = false; this.settingsOverlay.hidden = true; this.pauseOverlay.hidden = false; }
+  private openSettings(): void { if (this.pauseOpen) this.settingsFromStart = false; this.settingsOpen = true; this.pauseOverlay.hidden = true; this.settingsOverlay.hidden = false; const back = this.settingsOverlay.querySelector<HTMLElement>(".settings-back"); if (back) back.textContent = this.t(this.settingsFromStart ? "返回主菜单" : "返回暂停菜单"); }
+  private backToPause(): void { this.settingsOpen = false; this.settingsOverlay.hidden = true; this.pauseOverlay.hidden = this.settingsFromStart; }
   handleEscape(): void { if (this.settingsOpen) this.backToPause(); else if (this.pauseOpen) this.resume(); else this.openPause(); }
   isOpen(): boolean { return !this.startOverlay.hidden || this.pauseOpen || this.settingsOpen; }
+  isSettingsOpen(): boolean { return this.settingsOpen; }
   closeAll(): void { this.startOverlay.hidden = true; this.pauseOverlay.hidden = true; this.settingsOverlay.hidden = true; this.pauseOpen = false; this.settingsOpen = false; }
-  setProfile(profile: LocalProfile): void { this.profile = normalizeLocalProfile(profile); this.renderProfile(); }
+  setProfile(profile: LocalProfile): void { this.profile = normalizeLocalProfile(profile); this.commanderName.value = this.profile.commanderName; this.renderProfile(); }
+  showDock(shipClassId?: ShipClassId, buildId?: string): void { this.showStart(); this.setStartTab("dock"); if (shipClassId) this.dockPanel.showLastBattle(shipClassId, buildId); else this.dockPanel.inspect(buildId ?? this.profile.selectedBattleBuildId ?? undefined); }
+  setLanGuidance(reason: LanGuidanceReason): void { this.multiplayerMenu.setGuidance(reason); }
+  showMultiplayerDirectory(): void { this.showStart(); this.multiplayerMenu.returnToDirectory(); this.openMultiplayerMenu(); }
+  refreshProfileLock(): void { this.commanderName.disabled = Boolean(this.callbacks.isProfileLocked?.()); this.renderProfile(); }
   showStart(): void { this.pauseOverlay.hidden = true; this.settingsOverlay.hidden = true; this.startOverlay.hidden = false; this.pauseOpen = false; this.settingsOpen = false; this.closeBattleSetup(); this.closeMultiplayerMenu(); this.setStartTab("mission"); }
   setQuality(quality: "low" | "medium"): void { for (const button of this.qualityButtons) button.classList.toggle("active", button.dataset.quality === quality); }
   private emitSettings(): void { this.updateSensitivityLabels(); this.applyLocale(); this.callbacks.onSettingsChange({ ...this.settings }); }
