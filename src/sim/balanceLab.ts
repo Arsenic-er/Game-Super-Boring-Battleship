@@ -332,6 +332,11 @@ export function battleStateFingerprint(state: BattleState): string {
           z: round(squadron.previousPosition.z),
         },
         heading: round(squadron.heading, 6),
+        flight: squadron.flight ? {
+          speedMetersPerSecond: round(squadron.flight.speedMetersPerSecond, 6),
+          pitch: round(squadron.flight.pitch, 6),
+          bank: round(squadron.flight.bank, 6),
+        } : undefined,
         aircraftOperational: squadron.aircraftOperational,
         airframeHealth: round(squadron.airframeHealth),
         maxAirframeHealth: round(squadron.maxAirframeHealth),

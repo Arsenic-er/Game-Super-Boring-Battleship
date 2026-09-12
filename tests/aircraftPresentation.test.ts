@@ -62,19 +62,19 @@ describe("aircraft presentation", () => {
     const torpedo = formationOffsets("torpedoBomber", 5, "outbound");
     expect(fighter).toHaveLength(5);
     expect(fighter[1]?.x).toBeCloseTo(-(fighter[2]?.x ?? 0));
-    expect(torpedo[0]?.x).not.toBe(fighter[0]?.x);
-    expect(Math.abs(torpedo[0]?.x ?? 0)).toBeGreaterThan(0);
+    expect(torpedo[0]?.x).toBe(0);
+    expect(Math.abs(torpedo[1]?.x ?? 0)).toBeGreaterThan(Math.abs(fighter[1]?.x ?? 0));
     expect(formationOffsets("diveBomber", 99, "attackRun")).toHaveLength(12);
   });
 
-  it("gives each aircraft a smooth non-parallel local pose", () => {
+  it("keeps preview poses static instead of inventing sine-wave flight motion", () => {
     const lead = aircraftFormationPose("fighter", 0, 5, "outbound", 12, "alpha")!;
     const wingman = aircraftFormationPose("fighter", 1, 5, "outbound", 12, "alpha")!;
     const later = aircraftFormationPose("fighter", 0, 5, "outbound", 12.1, "alpha")!;
     expect(lead.y).not.toBe(wingman.y);
-    expect(lead.yaw).not.toBe(wingman.yaw);
-    expect(later.y).not.toBe(lead.y);
-    expect(Math.abs(later.y - lead.y)).toBeLessThan(1);
+    expect(lead.yaw).toBe(0);
+    expect(wingman.yaw).toBe(0);
+    expect(later).toEqual(lead);
   });
 
   it("changes formation and attitude for role-specific attack runs", () => {
@@ -82,6 +82,29 @@ describe("aircraft presentation", () => {
     const dive = aircraftFormationPose("diveBomber", 0, 5, "attackRun", 2, "dive")!;
     expect(Math.max(...torpedo.map(({ x }) => x)) - Math.min(...torpedo.map(({ x }) => x)))
       .toBeGreaterThan(70);
-    expect(dive.pitch).toBeLessThan(-.7);
+    expect(dive.pitch).toBeGreaterThan(.7);
+  });
+
+  it("copies authorized physical flight state without exposing the mutable SIM object", () => {
+    const squadron = create();
+    squadron.phase = "outbound";
+    squadron.flight = { speedMetersPerSecond: 83, pitch: .14, bank: -.4 };
+    const view = airVisualSnapshot(squadron, 1)!;
+    expect(view.flight).toEqual(squadron.flight);
+    expect(view.flight).not.toBe(squadron.flight);
+    view.flight!.pitch = .9;
+    expect(squadron.flight.pitch).toBe(.14);
+  });
+
+  it("never copies live enemy flight state into a last-known contact", () => {
+    const squadron = create();
+    squadron.team = "enemy";
+    squadron.phase = "outbound";
+    squadron.flight = { speedMetersPerSecond: 133, pitch: 1.1, bank: -.8 };
+    squadron.contactsByTeam.player = { observedAt: 1, lastKnownPosition: { x: 1, y: 2, z: 3 }, confidence: .9, estimatedAircraft: 4 };
+    expect(airVisualSnapshot(squadron, 2)?.flight).toBeUndefined();
+    expect(airVisualSnapshot(squadron, 2, "enemy")?.flight).toEqual(squadron.flight);
+    squadron.contactsByTeam.player.estimatedAircraft = 0;
+    expect(airVisualSnapshot(squadron, 2)).toBeUndefined();
   });
 });

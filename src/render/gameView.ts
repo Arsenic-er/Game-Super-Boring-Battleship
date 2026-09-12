@@ -63,6 +63,7 @@ import {
 } from "./aircraftGeometry";
 import { airVisualSnapshot } from "./aircraftPresentation";
 import { AircraftFormationTracker, applyAircraftWorldPoses } from "./aircraftFormationMotion";
+import { aircraftCameraPlan } from "./aircraftCamera";
 import {
   aimingCameraPlan,
   cameraTransitionValue,
@@ -1823,13 +1824,20 @@ export class GameView implements AimProvider {
         this.syncAimArc(cameraShip, "aircraft");
         this.syncTorpedoAim(cameraShip, undefined, "aircraft", torpedoSpread);
       }
-      const target = new Vector3(focusAir.position.x, focusAir.position.y, focusAir.position.z);
+      const visiblePlanes = this.airSquadronVisuals.get(focusAir.id)?.planes
+        .filter(plane => plane.root.isEnabled()).map(plane => plane.root.position) ?? [];
+      const framing = aircraftCameraPlan(visiblePlanes, focusAir.position,
+        this.engine.getRenderWidth() / Math.max(1, this.engine.getRenderHeight()));
+      const target = new Vector3(framing.target.x, framing.target.y, framing.target.z);
       if (state.time < 0.12) this.camera.target.copyFrom(target);
       else Vector3.LerpToRef(this.camera.target, target, 0.18, this.camera.target);
-      this.camera.radius = cameraTransitionValue(this.camera.radius, 140, false);
-      this.camera.fov = cameraTransitionValue(this.camera.fov, 0.72, false);
+      this.camera.upperRadiusLimit = Math.max(650, framing.radius);
+      // Expand immediately to contain the full group; contract smoothly as it reforms.
+      this.camera.radius = Math.max(framing.radius, cameraTransitionValue(this.camera.radius, framing.radius, false));
+      this.camera.fov = cameraTransitionValue(this.camera.fov, framing.fov, false);
       this.enteringAiming = false;
     } else if (cameraShip) {
+      this.camera.upperRadiusLimit = 650;
       const playerHull = getShipClass(cameraShip.shipClassId);
       const observationCamera = observationCameraPlan(playerHull.length);
       this.syncAimArc(cameraShip, weaponSlot);

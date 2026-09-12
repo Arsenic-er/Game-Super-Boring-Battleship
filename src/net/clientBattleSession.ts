@@ -2,6 +2,7 @@ import { createDeveloperShipState, createInitialState } from "../sim/simulation"
 import { battleLoadoutFromSlots, type BattleLoadout } from "../profile/localProfile";
 import type {
   AirCombatEvent,
+  AirFlightState,
   AirSquadronState,
   BattleState,
   ControlCommand,
@@ -31,6 +32,9 @@ const PREDICTION_STEP_MS = 1000 / 30;
 const PREDICTED_MAX_SPEED_KNOTS = 220;
 const PREDICTED_TURN_RATE_RAD_PER_SECOND = Math.PI / 4;
 const KNOTS_TO_METERS_PER_SECOND = 0.514444;
+// Defensive wire limits, independent of the stricter aircraft simulation profiles.
+const MAX_REPLICATED_AIR_SPEED_METERS_PER_SECOND = 500;
+const MAX_REPLICATED_AIR_PITCH = Math.PI / 2;
 
 type SnapshotAcceptanceReason = "accepted" | "stale-tick" | "stale-time" | "invalid-time";
 
@@ -314,12 +318,43 @@ function cloneReplicatedProjectile(
   };
 }
 
+function normalizeAircraftAngle(angle: number): number {
+  // Modulo is bounded work even for an untrusted, very large finite wire angle.
+  const wrapped = angle % (Math.PI * 2);
+  return wrapped > Math.PI ? wrapped - Math.PI * 2
+    : wrapped < -Math.PI ? wrapped + Math.PI * 2 : wrapped;
+}
+
+function clampAircraftPitch(pitch: number): number {
+  return Math.max(-MAX_REPLICATED_AIR_PITCH, Math.min(MAX_REPLICATED_AIR_PITCH, pitch));
+}
+
+function clampAircraftSpeed(speed: number): number {
+  return Math.max(0, Math.min(MAX_REPLICATED_AIR_SPEED_METERS_PER_SECOND, speed));
+}
+
+function cloneReplicatedAirFlight(value: unknown): AirFlightState | undefined {
+  if (!value || typeof value !== "object" || Array.isArray(value)) return undefined;
+  const source = value as Record<string, unknown>;
+  const speedMetersPerSecond = asNumber(source.speedMetersPerSecond);
+  const pitch = asNumber(source.pitch);
+  const bank = asNumber(source.bank);
+  // Older snapshots omit flight; malformed optional state is equally non-fatal.
+  if (speedMetersPerSecond === undefined || pitch === undefined || bank === undefined) return undefined;
+  return {
+    speedMetersPerSecond: clampAircraftSpeed(speedMetersPerSecond),
+    pitch: clampAircraftPitch(pitch),
+    bank: normalizeAircraftAngle(bank),
+  };
+}
+
 function cloneReplicatedAircraft(source: Record<string, unknown>, index: number): AirSquadronState | undefined {
   const position = asVec3(source.position);
   const heading = asNumber(source.heading);
   const operational = asNumber(source.aircraftOperational);
   const team = source.team === "player" || source.team === "enemy" ? source.team : undefined;
   if (!position || heading === undefined || operational === undefined || !team) return undefined;
+  const flight = cloneReplicatedAirFlight(source.flight);
   const role = source.role === "fighter" || source.role === "diveBomber" || source.role === "torpedoBomber"
     ? source.role : "fighter";
   const phase = source.phase === "ready" || source.phase === "launching" || source.phase === "outbound"
@@ -337,7 +372,8 @@ function cloneReplicatedAircraft(source: Record<string, unknown>, index: number)
     phase,
     position: { ...position },
     previousPosition: { ...position },
-    heading,
+    heading: normalizeAircraftAngle(heading),
+    ...(flight ? { flight } : {}),
     aircraftCapacity: operational,
     aircraftOperational: operational,
     airframeHealth: Math.max(1, operational),
@@ -350,6 +386,43 @@ function cloneReplicatedAircraft(source: Record<string, unknown>, index: number)
     lastUpdatedAt: 0,
     attackRunReleased: false,
   };
+}
+
+function interpolateAircraft(
+  previous: readonly Record<string, unknown>[],
+  next: readonly Record<string, unknown>[],
+  alpha: number,
+): AirSquadronState[] {
+  const previousById = new Map(previous.flatMap((entry, index) => {
+    const id = asString(entry.id);
+    const squadron = id ? cloneReplicatedAircraft(entry, index) : undefined;
+    return id && squadron ? [[id, squadron] as const] : [];
+  }));
+  return next.flatMap((entry, index) => {
+    const squadron = cloneReplicatedAircraft(entry, index);
+    if (!squadron) return [];
+    // Anonymous hostile entries have no stable identity. Never match their array
+    // indices or expose a hidden source ID merely to smooth their motion.
+    const id = asString(entry.id);
+    const before = id ? previousById.get(id) : undefined;
+    if (!before || before.team !== squadron.team || before.role !== squadron.role
+      || before.controllerId !== squadron.controllerId) return [squadron];
+    const position = asVec3(lerpVec3(before.position, squadron.position, alpha))
+      ?? { ...squadron.position };
+    return [{
+      ...squadron,
+      position,
+      previousPosition: { ...position },
+      heading: lerpAngle(before.heading, squadron.heading, alpha),
+      ...(before.flight && squadron.flight ? { flight: {
+        speedMetersPerSecond: clampAircraftSpeed(lerpNumber(
+          before.flight.speedMetersPerSecond, squadron.flight.speedMetersPerSecond, alpha,
+        )),
+        pitch: clampAircraftPitch(lerpAngle(before.flight.pitch, squadron.flight.pitch, alpha)),
+        bank: lerpAngle(before.flight.bank, squadron.flight.bank, alpha),
+      } } : {}),
+    }];
+  });
 }
 
 const IMPACT_KINDS = new Set(["hit", "splash", "collision", "terrain-hit", "underwater-explosion"]);
@@ -692,10 +765,7 @@ export class ClientBattleSession {
           return projectile ? [projectile] : [];
         }),
       ],
-      airSquadrons: next.aircraft.flatMap((entry, index) => {
-        const squadron = cloneReplicatedAircraft(entry, index);
-        return squadron ? [squadron] : [];
-      }),
+      airSquadrons: interpolateAircraft(previous.aircraft, next.aircraft, alpha),
     };
   }
 

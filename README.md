@@ -77,7 +77,7 @@ This is an early prototype rather than a finished commercial game. Visuals, bala
 ## Windows quick start
 
 1. Open the repository's **Releases** page.
-2. Download `battleship-0.7.5-windows-x64.zip`.
+2. Download `battleship-0.7.6-windows-x64.zip`.
 3. Extract the whole ZIP into one directory, then run `Super Boring Battleship Game.exe` inside it. Do not move the EXE away from its `resources` directory or DLL files.
 
 The build targets 64-bit Windows 10/11. Windows SmartScreen may warn about an unsigned indie build; only run a file downloaded from this repository's official Release page.
@@ -181,7 +181,7 @@ Third-party libraries and the Fusion Pixel Font remain under their respective li
 ## Windows 使用方法
 
 1. 打开仓库的 **Releases** 页面。
-2. 下载 `battleship-0.7.5-windows-x64.zip`。
+2. 下载 `battleship-0.7.6-windows-x64.zip`。
 3. 把整个 ZIP 解压到同一个文件夹，再运行其中的 `Super Boring Battleship Game.exe`。不要把 EXE 单独移动出 `resources` 目录和 DLL 所在的游戏文件夹。
 
 目标系统为 64 位 Windows 10/11。由于目前是独立开发测试版，Windows SmartScreen 可能显示未知发布者提示；请只运行从本仓库官方 Release 下载的文件。

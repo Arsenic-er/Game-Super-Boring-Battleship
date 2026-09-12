@@ -91,6 +91,13 @@ export interface AirContactSnapshot {
 
 export type AirDamageCause = "aaContinuous" | "flak" | "airCombat" | "fuel" | "debug";
 
+/** Authoritative lightweight flight state; pitch positive climbs, bank positive turns right. */
+export interface AirFlightState {
+  speedMetersPerSecond: number;
+  pitch: number;
+  bank: number;
+}
+
 export interface AirSquadronState {
   id: string;
   controllerId: string;
@@ -103,6 +110,7 @@ export interface AirSquadronState {
   previousPosition: Vec3;
   heading: number;
   aircraftCapacity: number;
+  flight?: AirFlightState;
   aircraftOperational: number;
   airframeHealth: number;
   maxAirframeHealth: number;

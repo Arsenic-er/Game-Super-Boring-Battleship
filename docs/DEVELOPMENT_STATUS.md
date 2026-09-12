@@ -33,7 +33,24 @@ testing, server access and short-lived transfer staging.
 - Single-player battles use a 20-minute hard limit and are tuned toward a 15–20 minute normal duration.
 - Windows directory packages are built on the server; only the latest verified `battleship-latest-windows-x64` directory is copied to the local PC.
 
-## Current repair release — 0.7.5
+## Current flight release — 0.7.6
+
+- Based on `6039a63`; replaces the planar authoritative flight model as well as
+  formation following. Bank, pitch and airspeed determine three-dimensional travel.
+- Role-specific attack guidance, physical release gates, climbing egress and
+  terrain anticipation are implemented. Each visible wingman has integrated
+  motion; combat resources and orders remain squadron-level.
+- Authorized LAN flight interpolation is backward compatible with missing flight
+  fields. No dependency, external artwork, economy or save migration was added.
+- See `AIR_FLIGHT_MODEL.md` for source references and deliberate model boundaries.
+  Final test, visual and local-delivery evidence is in `acceptance/0.7.6-flight.md`.
+- Delivered locally:956 tests passed,5 existing skipped; two continuous real-SIM
+  sortie recordings passed full-wing separation and whole-formation viewport checks.
+  Ten native Windows checks passed on Intel Iris Xe.117 files /476,681,372 bytes
+  were rehashed after replacing the one latest directory. Actual saves retained,
+  temporary profiles/services removed; no remote Git push or external asset change.
+
+## Previous repair release — 0.7.5
 
 - Based on `e97d785`; map-only training contacts fix absent enemy markers without
   changing battle concealment. The user confirmed this was not a missing 3D hull.

@@ -7,6 +7,8 @@ import {
   shipAntiAirProfile,
 } from "../src/sim/airOperations";
 import { FIXED_STEP } from "../src/sim/config";
+import { GUN } from "../src/sim/config";
+import { bombFallSeconds } from "../src/sim/airManeuvers";
 import { createInitialState, stepSimulation } from "../src/sim/simulation";
 import type {
   AircraftRole,
@@ -30,11 +32,20 @@ function prepareStrike(
   deployFleetAirSupport(state);
   const squadron = state.airSquadrons.find((candidate) =>
     candidate.team === "player" && candidate.role === role)!;
-  const approach = AIR_COMBAT.approachMeters[weapon];
+  // This fixture begins inside an already aligned physical release gate; sortie
+  // tests separately exercise the approach/descent rather than bypassing it here.
+  const speed = weapon === "aerialTorpedo" ? 72 : 100;
+  const altitude = weapon === "heBomb" ? 120 : weapon === "aerialTorpedo" ? 55 : 90;
+  const pitch = weapon === "heBomb" ? -.6 : weapon === "machineGun" ? -.27 : 0;
+  const approach = weapon === "heBomb"
+    ? speed * Math.cos(pitch) * bombFallSeconds(altitude, speed * Math.sin(pitch), GUN.gravity)
+    : weapon === "aerialTorpedo" ? 650 : 320;
   squadron.phase = "attackRun";
   squadron.phaseStartedAt = -3;
   squadron.lastUpdatedAt = 0;
-  squadron.position = { x: 0, y: 180, z: -approach };
+  squadron.position = { x: 0, y: altitude, z: -approach };
+  squadron.heading = 0;
+  squadron.flight = { speedMetersPerSecond: speed, pitch, bank: 0 };
   squadron.previousPosition = { ...squadron.position };
   squadron.order = {
     squadronId: squadron.id,
@@ -122,7 +133,7 @@ describe("air combat execution", () => {
     expect(airMissionApproachRadius(torpedo)).toBeGreaterThan(
       airMissionApproachRadius(dive),
     );
-    expect(airMissionApproachRadius(torpedo)).toBe(900);
+    expect(airMissionApproachRadius(torpedo)).toBe(1_800);
   });
 
   it("applies range-bounded continuous AA and emits partial aircraft losses", () => {
@@ -191,6 +202,9 @@ describe("air combat execution", () => {
     threat.phase = "outbound";
     threat.position = { x: player.position.x + 300, y: 180, z: player.position.z };
     threat.previousPosition = { ...threat.position };
+    // Isolate automatic guard interception from unrelated AA and other squadrons.
+    for (const ship of state.ships) ship.antiAirMounts = 0;
+    state.airSquadrons = [fighter, threat];
     stepSimulation(state, new Map(), FIXED_STEP);
     expect(fighter.order).toMatchObject({
       kind: "interceptSquadron",
@@ -199,7 +213,7 @@ describe("air combat execution", () => {
     });
     expect(["outbound", "intercepting"]).toContain(fighter.phase);
     let intercepted = false;
-    for (let index = 0; index < 3 / FIXED_STEP; index += 1) {
+    for (let index = 0; index < 65 / FIXED_STEP; index += 1) {
       stepSimulation(state, new Map(), FIXED_STEP);
       intercepted ||= state.airEvents.some((event) =>
         event.kind === "attackHit" && event.squadronId === fighter.id);
@@ -224,6 +238,8 @@ describe("air combat execution", () => {
     fighter.phase = "intercepting";
     fighter.phaseStartedAt = -2;
     fighter.position = { x: 0, y: 180, z: 0 };
+    fighter.heading = Math.PI / 2;
+    fighter.flight = { speedMetersPerSecond: 105, pitch: 0, bank: 0 };
     target.phase = "outbound";
     target.position = { x: 100, y: 180, z: 0 };
     target.contactsByTeam.player = {

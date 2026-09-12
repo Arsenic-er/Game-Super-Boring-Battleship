@@ -15,7 +15,6 @@ import type {
   BattleState,
   Vec3,
 } from "./types";
-import { airSquadronTargetAltitude } from "./airFlightModel";
 import type { HullId } from "../ships/hulls";
 import { getShipClass } from "../ships/classes";
 import type { ShipClassId } from "../ships/classes";
@@ -24,7 +23,7 @@ import { GUN, shipSpeedMetersPerSecond } from "./config";
 export const AIR_OPERATION_TIMING = {
   launchSeconds: 8,
   searchSeconds: 12,
-  attackRunSeconds: 6,
+  attackRunSeconds: 40,
   landingSeconds: 8,
   /** Reserve includes the final approach; depletion before recovery means ditching. */
   returnReserveSeconds: 35,
@@ -80,8 +79,8 @@ export const AIR_COMBAT = {
   interceptReleaseSeconds: 1.2,
   approachMeters: {
     machineGun: 320,
-    heBomb: 180,
-    aerialTorpedo: 900,
+    heBomb: 1_200,
+    aerialTorpedo: 1_800,
   },
   releaseSeconds: {
     machineGun: 0.7,
@@ -151,6 +150,8 @@ export interface AirPhaseSignals {
   attackCompleted?: boolean;
   engagementComplete?: boolean;
   reachedRecoveryPoint?: boolean;
+  /** Navigation supplies a route-aware reserve; standalone callers retain the legacy floor. */
+  returnReserveSeconds?: number;
 }
 
 const copyPoint = (point: Readonly<Vec3>): Vec3 => ({ ...point });
@@ -251,6 +252,7 @@ export function predictAirStrikeAimPoint(
   heading: number,
   speedKnots: number,
   weapon: AirWeaponKind,
+  verticalSpeed = 0,
 ): Vec3 {
   const targetSpeed = shipSpeedMetersPerSecond(Math.max(0, speedKnots));
   const velocityX = Math.sin(heading) * targetSpeed;
@@ -259,7 +261,7 @@ export function predictAirStrikeAimPoint(
   const relativeZ = target.z - origin.z;
   let flightSeconds: number;
   if (weapon === "heBomb") {
-    flightSeconds = Math.sqrt(2 * Math.max(1, origin.y) / GUN.gravity);
+    flightSeconds = (verticalSpeed + Math.sqrt(verticalSpeed ** 2 + 2 * Math.max(1, origin.y) * GUN.gravity)) / GUN.gravity;
   } else {
     const weaponSpeed = weapon === "aerialTorpedo"
       ? AIR_COMBAT.torpedo.speedMetersPerSecond
@@ -571,7 +573,8 @@ export function advanceAirSquadronPhase(
     };
   }
   if (
-    next.fuelRemainingSeconds <= AIR_OPERATION_TIMING.returnReserveSeconds
+    next.fuelRemainingSeconds <= Math.max(AIR_OPERATION_TIMING.returnReserveSeconds,
+      Number.isFinite(signals.returnReserveSeconds) ? signals.returnReserveSeconds! : 0)
     && !["ready", "rearming", "returning", "landing", "destroyed"].includes(next.phase)
   ) {
     return transition("returning");
@@ -678,7 +681,8 @@ export function deployFleetAirSupport(state: BattleState): void {
     const side = team === "player" ? -1 : 1;
     roles.forEach((role, index) => {
       const id = `${team}-${role}-1`;
-      const position = { x: (index - 1) * 340, y: airSquadronTargetAltitude(role, "outbound", id, state.time), z: side * 5_200 };
+      // Map-edge support enters already flying at low altitude, then climbs on deployment.
+      const position = { x: (index - 1) * 340, y: 80 + index * 15, z: side * 5_200 };
       const squadron = createAirSquadronState({
         id,
         controllerId,
@@ -686,6 +690,7 @@ export function deployFleetAirSupport(state: BattleState): void {
         role,
         recoverySource: { kind: "mapEdge", position },
         position,
+        heading: team === "player" ? 0 : Math.PI,
         aircraftCapacity: role === "fighter" ? 6 : 5,
         now: state.time,
       });

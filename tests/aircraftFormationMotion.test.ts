@@ -5,10 +5,12 @@ import { describe, expect, it } from "vitest";
 import { createAirSquadronGeometry } from "../src/render/aircraftGeometry";
 import { AircraftFormationTracker, applyAircraftWorldPoses } from "../src/render/aircraftFormationMotion";
 import { airVisualSnapshot, formationOffsets, type AirVisualSnapshot } from "../src/render/aircraftPresentation";
-import { AIR_OPERATION_TIMING, advanceAirSquadronPhase, deployFleetAirSupport, issueAirMissionOrder } from "../src/sim/airOperations";
+import { AIR_OPERATION_TIMING, AIR_NAVIGATION, advanceAirSquadronPhase, createAirSquadronState, deployFleetAirSupport, issueAirMissionOrder } from "../src/sim/airOperations";
 import { spawnDeveloperAirSquadron } from "../src/sim/developerSandbox";
-import { createInitialState } from "../src/sim/simulation";
+import { createInitialState, stepSimulation } from "../src/sim/simulation";
+import { FIXED_STEP } from "../src/sim/config";
 import type { AircraftRole } from "../src/sim/types";
+import { AIR_FLIGHT_PROFILE } from "../src/sim/airFlightModel";
 
 const snapshot = (time = 0, count = 6, role: AircraftRole = "fighter"): AirVisualSnapshot => ({
   role, phase: "outbound", position: { x: 600, y: 300, z: time * 100 }, heading: 0,
@@ -93,8 +95,9 @@ describe("trajectory-following visual aircraft", () => {
     const bomber = new AircraftFormationTracker("layer-a").update(snapshot(0, 6, "torpedoBomber"), 0);
     const other = new AircraftFormationTracker("layer-b").update(snapshot(), 0);
     expect(new Set(fighter.map(({ position }) => position.y)).size).toBe(6);
-    expect(fighter[0]!.position.y).not.toBe(bomber[0]!.position.y);
-    expect(fighter[0]!.position.y).not.toBe(other[0]!.position.y);
+    expect(fighter[0]!.position).toEqual(snapshot().position);
+    expect(fighter[1]!.position.y).not.toBe(bomber[1]!.position.y);
+    expect(fighter[1]!.position.y).not.toBe(other[1]!.position.y);
     const tracker = new AircraftFormationTracker("descent");
     let poses = tracker.update(snapshot(0, 5, "diveBomber"), 0);
     for (let frame = 1; frame <= 180; frame += 1) {
@@ -123,10 +126,160 @@ describe("trajectory-following visual aircraft", () => {
     expect(tracker.historySize).toBe(1);
     expect(tracker.update(snapshot(8), 8)).toHaveLength(6);
     expect(tracker.historySize).toBe(1);
+    tracker.clear();
+    tracker.clear();
+    expect(tracker.historySize).toBe(0);
+  });
+
+  it("displays the SIM leader position, heading and physical pitch/bank exactly", () => {
+    const tracker = new AircraftFormationTracker("physical-lead");
+    const state = snapshot();
+    state.heading = .8;
+    state.flight = { speedMetersPerSecond: 85, pitch: .24, bank: .52 };
+    const leader = tracker.update(state, 0)[0]!;
+    expect(leader.position).toEqual(state.position);
+    expect(leader.heading).toBe(.8);
+    expect(leader.pitch).toBe(-.24);
+    expect(leader.bank).toBe(-.52);
+    expect(leader.speedMetersPerSecond).toBe(85);
+    const forward = Vector3.TransformNormal(Vector3.Forward(), Matrix.RotationYawPitchRoll(leader.heading, leader.pitch, leader.bank));
+    expect(forward.y).toBeGreaterThan(.23);
+  });
+
+  it.each(["fighter", "diveBomber", "torpedoBomber"] as const)("integrates %s wingmen within speed, acceleration and attitude-rate limits", role => {
+    const profile = AIR_FLIGHT_PROFILE[role];
+    const tracker = new AircraftFormationTracker(`bounded-${role}`);
+    const cruise = Math.min(88, profile.maximumSpeedMetersPerSecond - 8);
+    const state = snapshot(0, 5, role);
+    state.flight = { speedMetersPerSecond: cruise, pitch: 0, bank: 0 };
+    let previous = tracker.update(state, 0);
+    const dt = 1 / 60;
+    for (let frame = 1; frame <= 480; frame += 1) {
+      const time = frame * dt, angle = time * .24;
+      state.position = { x: 600 + (1 - Math.cos(angle)) * cruise / .24, y: 300 + time * 12, z: Math.sin(angle) * cruise / .24 };
+      state.heading = angle;
+      state.flight = { speedMetersPerSecond: cruise, pitch: Math.atan2(12, cruise), bank: .6 };
+      if (frame === 120) state.phase = "attackRun";
+      const poses = tracker.update(state, time);
+      for (let slot = 1; slot < poses.length; slot += 1) {
+        const before = previous[slot]!, after = poses[slot]!;
+        const distance = Math.hypot(after.position.x - before.position.x, after.position.y - before.position.y, after.position.z - before.position.z);
+        expect(distance).toBeLessThanOrEqual(profile.maximumSpeedMetersPerSecond * dt + .002);
+        expect(Math.abs(after.speedMetersPerSecond - before.speedMetersPerSecond)).toBeLessThanOrEqual(profile.longitudinalAccelerationMetersPerSecondSquared * dt + .001);
+        expect(Math.abs(after.pitch - before.pitch)).toBeLessThanOrEqual(profile.pitchRateRadiansPerSecond * dt + .001);
+        expect(Math.abs(after.bank - before.bank)).toBeLessThanOrEqual(profile.rollRateRadiansPerSecond * dt + .001);
+      }
+      previous = poses;
+    }
+  });
+
+  it("moves each wingman along its own nose rather than sliding to an offset", () => {
+    const tracker = new AircraftFormationTracker("nose");
+    let previous = fly(tracker, 3);
+    for (let frame = 181; frame <= 300; frame += 1) {
+      const poses = tracker.update(turningSnapshot(frame / 60), frame / 60);
+      for (let slot = 1; slot < poses.length; slot += 1) {
+        const before = previous[slot]!, after = poses[slot]!;
+        const displacement = new Vector3(after.position.x - before.position.x, after.position.y - before.position.y, after.position.z - before.position.z).normalize();
+        const forward = Vector3.TransformNormal(Vector3.Forward(), Matrix.RotationYawPitchRoll(after.heading, after.pitch, after.bank)).normalize();
+        expect(Vector3.Dot(displacement, forward)).toBeGreaterThan(.999);
+      }
+      previous = poses;
+    }
+  });
+
+  it("preserves integrated positions and vertical trajectory across 30/60 Hz presentation", () => {
+    const at30 = fly(new AircraftFormationTracker("integration-rate"), 10, 30);
+    const at60 = fly(new AircraftFormationTracker("integration-rate"), 10, 60);
+    for (let slot = 0; slot < at30.length; slot += 1) {
+      const left = at30[slot]!, right = at60[slot]!;
+      expect(Math.hypot(left.position.x - right.position.x, left.position.y - right.position.y, left.position.z - right.position.z)).toBeLessThan(.6);
+      expect(Math.abs(left.pitch - right.pitch)).toBeLessThan(.02);
+      expect(Math.abs(left.speedMetersPerSecond - right.speedMetersPerSecond)).toBeLessThan(.2);
+    }
   });
 });
 
 describe("actual cloned aircraft body transforms", () => {
+  it.each(["diveBomber", "torpedoBomber"] as const)("keeps complete %s wings separated through a real SIM strike and pull-out", role => {
+    const engine = new NullEngine();
+    const scene = new Scene(engine);
+    const state = createInitialState(976, "sea-trials");
+    const target = state.ships.find(ship => ship.team === "enemy")!;
+    target.position = { x: 0, y: 0, z: 0 };
+    target.previousPosition = { ...target.position };
+    for (const ship of state.ships) ship.antiAirMounts = 0;
+    const squadron = createAirSquadronState({
+      id: `separated-${role}`, controllerId: "player", team: "player", role,
+      position: { x: role === "torpedoBomber" ? 340 : 0, y: role === "diveBomber" ? 390 : 225, z: -2400 },
+      recoverySource: { kind: "mapEdge", position: { x: 0, y: 80, z: -5200 } },
+    });
+    squadron.aircraftCapacity = 5;
+    squadron.aircraftOperational = 5;
+    squadron.phase = "outbound";
+    squadron.flight = { speedMetersPerSecond: AIR_NAVIGATION.speedMetersPerSecond[role], pitch: 0, bank: 0 };
+    squadron.order = { squadronId: squadron.id, kind: "strikeShip", targetId: target.id, targetIds: [target.id],
+      candidateTargetIds: [target.id], activeTargetId: target.id, selectedWeapon: role === "diveBomber" ? "heBomb" : "aerialTorpedo",
+      issuedAt: 0, lastKnownPosition: { ...target.position }, lastKnownPositions: { [target.id]: { ...target.position } } };
+    state.airSquadrons = [squadron];
+    const visual = createAirSquadronGeometry(scene, squadron.id, "player", role, 5);
+    const tracker = new AircraftFormationTracker(squadron.id);
+    const at30 = new AircraftFormationTracker(squadron.id);
+    const initial = airVisualSnapshot(squadron, state.time)!;
+    tracker.update(initial, state.time);
+    at30.update(initial, state.time);
+    let minimumSeparation = Infinity, releasedAt: number | undefined, releaseHeight = 0;
+    let completed = false, maximumFrameRateDifference = 0;
+    try {
+      for (let frame = 1; frame <= 90 / FIXED_STEP; frame++) {
+        // Only this production simulation advances the entity after the initial fixture.
+        stepSimulation(state, new Map(), FIXED_STEP);
+        const live = state.airSquadrons[0]!;
+        const view = airVisualSnapshot(live, state.time)!;
+        const poses = tracker.update(view, state.time);
+        expect(poses).toHaveLength(5);
+        applyAircraftWorldPoses(visual, poses);
+        visual.root.computeWorldMatrix(true);
+        for (const plane of visual.planes) {
+          plane.root.computeWorldMatrix(true);
+          plane.body.computeWorldMatrix(true);
+        }
+        for (let a = 0; a < poses.length; a++) {
+          for (let b = a + 1; b < poses.length; b++) {
+            const one = visual.planes[a]!.body, two = visual.planes[b]!.body;
+            const distance = Vector3.Distance(one.getBoundingInfo().boundingBox.centerWorld, two.getBoundingInfo().boundingBox.centerWorld);
+            minimumSeparation = Math.min(minimumSeparation, distance);
+            // body is the merged historical aircraft, including its full-span wings.
+            expect(one.intersectsMesh(two, true), `${role} t=${state.time.toFixed(3)} pair=${a}/${b} separation=${distance.toFixed(3)}`).toBe(false);
+          }
+        }
+        if (frame % 2 === 0) {
+          const slower = at30.update(view, state.time);
+          for (let slot = 1; slot < poses.length; slot++) {
+            const a = poses[slot]!.position, b = slower[slot]!.position;
+            maximumFrameRateDifference = Math.max(maximumFrameRateDifference, Math.hypot(a.x - b.x, a.y - b.y, a.z - b.z));
+          }
+        }
+        if (releasedAt === undefined && state.airEvents.some(event => event.kind === "weaponReleased" && event.squadronId === live.id)) {
+          releasedAt = state.time;
+          releaseHeight = live.position.y;
+        }
+        if (releasedAt !== undefined && state.time > releasedAt + 6 && live.position.y > releaseHeight + 35 && live.flight!.pitch > .04) {
+          completed = true;
+          break;
+        }
+      }
+      expect(releasedAt).toBeDefined();
+      expect(completed).toBe(true);
+      expect(minimumSeparation).toBeGreaterThan(role === "diveBomber" ? 14.37 : 16.51);
+      expect(maximumFrameRateDifference).toBeLessThan(.8);
+    } finally {
+      visual.root.dispose(false, true);
+      scene.dispose();
+      engine.dispose();
+    }
+  });
+
   it.each(["fighter", "diveBomber", "torpedoBomber"] as const)("moves and enables distinct %s body and propeller meshes", (role) => {
     const engine = new NullEngine();
     const scene = new Scene(engine);

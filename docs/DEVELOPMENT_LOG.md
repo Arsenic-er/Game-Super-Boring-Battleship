@@ -3,10 +3,42 @@
 Last updated: 2026-09-13
 
 Historical archive baseline: `96fcd51` (`0.6.12`).
-Historical model rebuild base: `6f1fbb2`; input-fix base: `d0dba77`; active version `0.7.5`.
+Historical model rebuild base: `6f1fbb2`; input-fix base: `d0dba77`; active version `0.7.6`.
 
 This is a milestone log derived from the Git history and the long development
 conversation. It is intentionally more compact than a commit-by-commit transcript.
+
+## 2026-09-13 — Three-dimensional aircraft flight and attack guidance
+
+- Revisited primary FlightSim, Yuka, OpenSteer and JSBSim references after the user
+  identified that formations still moved mechanically on a horizontal plane.
+  Independent lightweight TypeScript implementation; no copied source or assets.
+- Replaced fixed-XZ-speed/separate-height movement with a bounded point-mass
+  autopilot: bank-driven turns, pitch-derived vertical velocity, roll/pitch rates
+  and speed/energy response. Stable cruise replaces artificial altitude wobble.
+- Added role-specific approach, dive/low-level run and climbing egress. Release
+  requires a physical window; bombs inherit aircraft velocity. Interception now
+  checks a 3D firing cone. Launch/recovery no longer hover while their phase runs.
+- Each visible wingman integrates its own flight state toward delayed formation
+  stations. LAN interpolates optional authorized flight state without revealing
+  hidden enemies or inventing identities for anonymous contacts.
+- Continuous visual QA exposed full-wing overlap during pull-out. Wider stable-side
+  formations and bounded look-ahead separation guidance fixed the demonstrated
+  trajectories without pushing aircraft positions apart. Actual-SIM OBB and
+  30/60 Hz regressions cover dive-bomber and torpedo-bomber sorties.
+- Fixed an introduced recovery regression: fixed35s reserve could exhaust fuel
+  during a physically flown approach. Route/turn/altitude-aware early recall keeps
+  the original fuel quantity and 90m landing gate; far/near recovery and moving-target
+  sorties are tested together to avoid excessively premature recalls.
+- Conservative terrain look-ahead requests an early climb rather than teleporting
+  aircraft above mountains. Recovery remains map-edge based; this is not 6-DOF
+  aerodynamics, individual-plane combat AI or carrier landing physics.
+- Model scope, primary references and verification are recorded in
+  `AIR_FLIGHT_MODEL.md` and `acceptance/0.7.6-flight.md`.
+- Final delivery:956 application tests passed,5 existing skipped; both real-SIM
+  sortie videos passed full-wing separation and whole-group camera framing.
+  Ten native Windows checks passed;0.7.6 replaced the single local latest directory,
+  with117 post-install file hashes verified and real saves preserved. No Git push.
 
 ## 2026-09-13 — Training map contacts, independent aircraft and horizon
 

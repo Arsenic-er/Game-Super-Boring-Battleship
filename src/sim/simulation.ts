@@ -108,6 +108,9 @@ import {
 } from "./airOperations";
 import type { AirMissionIssueResult, AirMissionTrustedData } from "./airOperations";
 import { advanceAirKinematics } from "./airFlightModel";
+import { planAirManeuver, airFlightVelocity, bombFallSeconds, airStrikeEnvelope, airInterceptEnvelope } from "./airManeuvers";
+import { airTerrainClearance } from "./airTerrainClearance";
+import { airRecoveryFuelSeconds } from "./airRecoveryGuidance";
 
 const zeroCommand: ControlCommand = {
   throttle: 0,
@@ -3246,12 +3249,16 @@ export function validateAirMissionTarget(
   return {};
 }
 
+function airRecoveryPoint(state: BattleState, squadron: Readonly<AirSquadronState>): Vec3 {
+  const recoverySource = squadron.recoverySource;
+  if (recoverySource.kind === "mapEdge") return recoverySource.position;
+  return state.ships.find((ship) => ship.id === recoverySource.shipId)?.position
+    ?? squadron.position;
+}
+
 function airDestination(state: BattleState, squadron: Readonly<AirSquadronState>): Vec3 {
-  if (squadron.phase === "returning") {
-    const recoverySource = squadron.recoverySource;
-    if (recoverySource.kind === "mapEdge") return recoverySource.position;
-    return state.ships.find((ship) => ship.id === recoverySource.shipId)?.position
-      ?? squadron.position;
+  if (squadron.phase === "returning" || squadron.phase === "landing") {
+    return airRecoveryPoint(state, squadron);
   }
   const order = squadron.order;
   if (!order) return squadron.position;
@@ -3402,19 +3409,21 @@ function moveAirSquadron(
   dt: number,
   contactValid?: boolean,
 ): AirSquadronState {
-  let destination = airDestination(state, squadron);
-  if (squadron.phase === "patrolling") {
-    const radius = squadron.order?.area?.radius ?? 340;
-    const direction = squadron.team === "player" ? 1 : -1;
-    const angle = state.time * 0.23 * direction + squadron.id.length;
-    destination = {
-      x: destination.x + Math.sin(angle) * radius,
-      y: squadron.position.y,
-      z: destination.z + Math.cos(angle) * radius,
-    };
+  let missionTarget = airDestination(state, squadron);
+  const strikeId = squadron.order?.activeTargetId;
+  if (["outbound", "attackRun"].includes(squadron.phase)
+    && squadron.order?.kind === "strikeShip" && squadron.order.selectedWeapon && strikeId) {
+    missionTarget = predictAirStrikeAimPoint(squadron.position, missionTarget,
+      squadron.order.lastKnownHeadings?.[strikeId] ?? 0,
+      squadron.order.lastKnownSpeedsKnots?.[strikeId] ?? 0,
+      squadron.order.selectedWeapon, airFlightVelocity(squadron).y);
   }
+  const plan = planAirManeuver(squadron, missionTarget, state.time);
+  const destination = plan.destination;
+  const terrainClearance = airTerrainClearance(state.mapId, squadron, destination);
+  const needsTerrainClimb = terrainClearance > plan.targetAltitude;
   const canMove = isAirSquadronAirborne(squadron.phase)
-    && !["launching", "landing", "rearming", "destroyed"].includes(squadron.phase);
+    && !["rearming", "destroyed"].includes(squadron.phase);
   const kinematics = advanceAirKinematics({
     id: squadron.id,
     role: squadron.role,
@@ -3422,7 +3431,11 @@ function moveAirSquadron(
     position: squadron.position,
     heading: squadron.heading,
     destination,
-    speedMetersPerSecond: AIR_NAVIGATION.speedMetersPerSecond[squadron.role],
+    speedMetersPerSecond: AIR_NAVIGATION.speedMetersPerSecond[squadron.role] * plan.speedMultiplier,
+    flight: squadron.flight,
+    targetAltitude: Math.max(plan.targetAltitude, terrainClearance),
+    targetPitch: needsTerrainClimb ? undefined : plan.targetPitch,
+    minimumAltitude: 18,
     dt,
     time: state.time,
     canMove,
@@ -3432,25 +3445,29 @@ function moveAirSquadron(
     previousPosition: copyVec(squadron.position),
     position: kinematics.position,
     heading: kinematics.heading,
+    flight: kinematics.flight,
   };
   const remaining = Math.hypot(
-    destination.x - kinematics.position.x,
-    destination.z - kinematics.position.z,
+    missionTarget.x - kinematics.position.x,
+    missionTarget.z - kinematics.position.z,
   );
   const missionArrivalRadius = airMissionApproachRadius(squadron);
   let advanced = advanceAirSquadronPhase(moved, state.time, {
     contactValid,
+    returnReserveSeconds: airRecoveryFuelSeconds(moved, airRecoveryPoint(state, moved)),
     reachedMissionArea: squadron.phase === "outbound"
-      && remaining <= missionArrivalRadius,
+      && remaining <= missionArrivalRadius
+      && (squadron.order?.kind !== "strikeShip"
+        || Math.abs(wrapAngle(Math.atan2(missionTarget.x - kinematics.position.x, missionTarget.z - kinematics.position.z) - kinematics.heading)) < .55),
     reachedRecoveryPoint: squadron.phase === "returning"
-      && remaining <= AIR_NAVIGATION.arrivalRadiusMeters,
+      && remaining <= AIR_NAVIGATION.arrivalRadiusMeters && kinematics.position.y <= Math.max(100, missionTarget.y + 35),
     attackCompleted: squadron.phase === "attackRun"
       && (squadron.attackRunReleased
         || !airWeaponAvailable(squadron, squadron.order?.selectedWeapon)),
     engagementComplete: squadron.phase === "intercepting"
       && (squadron.attackRunReleased
         || !airWeaponAvailable(squadron, "machineGun")
-        || state.time - squadron.phaseStartedAt >= 10),
+        || state.time - squadron.phaseStartedAt >= 65),
   });
   if (squadron.phase === "intercepting"
     && advanced.phase === "returning" && squadron.resumeOrder) {
@@ -3698,6 +3715,7 @@ function resolveAirInterceptions(state: BattleState): void {
       contact.lastKnownPosition.z - attacker.position.z,
     );
     if (contactRange > AIR_COMBAT.interceptApproachMeters * 1.35) continue;
+    if (!airInterceptEnvelope(attacker, contact.lastKnownPosition)) continue;
     liveAttacker.ammoRemaining = Math.max(0, liveAttacker.ammoRemaining - 1);
     liveAttacker.attackRunReleased = true;
     const damage = attacker.aircraftOperational
@@ -3775,15 +3793,20 @@ function releaseAirStrike(state: BattleState, squadron: AirSquadronState): void 
   const observedAimPoint = targetId
     ? order?.lastKnownPositions?.[targetId] ?? order?.lastKnownPosition
     : order?.lastKnownPosition;
-  squadron.attackRunReleased = true;
-  if (!weapon || !target || !observedAimPoint || !airWeaponAvailable(squadron, weapon)) return;
+  if (!weapon || !target || !observedAimPoint || !airWeaponAvailable(squadron, weapon)) {
+    squadron.attackRunReleased = true;
+    return;
+  }
   const aimPoint = predictAirStrikeAimPoint(
     squadron.position,
     observedAimPoint,
     targetId ? order?.lastKnownHeadings?.[targetId] ?? 0 : 0,
     targetId ? order?.lastKnownSpeedsKnots?.[targetId] ?? 0 : 0,
     weapon,
+    airFlightVelocity(squadron).y,
   );
+  if (!airStrikeEnvelope(squadron, aimPoint, weapon, GUN.gravity)) return;
+  squadron.attackRunReleased = true;
   if (weapon === "machineGun") squadron.ammoRemaining -= 1;
   else squadron.ordnanceRemaining -= 1;
   state.airEvents.push({
@@ -3795,10 +3818,8 @@ function releaseAirStrike(state: BattleState, squadron: AirSquadronState): void 
   const planeCount = Math.max(1, squadron.aircraftOperational);
   const salvoId = state.nextEntityId++;
   if (weapon === "heBomb") {
-    const flightSeconds = Math.max(
-      1.2,
-      Math.sqrt(2 * Math.max(1, squadron.position.y) / GUN.gravity),
-    );
+    const flightVelocity = airFlightVelocity(squadron);
+    const flightSeconds = Math.max(.5, bombFallSeconds(squadron.position.y, flightVelocity.y, GUN.gravity));
     for (let index = 0; index < planeCount; index += 1) {
       const actualAim = {
         x: aimPoint.x + centeredAirDispersion(state)
@@ -3817,9 +3838,9 @@ function releaseAirStrike(state: BattleState, squadron: AirSquadronState): void 
         kind: "shell", ammoType: "he", weaponSource: "aircraft", airWeapon: weapon,
         salvoId, position: copyVec(origin), previousPosition: copyVec(origin),
         velocity: {
-          x: (actualAim.x - origin.x) / flightSeconds,
-          y: 0,
-          z: (actualAim.z - origin.z) / flightSeconds,
+          x: flightVelocity.x + (actualAim.x - aimPoint.x) / flightSeconds,
+          y: flightVelocity.y,
+          z: flightVelocity.z + (actualAim.z - aimPoint.z) / flightSeconds,
         },
         damage: AIR_COMBAT.bomb.damage, age: 0,
       });

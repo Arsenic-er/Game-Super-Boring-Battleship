@@ -180,6 +180,11 @@ export function replicationViewFor(
         phase: squadron.phase,
         position: cloneVec(squadron.position),
         heading: squadron.heading,
+        ...(squadron.flight ? { flight: {
+          speedMetersPerSecond: squadron.flight.speedMetersPerSecond,
+          pitch: squadron.flight.pitch,
+          bank: squadron.flight.bank,
+        } } : {}),
         aircraftOperational: squadron.aircraftOperational,
       };
     });
