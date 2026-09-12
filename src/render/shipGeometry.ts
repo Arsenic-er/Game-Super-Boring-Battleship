@@ -134,14 +134,15 @@ export function createChamferedBox(
       const [u, v] = planarUv(point);
       pushVertex(point, u, v);
     }
-    indices.push(bottomStart, bottomStart + 1, bottomStart + 2);
+    // Babylon's default left-handed front faces wind opposite the conventional cross product.
+    indices.push(bottomStart, bottomStart + 2, bottomStart + 1);
     const topPoints = [top[0], top[index + 1], top[index]] as const;
     const topStart = positions.length / 3;
     for (const point of topPoints) {
       const [u, v] = planarUv(point);
       pushVertex(point, u, v);
     }
-    indices.push(topStart, topStart + 1, topStart + 2);
+    indices.push(topStart, topStart + 2, topStart + 1);
   }
   for (let index = 0; index < 8; index += 1) {
     const next = (index + 1) % 8;
@@ -150,7 +151,7 @@ export function createChamferedBox(
     pushVertex(top[index], 0, 1);
     pushVertex(top[next], 1, 1);
     pushVertex(bottom[next], 1, 0);
-    indices.push(start, start + 1, start + 2, start, start + 2, start + 3);
+    indices.push(start, start + 2, start + 1, start, start + 3, start + 2);
   }
   const normals: number[] = [];
   VertexData.ComputeNormals(positions, indices, normals);

@@ -1,11 +1,34 @@
 # Condensed Development Log
 
-Last updated: 2026-08-22
+Last updated: 2026-09-12
 
-Current archived game commit before this documentation update: `96fcd51` (`0.6.12`)
+Historical archive baseline: `96fcd51` (`0.6.12`).
+Current model rebuild base: `6f1fbb2`; active version `0.7.2`.
 
 This is a milestone log derived from the Git history and the long development
 conversation. It is intentionally more compact than a commit-by-commit transcript.
+
+## 2026-09-12 — Historical model rebuild
+
+- Rebuilt fifteen hull silhouettes with continuous deck/bridge structures,
+  class-specific bows/sterns, funnels/masts and supported main-gun hardpoints.
+- Rebuilt six WWII aircraft families with differentiated wings, cockpits, gear
+  and three-blade propellers; projected wing markings onto the wing surfaces.
+- Added historical equipment profiles, separate internal inspection machinery
+  and metre-space rotating mounts. Shared visual/simulation muzzle geometry
+  prevents distorted traverse and offset shell origins.
+- Added topology, dimensions, mixed-loadout, disposal and muzzle-alignment tests
+  plus a filtered actual-WebGL model inspection script.
+- Kept Windows directory distribution, separate unpacked assets and all seven
+  language guides. No paid assets or extracted commercial game models added.
+- Detailed acceptance is kept in `acceptance/0.7.2-historical-models.md`,
+  not in raw sub-agent transcripts.
+- Final verification: 794 application tests passed, five skipped; eight binary
+  transport tests passed. TypeScript, archive/dependency validation and actual
+  native Windows dock/sea-trials checks passed. All 117 local release files match
+  the server build by SHA-256; the single latest local directory is now 0.7.2.
+- No actual AppData save was changed. No new third-party binary asset was added,
+  and no remote Git push was requested or performed for this batch.
 
 ## Phase 1 — Minimum viable naval prototype
 

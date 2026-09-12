@@ -82,8 +82,8 @@ const historicalModels: Record<EquipmentCategory, Record<EquipmentRarity, Histor
   mainGun: {
     common: {
       name: "QF 4.7英寸 Mk IX / CP Mk XVIII",
-      origin: "英国 · J/K/N级驱逐舰",
-      description: "1938年型单装速射炮与炮架组合；结构直接、重量适中，作为驱逐舰常备火炮基准。",
+      origin: "英国 · 皇家海军驱逐舰",
+      description: "单装速射炮与炮架组合；结构直接、重量适中，作为驱逐舰常备火炮基准。",
     },
     purple: {
       name: "三年式 12.7厘米/50 C型双联装",

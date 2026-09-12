@@ -25,6 +25,7 @@ import {
 } from "../sim/playerPerception";
 import {
   gunMuzzleOrigin,
+  gunMountElevation,
   predictTrajectory,
   torpedoInterceptPoint,
   torpedoLaunchSolution,
@@ -898,21 +899,8 @@ export class GameView implements AimProvider {
         const mount = ship.mainBatteryMounts[index];
         turret.rotation.y = wrapAngle((mount?.heading ?? ship.turretHeading) - ship.heading);
       }
-      const muzzle = gunMuzzleOrigin(ship);
-      const elevationPath = predictTrajectory(
-        muzzle,
-        turretAimPoint(ship, muzzle),
-        3,
-        effectiveMainBattery(ship).muzzleVelocity,
-      );
-      if (elevationPath.length >= 2) {
-        const first = elevationPath[0];
-        const second = elevationPath[1];
-        if (first && second) {
-          const rise = second.y - first.y;
-          const run = Math.hypot(second.x - first.x, second.z - first.z);
-          for (const cradle of visual.gunCradles) cradle.rotation.x = -Math.min(0.34, Math.max(0, Math.atan2(rise, run)));
-        }
+      for (const [index, cradle] of visual.gunCradles.entries()) {
+        cradle.rotation.x = -gunMountElevation(ship, index);
       }
       const recoilElapsed = ship.lastMainGunFiredAt === undefined
         ? Number.POSITIVE_INFINITY

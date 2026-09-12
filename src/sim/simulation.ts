@@ -48,7 +48,11 @@ import {
   installedMainBattery,
   effectiveMainBattery,
   mainBatteryMountLocalPosition,
-  mainBatteryMuzzleLocalHeight,
+  mainBatteryMuzzleOffset,
+  MAIN_BATTERY_CRADLE_HEIGHT,
+  MAIN_BATTERY_CRADLE_FORWARD,
+  MAIN_BATTERY_MAX_ELEVATION,
+  type MainBatteryMountDefinition,
   MAIN_BATTERY_TRAVERSE_LIMIT_RADIANS,
   mainBatteryMountRestHeading,
 } from "../ships/mainBatteries";
@@ -950,40 +954,53 @@ export function gunMuzzleOrigins(ship: ShipState): Vec3[] {
   return battery.mounts.flatMap((_, mountIndex) => gunMuzzleOriginsForMount(ship, mountIndex));
 }
 
-function gunMuzzleOriginsForMount(ship: ShipState, mountIndex: number): Vec3[] {
+/** The hull-normalized hardpoint is transformed once; weapon offsets below are metres. */
+function gunMountWorldBase(ship: ShipState, mount: MainBatteryMountDefinition): Vec3 {
   const hull = getShipClass(ship.shipClassId);
-  const gunDefinition = effectiveMainBattery(ship);
-  const mount = gunDefinition.mounts[mountIndex];
-  if (!mount) return [];
-  const turretHeading = ship.mainBatteryMounts[mountIndex]?.heading ?? ship.turretHeading;
   const hardpoint = mainBatteryMountLocalPosition(mount);
-  const barrelScale = hull.renderScale.x;
-  const visual = mount.visual ?? gunDefinition.visual;
-  const barrelDistance = visual.barrelLength * .88 * hull.renderScale.z;
   const longitudinal = hardpoint.z * hull.renderScale.z;
   const lateral = hardpoint.x * hull.renderScale.x;
-  const offsets = Array.from(
-    { length: mount.barrelCount },
-    (_, index) => (index - (mount.barrelCount - 1) / 2) * visual.barrelSpacing,
-  );
-  const center = {
+  return {
     x: ship.position.x
       + Math.sin(ship.heading) * longitudinal
-      + Math.cos(ship.heading) * lateral
-      + Math.sin(turretHeading) * barrelDistance,
-    y: (hull.hullId === "destroyer"
-      ? GUN.muzzleHeight
-      : mainBatteryMuzzleLocalHeight(mount)) * hull.renderScale.y,
+      + Math.cos(ship.heading) * lateral,
+    y: hardpoint.y * hull.renderScale.y,
     z: ship.position.z
       + Math.cos(ship.heading) * longitudinal
-      - Math.sin(ship.heading) * lateral
-      + Math.cos(turretHeading) * barrelDistance,
+      - Math.sin(ship.heading) * lateral,
   };
-  return offsets.map((offset) => ({
-    x: center.x + Math.cos(turretHeading) * offset * barrelScale,
-    y: center.y,
-    z: center.z - Math.sin(turretHeading) * offset * barrelScale,
-  }));
+}
+
+/** Shared render/physics elevation. Base-origin aiming avoids a recursive muzzle query. */
+export function gunMountElevation(ship: ShipState, mountIndex: number): number {
+  const battery = effectiveMainBattery(ship), mount = battery.mounts[mountIndex];
+  if (!mount) return 0;
+  const heading = ship.mainBatteryMounts[mountIndex]?.heading ?? ship.turretHeading;
+  const base = gunMountWorldBase(ship, mount);
+  const pivot = {
+    x: base.x + Math.sin(heading) * MAIN_BATTERY_CRADLE_FORWARD,
+    y: base.y + MAIN_BATTERY_CRADLE_HEIGHT,
+    z: base.z + Math.cos(heading) * MAIN_BATTERY_CRADLE_FORWARD,
+  };
+  const velocity = ballisticVelocity(pivot, ship.aimPoint, battery.muzzleVelocity);
+  return velocity ? clamp(Math.atan2(velocity.y, Math.hypot(velocity.x, velocity.z)), 0, MAIN_BATTERY_MAX_ELEVATION) : 0;
+}
+
+function gunMuzzleOriginsForMount(ship: ShipState, mountIndex: number): Vec3[] {
+  const battery = effectiveMainBattery(ship), mount = battery.mounts[mountIndex];
+  if (!mount) return [];
+  const base = gunMountWorldBase(ship, mount);
+  const heading = ship.mainBatteryMounts[mountIndex]?.heading ?? ship.turretHeading;
+  const visual = { ...(mount.visual ?? battery.visual), barrelCount: mount.barrelCount };
+  const elevation = gunMountElevation(ship, mountIndex);
+  return Array.from({ length: mount.barrelCount }, (_, index) => {
+    const offset = mainBatteryMuzzleOffset(visual, index, elevation);
+    return {
+      x: base.x + Math.sin(heading) * offset.z + Math.cos(heading) * offset.x,
+      y: base.y + offset.y,
+      z: base.z + Math.cos(heading) * offset.z - Math.sin(heading) * offset.x,
+    };
+  });
 }
 
 export function turretAimPoint(ship: ShipState, origin = gunMuzzleOrigin(ship)): Vec3 {

@@ -132,7 +132,7 @@ export class VoyagePanel {
     const t = (key: VoyageMessageKey) => escape(voyageText(this.locale, key));
     if (this.noticeKey) this.notice.textContent = voyageText(this.locale, this.noticeKey);
     this.briefing.setAttribute("aria-label", voyageText(this.locale, "firstVoyage"));
-    this.briefing.innerHTML = `<div class="voyage-dialog-inner"><p class="eyebrow">0.7.1 · 1 v 1</p><h1>${t("firstVoyage")}</h1><p>${t("briefing")}</p><div class="voyage-actions"><button data-voyage="begin">${t("beginTutorial")}</button><button data-voyage="briefing-skip">${t("skipTutorial")}</button></div></div>`;
+    this.briefing.innerHTML = `<div class="voyage-dialog-inner"><p class="eyebrow">0.7.2 · 1 v 1</p><h1>${t("firstVoyage")}</h1><p>${t("briefing")}</p><div class="voyage-actions"><button data-voyage="begin">${t("beginTutorial")}</button><button data-voyage="briefing-skip">${t("skipTutorial")}</button></div></div>`;
     this.renderTutorial(); this.renderResult(); this.renderPending();
   }
   private renderTutorial(): void {

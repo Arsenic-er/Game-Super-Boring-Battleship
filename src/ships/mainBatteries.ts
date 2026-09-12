@@ -9,6 +9,27 @@ export const MAIN_BATTERY_MODEL_BEAM = 11;
 export const MAIN_BATTERY_DECK_HEIGHT = 6.05;
 export const MAIN_BATTERY_SUPERFIRING_HEIGHT = 7.65;
 export const MAIN_BATTERY_CRADLE_HEIGHT = 1.45;
+export const MAIN_BATTERY_CRADLE_FORWARD = .75;
+export const MAIN_BATTERY_MAX_ELEVATION = .34;
+
+/** Weapon dimensions are metres. Only hull hardpoints use normalized model coordinates. */
+export const mainBatteryBarrelRestZ = (visual: Pick<MainGunVisualDefinition, "barrelLength">): number =>
+  visual.barrelLength * .47 + .55;
+
+/** Rested/elevated muzzle relative to the unscaled, yawing turret, in metres. */
+export function mainBatteryMuzzleOffset(
+  visual: Pick<MainGunVisualDefinition, "barrelLength" | "barrelSpacing" | "barrelCount">,
+  barrelIndex: number,
+  elevation = 0,
+  recoilMetres = 0,
+): MainBatteryLocalPosition {
+  const fromCradle = mainBatteryBarrelRestZ(visual) + visual.barrelLength / 2 - recoilMetres;
+  return {
+    x: (barrelIndex - (visual.barrelCount - 1) / 2) * visual.barrelSpacing,
+    y: MAIN_BATTERY_CRADLE_HEIGHT + Math.sin(elevation) * fromCradle,
+    z: MAIN_BATTERY_CRADLE_FORWARD + Math.cos(elevation) * fromCradle,
+  };
+}
 
 export interface MainBatteryMountDefinition {
   /** Position along the hull: +0.5 is the bow and -0.5 is the stern. */
@@ -128,7 +149,7 @@ export const HISTORICAL_MAIN_BATTERIES: Partial<Record<ShipClassId, HistoricalMa
     id: "15cm-41st-year", name: "四十一年式 15 cm 双联装主炮", shortLabel: "3×2 152 mm 四十一年式", caliberMm: 152,
     damagePerShell: 60, reloadSeconds: 10, traverseDegreesPerSecond: 6, dispersionMultiplier: 1.02,
     muzzleVelocity: 850, maximumRangeMeters: MAIN_BATTERY_MAXIMUM_RANGE_METERS.agano,
-    mounts: [batteryMount(.29, 2), batteryMount(-.17, 2, MAIN_BATTERY_SUPERFIRING_HEIGHT), batteryMount(-.29, 2)],
+    mounts: [batteryMount(.29, 2), batteryMount(.17, 2, MAIN_BATTERY_SUPERFIRING_HEIGHT), batteryMount(-.29, 2)],
     visual: { barrelCount: 2, barrelLength: 10.1, barrelSpacing: 1.0, mountDiameter: 5.8, houseWidth: 6.1 },
   },
   dido: {
@@ -206,6 +227,34 @@ function genericMounts(count: number, barrelCount: 1 | 2 | 3 | 4): MainBatteryMo
   });
 }
 
+/**
+ * Photo-informed WWII destroyer hardpoint groups in the shared hull frame.
+ * Positions are silhouette approximations, not yard-plan measurements. The
+ * installed component still determines barrel count and all weapon stats.
+ * Empty slots must not move the remaining guns into bridge/funnel spaces.
+ */
+export const DESTROYER_MAIN_BATTERY_HARDPOINTS: Readonly<Partial<Record<ShipClassId,
+  readonly MainBatteryMountDefinition[]>>> = {
+  fletcher: [batteryMount(.31, 1), batteryMount(.19, 1, MAIN_BATTERY_SUPERFIRING_HEIGHT),
+    batteryMount(-.16, 1, MAIN_BATTERY_SUPERFIRING_HEIGHT),
+    batteryMount(-.27, 1, MAIN_BATTERY_SUPERFIRING_HEIGHT), batteryMount(-.38, 1)],
+  "j-class": [batteryMount(.31, 2), batteryMount(.19, 2, MAIN_BATTERY_SUPERFIRING_HEIGHT), batteryMount(-.33, 2)],
+  kagero: [batteryMount(.31, 2), batteryMount(-.21, 2, MAIN_BATTERY_SUPERFIRING_HEIGHT), batteryMount(-.34, 2)],
+  "type-1936a": [batteryMount(.30, 2), batteryMount(-.13, 1),
+    batteryMount(-.25, 1, MAIN_BATTERY_SUPERFIRING_HEIGHT), batteryMount(-.36, 1)],
+  tashkent: [batteryMount(.32, 2), batteryMount(.19, 2, MAIN_BATTERY_SUPERFIRING_HEIGHT), batteryMount(-.33, 2)],
+};
+
+function destroyerMounts(shipClassId: ShipClassId, count: number,
+  barrelCount: 1 | 2 | 3 | 4): MainBatteryMountDefinition[] {
+  const historical = DESTROYER_MAIN_BATTERY_HARDPOINTS[shipClassId];
+  if (!historical) return genericMounts(count, barrelCount);
+  return Array.from({ length: Math.max(1, count) }, (_, index) => ({
+    ...(historical[index] ?? batteryMount((-36 - (index - historical.length) * 7) / 112, barrelCount)),
+    barrelCount,
+  }));
+}
+
 export function mainBatteryShellProfile(
   shipClassId: ShipClassId,
   caliberMm: number,
@@ -273,7 +322,7 @@ export function getMainBattery(
       muzzleVelocity: gun.muzzleVelocity,
       maximumRangeMeters: MAIN_BATTERY_MAXIMUM_RANGE_METERS[shipClassId],
       shellProfile: mainBatteryShellProfile(shipClassId, 127),
-      mounts: genericMounts(equippedMounts, gun.visual.barrelCount),
+      mounts: destroyerMounts(shipClassId, equippedMounts, gun.visual.barrelCount),
       visual: gun.visual,
     };
   }

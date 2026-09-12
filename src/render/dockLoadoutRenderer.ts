@@ -2,7 +2,7 @@ import { Constants } from "@babylonjs/core/Engines/constants";
 import { Material } from "@babylonjs/core/Materials/material";
 import { StandardMaterial } from "@babylonjs/core/Materials/standardMaterial";
 import { Color3 } from "@babylonjs/core/Maths/math.color";
-import { CreateBox } from "@babylonjs/core/Meshes/Builders/boxBuilder.pure";
+import { createHistoricalInternalEquipment } from "./historicalEquipmentGeometry";
 import { TransformNode } from "@babylonjs/core/Meshes/transformNode";
 import type { Scene } from "@babylonjs/core/scene";
 import type { EquipmentDefinition } from "../profile/equipmentCatalog";
@@ -117,13 +117,12 @@ export class DockLoadoutRenderer {
     try {
       const internal = candidate.internalModules.find((entry) => entry.category === item.category && entry.slotIndex === slotIndex);
       if (internal) {
-        // Babylon augments its builder options; the canonical plan remains deeply frozen.
-        const marker = CreateBox(`dock-${item.id}-internal-region`, { ...internal.bounds }, this.scene);
-        marker.position.set(internal.position.x, internal.position.y, internal.position.z);
-        marker.material = this.markerMaterial;
-        marker.renderingGroupId = 3;
-        marker.isPickable = false;
-        marker.parent = root;
+        const model = createHistoricalInternalEquipment(this.scene, root, `dock-${item.id}-internal-model`, internal, this.palette);
+        for (const mesh of model.getChildMeshes()) {
+          mesh.material = this.markerMaterial;
+          mesh.renderingGroupId = 3;
+          mesh.isPickable = false;
+        }
       } else {
         createLoadoutEquipmentVisual(this.scene, root, `dock-candidate-${item.id}`, candidate, this.palette, { category: item.category, slotIndex });
         for (const mesh of root.getChildMeshes()) {

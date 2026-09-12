@@ -8,11 +8,13 @@
 
 ## Acerca del juego
 
-La versión 0.7.1 ofrece combates individuales contra la IA, cooperación contra la IA para dos jugadores y pruebas de mar sin límite; la duración objetivo de una batalla normal es de 15–20 minutos. Dirige destructores, cruceros ligeros y acorazados, organiza el control de daños y emplea artillería, torpedos, cargas de profundidad y aviación embarcada. El proyecto prioriza equipos modestos y usa TypeScript, Babylon.js, Vite y Electron.
+La versión 0.7.2 ofrece combates individuales contra la IA, cooperación contra la IA para dos jugadores y pruebas de mar sin límite; la duración objetivo de una batalla normal es de 15–20 minutos. Dirige destructores, cruceros ligeros y acorazados, organiza el control de daños y emplea artillería, torpedos, cargas de profundidad y aviación embarcada. El proyecto prioriza equipos modestos y usa TypeScript, Babylon.js, Vite y Electron.
 
 Todavía es un prototipo en desarrollo. Los gráficos, el equilibrio, los modelos y la progresión seguirán mejorando.
 
 ## Funciones actuales
+
+- Modelos originales y ligeros de 15 clases navales, armamento y equipos internos diferenciados, y seis aviones de la SGM. Se conserva la configuración libre; no son reproducciones exactas de planos de astillero. [Notas sobre los modelos](docs/historical-models-ships.md).
 
 - Modo cooperativo LAN para dos jugadores con búsqueda de salas, conexión alternativa por IPv4 manual, selección de configuraciones guardadas y simulación autoritativa del anfitrión contra la IA.
 - Órdenes de máquinas, timón gradual, pérdida de velocidad en giro y respuesta al daño de módulos.

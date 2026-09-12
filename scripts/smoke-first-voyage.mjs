@@ -26,7 +26,44 @@ try {
     const response = await route.fetch();
     await route.fulfill({ response, body: `${await response.text()}\nwindow.__voyageQa = { state: () => state, voyage: () => voyageSession, view: () => view, input: () => input, menus: () => menus, finish: () => { state.status = 'player-won'; state.endReason = 'score'; }, paused: () => paused };\n` });
   });
-  const shot = async name => { const path = `.qa/screenshots/${name}.png`; await page.screenshot({ path }); report.screenshots.push(path); };
+  const shot = async name => {
+    const target=name.startsWith('03-battle')?'battle':name.startsWith('05-dock')||name.startsWith('06-dock')?'dock':undefined;
+    if(target) {
+      // A canvas resize clears its framebuffer. Active meshes may be from the previous frame,
+      // and shader compilation can continue after the UI is ready, especially under SwiftShader.
+      const afterFrame=await page.evaluate(target=>{
+        const view=target==='dock'?window.__voyageQa.menus().dockPreview:window.__voyageQa.view();
+        return view.scene.getFrameId();
+      },target);
+      const evidenceHandle=await page.waitForFunction(({target,afterFrame})=>{
+        const view=target==='dock'?window.__voyageQa.menus().dockPreview:window.__voyageQa.view();
+        const scene=view.scene,engine=view.engine,gl=engine._gl,canvas=engine.getRenderingCanvas();
+        const active=scene.getActiveMeshes(),frame=scene.getFrameId();
+        if(!canvas?.offsetParent||gl.isContextLost()||frame<afterFrame+2||active.length===0||scene.getActiveIndices()===0)return false;
+        // Check render candidates, not unused effects/materials that can keep scene.isReady false.
+        for(let i=0;i<active.length;i++)if(!active.data[i].isReady(true))return false;
+        const width=gl.drawingBufferWidth,height=gl.drawingBufferHeight;
+        if(!width||!height)return false;
+        const pixels=new Uint8Array(width*height*4);
+        gl.readPixels(0,0,width,height,gl.RGBA,gl.UNSIGNED_BYTE,pixels);
+        if(gl.getError()!==gl.NO_ERROR)return false;
+        let opaque=0,nonuniform=0;
+        for(let i=0;i<pixels.length;i+=4){
+          if(pixels[i+3]>0)opaque++;
+          if(Math.abs(pixels[i]-pixels[0])+Math.abs(pixels[i+1]-pixels[1])+Math.abs(pixels[i+2]-pixels[2])>20)nonuniform++;
+        }
+        const minimum=Math.max(128,width*height*.005);
+        if(opaque<minimum||nonuniform<minimum)return false;
+        return {target,frame,afterFrame,activeMeshes:active.length,activeIndices:scene.getActiveIndices(),
+          width,height,opaquePixels:opaque,nonuniformPixels:nonuniform,sceneReady:scene.isReady(),
+          cameraPosition:scene.activeCamera.position.asArray(),cameraTarget:scene.activeCamera.target?.asArray()};
+      },{target,afterFrame},{polling:250,timeout:60000});
+      const evidence=await evidenceHandle.jsonValue();await evidenceHandle.dispose();
+      report.checks.push({name:`${name}: fresh rendered canvas pixels`,evidence});
+      console.log(`PASS ${name}: fresh rendered canvas pixels: ${JSON.stringify(evidence)}`);
+    }
+    const path=`.qa/screenshots/${name}.png`;await page.screenshot({path});report.screenshots.push(path);
+  };
   const check = (name, evidence) => { report.checks.push({ name, evidence }); console.log(`PASS ${name}: ${JSON.stringify(evidence)}`); };
   await page.goto(origin, { waitUntil: 'networkidle', timeout: 90000 });
   await page.waitForFunction(() => Boolean(window.__voyageQa), undefined, { timeout: 30000 });
@@ -78,7 +115,7 @@ try {
     return { top: rect.top, bottom: rect.bottom, height: rect.height, viewportHeight: innerHeight, activeMeshes: dock.scene.getActiveMeshes().length };
   });
   assert(preview.top > 0 && preview.bottom <= preview.viewportHeight && preview.height >= 160 && preview.activeMeshes > 0, JSON.stringify(preview));
-  check('dock model rendered inside visible bounded canvas', preview);
+  check('dock canvas is bounded and has render candidates (pixel verification follows)', preview);
   await shot('05-dock-1440');
   const locales = await page.locator('.start-menu .menu-language option').evaluateAll(options => options.map(option => option.value));
   assert.equal(locales.length, 7);

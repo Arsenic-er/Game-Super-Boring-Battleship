@@ -28,7 +28,21 @@ describe("pixel ship materials", () => {
       + palette.dark.diffuseColor.g + palette.dark.diffuseColor.b;
     expect(structureLuminance).toBeGreaterThan(darkLuminance);
     expect(darkLuminance).toBeGreaterThan(.4);
+    expect(Math.max(...palette.structure.diffuseColor.asArray())).toBeLessThan(.7);
+    expect(Math.max(...palette.structure.specularColor.asArray())).toBeLessThan(.06);
 
+    scene.dispose();
+    engine.dispose();
+  });
+
+  it("keeps neutral naval steel for both teams with only accent markings different", () => {
+    const engine = new NullEngine();
+    const scene = new Scene(engine);
+    const ally = createPixelShipPalette(scene, "ally", "ally");
+    const enemy = createPixelShipPalette(scene, "enemy", "enemy");
+    expect(ally.hull.diffuseColor.equals(enemy.hull.diffuseColor)).toBe(true);
+    expect(ally.structure.diffuseColor.equals(enemy.structure.diffuseColor)).toBe(true);
+    expect(ally.accent.diffuseColor.equals(enemy.accent.diffuseColor)).toBe(false);
     scene.dispose();
     engine.dispose();
   });

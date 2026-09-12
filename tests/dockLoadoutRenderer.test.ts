@@ -44,13 +44,24 @@ describe("atomic dock actual and independent inspection roots", () => {
     const { renderer, scene } = fixture();
     expect(await renderer.setLoadout(plan())).toEqual({ status: "applied" });
     const current = renderer.current!;
-    expect(current.hull.bodyMeshes.length).toBeGreaterThan(20);
+      expect(new Set(current.hull.bodyMeshes)).toEqual(new Set(current.hull.root.getChildMeshes(false)));
+      expect(current.hull.bodyMeshes.length).toBeGreaterThan(0);
+      for (const mesh of current.hull.bodyMeshes) {
+        expect(mesh.getTotalVertices()).toBeGreaterThan(0);
+        expect(mesh.getTotalIndices()).toBeGreaterThan(0);
+        expect(mesh.getVerticesData("position")!.every(Number.isFinite)).toBe(true);
+      }
+      expect(current.hull.rudder.getChildMeshes()).not.toHaveLength(0);
+      expect(current.hull.propellers).toHaveLength(2);
+      for (const propeller of current.hull.propellers) expect(propeller.getChildMeshes()).not.toHaveLength(0);
     expect(current.equipment.turrets).toHaveLength(2);
     expect(current.equipment.turrets.map(({ metadata }) => metadata.slotIndex)).toEqual([0, 2]);
     expect(current.equipment.torpedoLaunchers).toHaveLength(1);
     expect(current.equipment.torpedoLaunchers[0]?.metadata.slotIndex).toBe(1);
     const launcher = current.equipment.torpedoLaunchers[0]!;
-    expect({ x: launcher.position.x, y: launcher.position.y, z: launcher.position.z }).toEqual(current.plan.torpedo[0]?.position);
+    const frame = launcher.parent as TransformNode;
+    expect({ x: frame.position.x, y: frame.position.y, z: frame.position.z }).toEqual(current.plan.torpedo[0]?.position);
+    expect(launcher.position.asArray()).toEqual([0, 0, 0]);
     expect(scene.meshes.every((mesh) => Object.values(mesh.position).filter((value) => typeof value === "number").every(Number.isFinite))).toBe(true);
   });
 

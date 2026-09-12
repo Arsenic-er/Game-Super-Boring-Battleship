@@ -1,6 +1,6 @@
 # Conversation Summary and Product Memory
 
-Last condensed: 2026-08-22
+Last condensed: 2026-09-12
 
 Project owner: **Arsenic-er / koko**
 
@@ -35,7 +35,10 @@ sub-agent transcripts, temporary patches, credentials, or repeated status update
 - Development source of truth is the Linux server, not the Windows staging folder.
 - Server project: `/home/ubuntu/battleship` on `ubuntu@150.65.181.188`.
 - Server asset archive: `/home/ubuntu/battleship-assets`.
-- Main development branch: `main`; obsolete historical branches were removed earlier.
+- Development integration branch is `main`; current unmerged model work is in
+  `codex/v072-historical-models`, worktree `~/battleship/.worktrees/v071-first-voyage`.
+- The owner explicitly approved upload/testing through `ubuntu@100.97.101.5`,
+  the confirmed Tailscale address of the same GPU-273312 host.
 - Validation is performed through tests and packaged desktop builds. User-facing
   handoff contains no web endpoint, forwarding command, or server login command.
 - Every completed development batch must copy one verified complete Windows game
@@ -48,6 +51,15 @@ sub-agent transcripts, temporary patches, credentials, or repeated status update
   dependencies, generated build directories, EXEs, release ZIPs, or transient tunnel files.
 
 ## 3. Combat and handling decisions
+
+### Latest visual direction
+
+- Reconstruct different hulls, components and aircraft from historical references,
+  rather than merely changing colour or scaling the same block model.
+- Preserve lightweight original procedural geometry, modular loadouts, existing
+  saves and gameplay values. Approximate/interpretive details must be labelled.
+- Check real dockyard and battle screenshots as well as unit tests; an active mesh
+  count alone is not evidence that the player can see a complete model.
 
 ### Ships and movement
 

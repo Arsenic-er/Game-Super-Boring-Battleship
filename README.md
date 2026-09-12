@@ -41,7 +41,7 @@ This is an early prototype rather than a finished commercial game. Visuals, bala
 - A separately damageable torpedo-launcher module; partial damage slows traverse and reloading, while destruction halts both.
 - A two-charge destroyer Smoke Generator that lays persistent puffs, breaks optical contact in both directions and exposes ships that fire main guns from smoke.
 - A two-charge Hydroacoustic Search consumable that detects ships through smoke within 2 km and extends enemy-torpedo detection to 1.4 km.
-- A shared multi-station 112 m Destroyer V2 used by both combat and dockyard views, with a stepped bridge, twin raked funnels, tripod mast, breakwater, lifeboats and standard component hardpoints.
+- Fifteen original, historically informed ship silhouettes, distinct modular equipment and six WWII aircraft models, shared by battle and dockyard views. These are lightweight reconstructions, not exact shipyard CAD or commercial-game assets. [Model notes](docs/historical-models-ships.md).
 - Hull compartments, module damage, fire, flooding, crew-dependent repair and recoverable health.
 - Central objective A with capture progress, contested superiority, team scores and score victory.
 - Non-omniscient AI optics with sampled noisy contacts, acquisition, target loss, search and reacquisition; firing requires a live track.
@@ -77,7 +77,7 @@ This is an early prototype rather than a finished commercial game. Visuals, bala
 ## Windows quick start
 
 1. Open the repository's **Releases** page.
-2. Download `battleship-0.7.1-windows-x64.zip`.
+2. Download `battleship-0.7.2-windows-x64.zip`.
 3. Extract the whole ZIP into one directory, then run `Super Boring Battleship Game.exe` inside it. Do not move the EXE away from its `resources` directory or DLL files.
 
 The build targets 64-bit Windows 10/11. Windows SmartScreen may warn about an unsigned indie build; only run a file downloaded from this repository's official Release page.
@@ -149,7 +149,7 @@ Third-party libraries and the Fusion Pixel Font remain under their respective li
 - 两次使用机会的水听搜索：在 2 公里内穿透烟幕发现舰船，并把敌方鱼雷探测距离扩展到 1.4 公里。
 - 轻巡洋舰与战列舰的自动副炮：每个已安装的历史炮座分别计算射界、转动、射程、散布和装填，火控连续两次确认目标后才会开火。
 - 可玩的驱逐舰反潜海试：装备深弹后按 `G` 从舰艉投放，深弹受水阻下沉并在 18 米定深爆炸，只按三维距离伤害水下训练靶。
-- 战斗与船坞共用同一套 112 米“驱逐舰 V2”：包含阶梯舰桥、双后倾烟囱、三脚桅、挡浪板、救生艇和标准化组件挂点。
+- 战斗与船坞共用 15 种按历史特征重构的舰体、差异化模块装备及 6 种二战飞机模型。这些是原创轻量近似模型，不是造船图纸级复刻，也不含商业游戏提取素材。[模型说明](docs/historical-models-ships.md)。
 - 船体分区、组件损伤、起火、进水、有限人力损管与可恢复血量。
 - 舰船实体碰撞，以及依据碰撞部位计算的不同伤害。
 - 小地图、大地图、专用瞄准镜、开发者调试面板与灵敏度设置。
@@ -181,7 +181,7 @@ Third-party libraries and the Fusion Pixel Font remain under their respective li
 ## Windows 使用方法
 
 1. 打开仓库的 **Releases** 页面。
-2. 下载 `battleship-0.7.1-windows-x64.zip`。
+2. 下载 `battleship-0.7.2-windows-x64.zip`。
 3. 把整个 ZIP 解压到同一个文件夹，再运行其中的 `Super Boring Battleship Game.exe`。不要把 EXE 单独移动出 `resources` 目录和 DLL 所在的游戏文件夹。
 
 目标系统为 64 位 Windows 10/11。由于目前是独立开发测试版，Windows SmartScreen 可能显示未知发布者提示；请只运行从本仓库官方 Release 下载的文件。

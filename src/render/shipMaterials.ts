@@ -47,7 +47,7 @@ function texturedMaterial(
   const material = new StandardMaterial(name, scene);
   material.diffuseTexture = atlasRegion(scene, `${name}-atlas`, region[0], region[1]);
   material.diffuseColor = tint;
-  material.specularColor = new Color3(0.12, 0.15, 0.16);
+  material.specularColor = new Color3(0.035, 0.04, 0.045);
   material.specularPower = 28;
   material.alpha = 1;
   material.transparencyMode = Material.MATERIAL_OPAQUE;
@@ -65,8 +65,8 @@ function flatFittingMaterial(
   material.diffuseColor = tint;
   // A faint emissive lift keeps unlit bridge faces legible without dynamic
   // lights, shadows, PBR maps, or another texture fetch.
-  material.emissiveColor = tint.scale(.075);
-  material.specularColor = new Color3(.08, .1, .1);
+  material.emissiveColor = tint.scale(.035);
+  material.specularColor = new Color3(.035, .04, .045);
   material.specularPower = 18;
   material.alpha = 1;
   material.transparencyMode = Material.MATERIAL_OPAQUE;
@@ -81,21 +81,19 @@ export function createPixelShipPalette(
   name: string,
   side: "ally" | "enemy" | "target" = "ally",
 ): PixelShipPalette {
-  const hullTint = side === "ally"
-    ? new Color3(0.92, 0.97, 0.98)
-    : side === "target"
-      ? new Color3(0.96, 0.86, 0.56)
-      : new Color3(0.94, 0.75, 0.7);
+  // Painted steel stays neutral. Team identity belongs to markers and small
+  // fittings, not an implausible red/yellow colour cast over the whole hull.
+  const hullTint = new Color3(.76, .79, .79);
   const accentTint = side === "ally"
-    ? new Color3(0.78, 0.9, 0.88)
+    ? new Color3(.38, .51, .51)
     : side === "target"
-      ? new Color3(0.95, 0.74, 0.3)
-      : new Color3(0.94, 0.62, 0.52);
+      ? new Color3(.63, .49, .26)
+      : new Color3(.57, .36, .30);
   return {
     hull: texturedMaterial(scene, `${name}-hull`, [0, 0], hullTint),
-    deck: texturedMaterial(scene, `${name}-deck`, [1, 0], new Color3(0.9, 0.89, 0.8)),
-    structure: flatFittingMaterial(scene, `${name}-structure`, hullTint.scale(.94)),
-    dark: flatFittingMaterial(scene, `${name}-fittings`, new Color3(.28, .33, .33)),
+    deck: texturedMaterial(scene, `${name}-deck`, [1, 0], new Color3(.75, .72, .63)),
+    structure: flatFittingMaterial(scene, `${name}-structure`, new Color3(.48, .54, .56)),
+    dark: flatFittingMaterial(scene, `${name}-fittings`, new Color3(.20, .25, .28)),
     accent: flatFittingMaterial(scene, `${name}-accent`, accentTint.scale(.94)),
   };
 }

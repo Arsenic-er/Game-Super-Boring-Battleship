@@ -1,6 +1,6 @@
 # Condensed Development Status
 
-Last updated: 2026-08-26
+Last updated: 2026-09-12
 
 This is the current operational handoff. Product decisions are preserved in
 `CONVERSATION_SUMMARY.md`; milestone history is preserved in `DEVELOPMENT_LOG.md`.
@@ -9,10 +9,11 @@ credentials, caches or generated builds in the repositories.
 
 ## Source of truth
 
-- Server: `ubuntu@150.65.181.188`
+- Server: `ubuntu@100.97.101.5` (Tailscale on the same GPU-273312 host; public IPv4 remains 150.65.181.188)
 - Game project: `/home/ubuntu/battleship`
 - Asset project: `/home/ubuntu/battleship-assets`
-- Branch: `main`
+- Active worktree: `/home/ubuntu/battleship/.worktrees/v071-first-voyage`
+- Active branch: `codex/v072-historical-models`, based on `6f1fbb2`
 - Game repository: `Arsenic-er/Game-Super-Boring-Battleship`
 - Asset repository: `Arsenic-er/Game-Super-Boring-Battleship-Assets`
 - Stack: TypeScript 7, Babylon.js 9, Vite 8, Vitest 4, Electron
@@ -32,7 +33,36 @@ testing, server access and short-lived transfer staging.
 - Single-player battles use a 20-minute hard limit and are tuned toward a 15–20 minute normal duration.
 - Windows directory packages are built on the server; only the latest verified `battleship-latest-windows-x64` directory is copied to the local PC.
 
-## Current archived baseline
+## Current model rebuild — 0.7.2
+
+- Fifteen class-specific original procedural hulls, six WWII aircraft silhouettes,
+  and differentiated external/internal equipment models. See the three
+  `historical-models-*.md` documents for references and approximation limits.
+- Exterior weapons use metre-space geometry below non-rotating inverse-scale
+  mount frames, so traversing equipment is not stretched by hull dimensions.
+- Main-gun visual elevation and projectile origins share the same geometry
+  helpers, including mixed/sparse slots and individual barrel offsets.
+- Destroyer hardpoints remain in their physical slots when mounts are empty.
+  Agano has two forward turrets and one aft turret.
+- Hull/deck/structure paint is neutral rather than whole-ship team colouring;
+  small accents preserve team identity.
+- Installed equipment is visible in the dockyard; internal machinery appears
+  only in the selected inspection view, not as objects on the combat deck.
+- No imported commercial-game mesh or newly downloaded third-party binary
+  asset is included. These are lightweight approximate reconstructions, not
+  exact museum-grade replicas or complete refit-year studies.
+- Runtime/gallery/desktop acceptance and the local delivery state are recorded
+  in `acceptance/0.7.2-historical-models.md`.
+- The verified 0.7.2 Windows folder has replaced the old local release. Regression
+  results: 794 application tests passed, five skipped, plus eight transport tests.
+  Native EXE dock/sea-trials screenshots were inspected by two reviewers. All 117
+  local files match the server manifest. Real saves remain untouched.
+- Remaining visual limits: approximate small fittings and auxiliary supports;
+  some secondary housing silhouettes are still similar. A later localization
+  pass should address the existing mixed-language runtime HUD labels. Real
+  two-PC LAN validation is still separate from the desktop preload checks.
+
+## Earlier archived baseline (2026-08-26)
 
 - Version: `0.7.0`
 - Game commit before this documentation update: `96fcd51`
@@ -77,11 +107,11 @@ testing, server access and short-lived transfer staging.
 - Procedural ship geometry is still visibly simplified. A CC BY 4.0 Fletcher source has passed
   the licence/provenance review, but its official source archive requires an authenticated
   Sketchfab download and therefore has not been imported or redistributed.
-- Dockyard preview does not yet show the complete installed external-quality loadout.
+- Original historical models remain low-poly; rigging and small fittings are selectively simplified.
 - Terrain-cover behaviour, shared spotting delay and multi-objective fleet tactics need depth.
 - Kagero standard equipment is weak against Fletcher in the current balance snapshot.
 - Heavy-ship and mixed-fleet matrices need larger paired samples to separate seed/team/spawn bias.
-- The directory-format Windows 0.7.0 package still requires a real two-computer LAN smoke run.
+- A real two-computer/home-router LAN smoke run is still needed; loopback tests do not replace it.
 
 ## Resume priorities
 
@@ -93,7 +123,7 @@ testing, server access and short-lived transfer staging.
 4. Run at least 100 paired seeds per important matchup and rebase Kagero/Fletcher plus
    heavy-ship hit/timeout behaviour.
 5. Calibrate mixed-fleet missions toward a 15–20 minute normal duration and at least 70% non-timeout endings.
-6. Show the complete installed loadout in dockyard preview.
+6. Expand visual regression to all saved mixed/sparse loadouts and additional refit-year variants.
 7. Add terrain-cover use, delayed shared spotting and two-to-three objective scenarios.
 
 ## Delivery gate

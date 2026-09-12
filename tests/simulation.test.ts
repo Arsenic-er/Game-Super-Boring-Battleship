@@ -191,7 +191,8 @@ describe("deterministic battle simulation", () => {
       (state.shots[0]?.position.x ?? 0) - (state.shots[1]?.position.x ?? 0),
       (state.shots[0]?.position.z ?? 0) - (state.shots[1]?.position.z ?? 0),
     )).toBeCloseTo(
-      MAIN_GUNS["mk2-twin"].visual.barrelSpacing * SHIP_CLASSES.fletcher.renderScale.x,
+      // The unrotated mount frame cancels hull scale: spacing is declared in metres.
+      MAIN_GUNS["mk2-twin"].visual.barrelSpacing,
       5,
     );
     expect(player.reloadRemaining).toBeCloseTo(MAIN_GUNS["mk2-twin"].reloadSeconds, 1);

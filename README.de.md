@@ -8,11 +8,13 @@
 
 ## Über das Spiel
 
-Version 0.7.1 bietet Einzelgefechte gegen die KI, gemeinsame KI-Gefechte für zwei Spieler und zeitlich unbegrenzte Seeerprobungen; ein normales Gefecht ist auf 15–20 Minuten ausgelegt. Kommandiere Zerstörer, leichte Kreuzer und Schlachtschiffe, organisiere die Schadensabwehr und setze Geschütze, Torpedos, Wasserbomben sowie Trägerflugzeuge ein. Das Projekt ist für durchschnittliche PCs ausgelegt und nutzt TypeScript, Babylon.js, Vite und Electron.
+Version 0.7.2 bietet Einzelgefechte gegen die KI, gemeinsame KI-Gefechte für zwei Spieler und zeitlich unbegrenzte Seeerprobungen; ein normales Gefecht ist auf 15–20 Minuten ausgelegt. Kommandiere Zerstörer, leichte Kreuzer und Schlachtschiffe, organisiere die Schadensabwehr und setze Geschütze, Torpedos, Wasserbomben sowie Trägerflugzeuge ein. Das Projekt ist für durchschnittliche PCs ausgelegt und nutzt TypeScript, Babylon.js, Vite und Electron.
 
 Das Spiel ist noch ein Prototyp in Entwicklung. Grafik, Balance, Schiffsmodelle und Fortschrittssystem werden weiter verbessert.
 
 ## Aktuelle Funktionen
+
+- Eigene, historisch orientierte Low-Poly-Modelle für 15 Schiffsklassen, unterschiedliche Waffen und interne Anlagen sowie sechs Flugzeugtypen des Zweiten Weltkriegs. Die freie Ausrüstung bleibt erhalten; es sind keine maßgetreuen Werftplan-Rekonstruktionen. [Modellhinweise](docs/historical-models-ships.md).
 
 - LAN-Koop für zwei Spieler mit Raumsuche, manueller Eingabe der IPv4-Adresse als Ausweichverbindung, Auswahl gespeicherter Ausrüstungen und autoritativer Host-Simulation gegen die KI.
 - Historisch angelehnte Maschinenbefehle, langsame Ruderverstellung, Fahrtverlust in Kurven und Modulschäden.
