@@ -48,11 +48,11 @@ import {
   applyPixelSkyWeather,
   applyWaterAtmosphere,
   createDeepWaterMaterial,
-  createPixelOceanSurface,
   createPixelSkyMaterial,
   CLEAR_DAY_RENDER,
   WATER_RENDER,
 } from "./environmentMaterials";
+import { OceanWater } from "./oceanWater";
 import { createAtollTerrain, type AtollTerrainVisual } from "./atollTerrain";
 import { createPixelVfxMaterial } from "./vfxMaterials";
 import { normalizeWeatherId, weatherPreset, type WeatherId } from "../sim/weather";
@@ -194,15 +194,12 @@ export class GameView implements AimProvider {
   private readonly sharedEffectMaterials = new Map<string, StandardMaterial>();
   private readonly sharedVfxMaterials = new Map<PixelVfxKind, StandardMaterial>();
   private torpedoWakeMaterial?: StandardMaterial;
-  private readonly oceanTexture: Texture;
-  private readonly oceanBumpTexture: Texture;
-  private readonly waveLayers: Mesh[];
+  private readonly oceanWater: OceanWater;
   private readonly terrain: AtollTerrainVisual;
   private readonly objectiveRing: Mesh;
   private readonly objectiveMaterial: StandardMaterial;
   private aimArc?: LinesMesh;
   private barrelArc?: LinesMesh;
-  private readonly waveMaterials: readonly StandardMaterial[];
   private readonly skyMaterial: StandardMaterial;
   private readonly torpedoSpreadLines: LinesMesh[] = [];
   private readonly torpedoLauncherLines: LinesMesh[] = [];
@@ -216,7 +213,6 @@ export class GameView implements AimProvider {
   private underwaterView = false;
   private quality: "low" | "medium" = "low";
   private currentWeatherId: WeatherId = "clear";
-  private weatherScrollMultiplier = 1;
 
   constructor(private readonly canvas: HTMLCanvasElement) {
     this.engine = new Engine(canvas, false, {
@@ -242,15 +238,7 @@ export class GameView implements AimProvider {
     this.sunLight.diffuse = new Color3(1, 0.95, 0.82);
     this.sunLight.specular = new Color3(1, 0.92, 0.74);
 
-    const ocean = CreateGround("ocean", { width: 30_000, height: 30_000, subdivisions: 2 }, this.scene);
-    const oceanSurface = createPixelOceanSurface(this.scene);
-    this.oceanTexture = oceanSurface.texture;
-    this.oceanBumpTexture = oceanSurface.bumpTexture;
-    ocean.material = oceanSurface.material;
-    ocean.position.y = WATER_RENDER.surfaceY;
-    ocean.isPickable = false;
-    ocean.alphaIndex = 0;
-    ocean.freezeWorldMatrix();
+    this.oceanWater = new OceanWater(this.scene);
 
     const deepWater = CreateGround("deep-water", {
       width: 30_000,
@@ -277,26 +265,6 @@ export class GameView implements AimProvider {
     this.objectiveMaterial.disableLighting = true;
     this.objectiveRing.material = this.objectiveMaterial;
 
-    const nearWaveMaterial = this.material(
-      "near-wave-material",
-      new Color3(0.45, 0.76, 0.83),
-      new Color3(0.05, 0.16, 0.18),
-    );
-    nearWaveMaterial.alpha = 0.36;
-    nearWaveMaterial.disableLighting = true;
-    const farWaveMaterial = this.material(
-      "far-wave-material",
-      new Color3(0.25, 0.58, 0.7),
-      Color3.Black(),
-    );
-    farWaveMaterial.alpha = 0.26;
-    farWaveMaterial.disableLighting = true;
-    this.waveMaterials = [nearWaveMaterial, farWaveMaterial];
-    this.waveLayers = [
-      this.createWaveLayer("near-waves", 54, 1_500, nearWaveMaterial, 19),
-      this.createWaveLayer("far-waves", 38, 2_100, farWaveMaterial, 43),
-    ];
-
     const sky = CreateSphere("sky-dome", { diameter: 28_000, segments: 8 }, this.scene);
     this.skyMaterial = createPixelSkyMaterial(this.scene);
     sky.material = this.skyMaterial;
@@ -315,6 +283,9 @@ export class GameView implements AimProvider {
     sunDisk.material = sunMaterial;
     sunDisk.infiniteDistance = true;
     sunDisk.isPickable = false;
+    // Directional specular provides the sun path; reflecting our oversized sky
+    // decoration as well would create a second solid yellow disk on the water.
+    this.oceanWater.setEnvironment([sky], this.terrain.meshes, deepWater);
 
     const initialCamera = observationCameraPlan(112);
     this.camera = new ArcRotateCamera(
@@ -475,39 +446,6 @@ export class GameView implements AimProvider {
       return;
     }
     effect.mesh.dispose();
-  }
-
-  private createWaveLayer(
-    name: string,
-    count: number,
-    area: number,
-    material: StandardMaterial,
-    seed: number,
-  ): Mesh {
-    const strips: Mesh[] = [];
-    for (let index = 0; index < count; index += 1) {
-      const width = 16 + (index * 29 + seed) % 58;
-      const strip = CreateBox(`${name}-strip-${index}`, {
-        width,
-        height: 0.035,
-        depth: 0.7 + index % 4 * 0.32,
-      }, this.scene);
-      strip.position.set(
-        ((index * 211 + seed * 17) % area) - area / 2,
-        -0.72 + index % 3 * 0.015,
-        ((index * 137 + seed * 31) % area) - area / 2,
-      );
-      strip.rotation.y = ((index * 17 + seed) % 19 - 9) * 0.012;
-      strip.material = material;
-      strips.push(strip);
-    }
-    const merged = Mesh.MergeMeshes(strips, true, true);
-    if (!merged) throw new Error(`Unable to build wave layer ${name}`);
-    merged.name = name;
-    merged.material = material;
-    merged.isPickable = false;
-    merged.alphaIndex = 2;
-    return merged;
   }
 
   private createShip(ship: ShipState): ShipVisual {
@@ -753,6 +691,7 @@ export class GameView implements AimProvider {
   setQuality(quality: "low" | "medium"): void {
     this.quality = quality;
     this.engine.setHardwareScalingLevel(quality === "low" ? 1.35 : 1);
+    this.oceanWater.setQuality(quality);
   }
 
   setAimSensitivity(value: number): void {
@@ -852,9 +791,9 @@ export class GameView implements AimProvider {
         visual.bodyVisibility = bodyVisibility;
       }
       const phase = ship.team === "enemy" ? 1.8 : 0;
-      const longWave = Math.sin(state.time * 0.53 + phase);
-      const shortWave = Math.sin(state.time * 0.91 + phase * 1.7);
-      const seaMotion = ship.hull > 0 ? longWave * 0.7 + shortWave * 0.3 : 0;
+      const seaMotion = ship.hull > 0
+        ? (this.oceanWater.heightAt(renderPosition.x, renderPosition.z) - WATER_RENDER.surfaceY) * .65
+        : 0;
       const settling = ship.flooding * 0.022 + (1 - ship.hull / ship.maxHull) * 1.2;
       visual.root.position.set(
         renderPosition.x, ship.hull > 0 ? seaMotion * .2 - settling : -4, renderPosition.z,
@@ -903,6 +842,10 @@ export class GameView implements AimProvider {
       }
       const wakeStrength = Math.min(1, Math.abs(ship.speedKnots) / 18);
       for (const [index, wake] of visual.wakes.entries()) {
+        const wakeX = renderPosition.x + Math.sin(renderHeading) * -65;
+        const wakeZ = renderPosition.z + Math.cos(renderHeading) * -65;
+        wake.position.y = (this.oceanWater.heightAt(wakeX, wakeZ) + .08
+          - visual.root.position.y) / visual.root.scaling.y;
         wake.visibility = ship.hull > 0 ? wakeStrength * 0.75 : 0;
         wake.scaling.y = 0.35 + wakeStrength * 0.85;
         wake.scaling.x = 0.72 + wakeStrength * 0.32
@@ -1189,7 +1132,8 @@ export class GameView implements AimProvider {
         for (const [index, wake] of trail.wakePlanes.entries()) {
           const offset = 10 + index * 22;
           wake.position.copyFrom(nextPoint.subtract(direction.scale(offset)));
-          wake.position.y = WATER_RENDER.surfaceY + 0.045 + index * 0.008;
+          wake.position.y = this.oceanWater.heightAt(wake.position.x, wake.position.z)
+            + .09 + index * .008;
           wake.rotation.y = bearing;
           wake.visibility = wakeVisibility * (index === 0 ? 0.9 : 0.46);
           const pulse = 1 + Math.sin(projectile.age * 8 + index * 2.4) * 0.05;
@@ -1859,11 +1803,7 @@ export class GameView implements AimProvider {
     serverFilteredProjectiles = false,
   ): void {
     this.syncWeather(state.weatherId);
-    const steppedTime = Math.floor(state.time * 6) / 6;
-    this.oceanTexture.uOffset = steppedTime * 0.0018 * this.weatherScrollMultiplier;
-    this.oceanTexture.vOffset = steppedTime * -0.00115 * this.weatherScrollMultiplier;
-    this.oceanBumpTexture.uOffset = steppedTime * 0.0021 * this.weatherScrollMultiplier;
-    this.oceanBumpTexture.vOffset = steppedTime * -0.00135 * this.weatherScrollMultiplier;
+    this.oceanWater.update(state.time, this.camera.target);
     this.terrain.setEnabled(state.mapId === "atoll-prototype");
     const focusShip = state.ships.find(({ id }) => id === developerView?.focusEntityId);
     const controlledShip = state.ships.find(({ id }) => id === developerView?.controlledShipId);
@@ -1891,14 +1831,6 @@ export class GameView implements AimProvider {
     this.objectiveMaterial.diffuseColor.copyFrom(objectiveColor);
     this.objectiveMaterial.emissiveColor.copyFrom(objectiveColor.scale(0.36));
     const focusAir = state.airSquadrons.find(({ id }) => id === developerView?.focusEntityId);
-    const waveAnchor = focusAir?.position ?? cameraShip?.position;
-    if (waveAnchor) {
-      for (const [index, waves] of this.waveLayers.entries()) {
-        const drift = state.time * (index === 0 ? 2.4 : -1.35);
-        waves.position.x = waveAnchor.x + Math.sin(drift * 0.021 + index) * 32;
-        waves.position.z = waveAnchor.z + Math.cos(drift * 0.017 + index) * 28 + drift;
-      }
-    }
     if (focusAir && !developerView?.controlledShipId) {
       if (cameraShip) {
         this.syncAimArc(cameraShip, "aircraft");
@@ -1946,6 +1878,18 @@ export class GameView implements AimProvider {
       this.camera.fov = cameraTransitionValue(this.camera.fov, targetFov, false);
       this.enteringAiming = false;
     }
+    this.oceanWater.syncRenderLists(
+      () => [...this.ships.values()].filter(visual => visual.root.isEnabled()
+        && visual.bodyVisibility >= .95).map(visual => ({
+          x: visual.root.position.x, z: visual.root.position.z, meshes: visual.bodyMeshes,
+        })),
+      () => [
+        ...[...this.underwaterTargetMeshes.values()].flatMap(root => root.getChildMeshes()),
+        ...this.depthChargeMeshes.values(),
+        ...[...this.projectileMeshes.values()].filter(visual => visual.root.position.y < WATER_RENDER.surfaceY)
+          .flatMap(visual => visual.root.getChildMeshes()),
+      ],
+    );
     this.syncWaterAtmosphere();
     this.updateEffects(dt);
   }
@@ -1955,10 +1899,7 @@ export class GameView implements AimProvider {
     if (weatherId === this.currentWeatherId) return;
     this.currentWeatherId = applyPixelSkyWeather(this.skyMaterial, this.scene, weatherId);
     const preset = weatherPreset(weatherId);
-    this.weatherScrollMultiplier = preset.oceanScrollMultiplier;
-    this.oceanBumpTexture.level = preset.oceanBumpLevel;
-    this.waveMaterials[0]!.alpha = 0.36 * preset.waveVisibilityMultiplier;
-    this.waveMaterials[1]!.alpha = 0.26 * preset.waveVisibilityMultiplier;
+    this.oceanWater.setWeather(weatherId);
     const sunDisk = this.scene.getMeshByName("sky-sun");
     if (sunDisk) sunDisk.visibility = preset.sunDiskVisibility;
     applyWaterAtmosphere(this.scene, this.underwaterView, weatherId);
@@ -1976,9 +1917,8 @@ export class GameView implements AimProvider {
   }
 
   private syncWaterAtmosphere(): void {
-    const transitionY = this.underwaterView
-      ? WATER_RENDER.surfaceY + 0.15
-      : WATER_RENDER.surfaceY - 0.15;
+    const surfaceY = this.oceanWater.heightAt(this.camera.globalPosition.x, this.camera.globalPosition.z);
+    const transitionY = surfaceY + (this.underwaterView ? .15 : -.15);
     const underwater = this.camera.globalPosition.y < transitionY;
     if (underwater === this.underwaterView) return;
     this.underwaterView = underwater;

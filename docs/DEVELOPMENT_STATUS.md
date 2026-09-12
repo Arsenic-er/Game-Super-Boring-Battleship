@@ -33,7 +33,23 @@ testing, server access and short-lived transfer staging.
 - Single-player battles use a 20-minute hard limit and are tuned toward a 15–20 minute normal duration.
 - Windows directory packages are built on the server; only the latest verified `battleship-latest-windows-x64` directory is copied to the local PC.
 
-## Current input fixes — 0.7.3
+## Current water release — 0.7.4
+
+- Based on `79d9bab`, preserving the 0.7.3 input and 0.7.2 historical-model work.
+- Integrated official Babylon WaterMaterial 9.16.1 with original generated
+  normals, world-space waves, reflection/refraction, submerged shore and
+  wave-following wakes. Low/medium use bounded rendering costs.
+- See `acceptance/0.7.4-water.md` for 823 passing unit tests, 11 render cases,
+  real torpedo motion and ten native Windows input/render checks on Intel Iris Xe.
+- Fixed the capture-recovery button's inherited hover/press transform, which
+  previously moved its hit area between mouse-down and mouse-up.
+- The one local Windows directory is now 0.7.4: 117 files / 476,663,676 bytes,
+  individually hash-verified. Real AppData saves preserved; temporary QA services
+  closed. No push or new external artwork is part of this batch.
+- Next visual work can refine foam, deeper-water absorption and ship wakes;
+  this release is not a full submarine renderer or an FFT ocean.
+
+## Previous input fixes — 0.7.3
 
 - Based on `d0dba77` in the same active server worktree and branch.
 - Actual Pointer Lock is required for combat mouse-look; trusted clicks restore

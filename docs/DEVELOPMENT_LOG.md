@@ -3,10 +3,34 @@
 Last updated: 2026-09-13
 
 Historical archive baseline: `96fcd51` (`0.6.12`).
-Historical model rebuild base: `6f1fbb2`; input-fix base: `d0dba77`; active version `0.7.3`.
+Historical model rebuild base: `6f1fbb2`; input-fix base: `d0dba77`; active version `0.7.4`.
 
 This is a milestone log derived from the Git history and the long development
 conversation. It is intentionally more compact than a commit-by-commit transcript.
+
+## 2026-09-13 — Official Babylon WaterMaterial integration
+
+- User selected Babylon's official WaterMaterial after comparing four references.
+- Pinned materials to the existing 9.16.1 engine; replaced scrolling RGB ocean
+  and thin box strips with refractive/reflective water and original seamless normals.
+- Camera-centred graded mesh keeps both normal layers and displacement in world
+  coordinates; simulation-time binding works at fixed dt and pauses with the game.
+- Low/medium use bounded offscreen resolution, refresh rate and nearby ship lists.
+  Sky, terrain and approved underwater entities have explicit render lists;
+  ocean, hidden contacts, smoke and UI effects cannot recursively reflect themselves.
+- Shallow terrain is an actual submerged seabed, not a translucent surface overlay.
+  Ship/torpedo wakes and underwater transitions sample the rendered wave height.
+- Full volumetric depth absorption and breaking-wave foam are not provided by the
+  selected official material. Do not describe this as a finished submarine renderer.
+- No simulation balance, saved-game format, LAN protocol or control bindings changed.
+  Validation and delivery evidence is recorded in `acceptance/0.7.4-water.md`.
+- Native acceptance exposed a pre-existing CSS hover/press transform that moved
+  the capture-recovery button out from under its click. Its centred hit area is
+  now stable; the pointer-lock controller did not need changes.
+- 823 unit tests passed, five skipped; 11 water scenes plus an actual moving
+  torpedo-wake check passed. Ten native Windows checks passed on Intel Iris Xe.
+  The final 117-file directory was hash-verified and replaced local 0.7.3 with
+  0.7.4. Real saves were preserved and all temporary test services were closed.
 
 ## 2026-09-13 — Combat mouse capture and aircraft patrol dragging
 

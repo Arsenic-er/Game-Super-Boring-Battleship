@@ -832,6 +832,10 @@ button { font: inherit; }
   line-height: 1.4;
   pointer-events: auto;
 }
+/* Global button press effects must not remove this overlay's centred hit area. */
+.pointer-lock-recovery:hover,
+.pointer-lock-recovery:focus-visible,
+.pointer-lock-recovery:active { transform: translateX(-50%); }
 .pointer-lock-recovery:focus-visible { outline: 2px solid #c4e2a2; outline-offset: 3px; }
 .pointer-lock-recovery[hidden] { display: none; }
 .game-cursor.neon-arrow { transform: translate(-3px, -3px); }

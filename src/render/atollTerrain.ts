@@ -45,7 +45,7 @@ function terrainVertexColor(
   zone: Readonly<AtollTerrainZone>,
   height: number,
 ): [number, number, number, number] {
-  if (zone.kind === "shallow") return [.18, .72, .73, 1];
+  if (zone.kind === "shallow") return [.55, .65, .46, 1];
   if (zone.kind === "sandbar") {
     const ratio = Math.min(1, height / Math.max(1, zone.heightMeters ?? 1));
     return [.76 + ratio * .18, .66 + ratio * .17, .4 + ratio * .12, 1];
@@ -65,7 +65,7 @@ function createTerrainMesh(
   const segments = zone.kind === "mountain" ? 32 : 28;
   const rings = zone.kind === "mountain" ? 7 : zone.kind === "sandbar" ? 3 : 1;
   const centerHeight = zone.kind === "shallow"
-    ? -0.68 : terrainHeightAt(ATOLL_MAP.id, zone.x, zone.z);
+    ? -(zone.depthMeters ?? 9) : terrainHeightAt(ATOLL_MAP.id, zone.x, zone.z);
   const positions: number[] = [zone.x, centerHeight, zone.z];
   const indices: number[] = [];
   for (let ring = 1; ring <= rings; ring += 1) {
@@ -73,7 +73,8 @@ function createTerrainMesh(
     const contour = terrainContour(zone, segments, radial);
     for (const point of contour) {
       const height = zone.kind === "shallow"
-        ? -0.68 : Math.max(0.15, terrainHeightAt(ATOLL_MAP.id, point.x, point.z));
+        ? -(zone.depthMeters ?? 9) - radial * radial * 6
+        : ring === rings ? -2 : terrainHeightAt(ATOLL_MAP.id, point.x, point.z);
       positions.push(point.x, height, point.z);
     }
   }
@@ -113,10 +114,9 @@ export function createAtollTerrain(scene: Scene): AtollTerrainVisual {
   const root = new TransformNode("atoll-terrain-root", scene);
   const shallow = material(
     scene,
-    "atoll-shallow-water",
-    new Color3(0.16, 0.72, 0.72),
-    new Color3(0.02, 0.18, 0.18),
-    0.42,
+    "atoll-shallow-seabed",
+    Color3.White(),
+    new Color3(0.055, 0.075, 0.035),
   );
   const sand = material(
     scene,
