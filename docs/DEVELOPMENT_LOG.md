@@ -1,12 +1,28 @@
 # Condensed Development Log
 
-Last updated: 2026-09-12
+Last updated: 2026-09-13
 
 Historical archive baseline: `96fcd51` (`0.6.12`).
-Current model rebuild base: `6f1fbb2`; active version `0.7.2`.
+Historical model rebuild base: `6f1fbb2`; input-fix base: `d0dba77`; active version `0.7.3`.
 
 This is a milestone log derived from the Git history and the long development
 conversation. It is intentionally more compact than a commit-by-commit transcript.
+
+## 2026-09-13 — Combat mouse capture and aircraft patrol dragging
+
+- Removed unlocked client-coordinate mouse-look. Battle start/resume requests
+  actual Pointer Lock; loss/rejection has a localized trusted-click recovery.
+  Map, pause and developer menus keep a free pointer and do not drive the camera.
+- Patrol drags now use the two endpoints as a diameter. Preview and simulation
+  share midpoint, radius limits and map projection; normal selection stays a
+  rectangle. The C palette closes after choosing a mode without clearing it.
+- Added behavior, real-browser and real-game input regression coverage. Detailed
+  evidence and limitations are in `acceptance/0.7.3-input.md`.
+- Kept binary transport tests separate from the Vitest application test runner.
+- Final verification: 818 application tests passed, five skipped; eight transport
+  tests passed. Nine native Windows EXE input checks passed, and all 117 local
+  files match the server manifest. The one latest local release is now 0.7.3;
+  actual saves were untouched. No remote push was performed for this batch.
 
 ## 2026-09-12 — Historical model rebuild
 

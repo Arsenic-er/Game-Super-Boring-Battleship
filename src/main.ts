@@ -246,6 +246,7 @@ function applyControlSettings(next: GameSettings): void {
   Object.assign(settings, next);
   input.setSteeringSensitivity(next.steeringSensitivity);
   view.setAimSensitivity(next.aimSensitivity);
+  view.setPointerLockHint(translateGameText("点击返回游戏并锁定鼠标", next.locale));
   audio.configure(next.masterVolume, next.muted, next.uiSoundStyle);
   tacticalMap?.setLocale(next.locale);
   voyagePanel?.setLocale(next.locale);

@@ -1,6 +1,6 @@
 # Condensed Development Status
 
-Last updated: 2026-09-12
+Last updated: 2026-09-13
 
 This is the current operational handoff. Product decisions are preserved in
 `CONVERSATION_SUMMARY.md`; milestone history is preserved in `DEVELOPMENT_LOG.md`.
@@ -33,7 +33,21 @@ testing, server access and short-lived transfer staging.
 - Single-player battles use a 20-minute hard limit and are tuned toward a 15–20 minute normal duration.
 - Windows directory packages are built on the server; only the latest verified `battleship-latest-windows-x64` directory is copied to the local PC.
 
-## Current model rebuild — 0.7.2
+## Current input fixes — 0.7.3
+
+- Based on `d0dba77` in the same active server worktree and branch.
+- Actual Pointer Lock is required for combat mouse-look; trusted clicks restore
+  lost capture, while map/pause/developer UI releases it. No window-edge-limited
+  unlocked camera fallback remains. Recovery prompts support all seven locales.
+- Patrol drags use endpoint midpoint/half-distance geometry shared by preview
+  and submitted mission. Normal selections remain rectangular. Choosing a mode
+  closes the C palette without cancelling that mode or existing orders.
+- Acceptance and final Windows delivery state: `acceptance/0.7.3-input.md`.
+- The complete Windows 0.7.3 directory is delivered locally and replaces 0.7.2.
+  All 117 file hashes match the server. Nine native input checks passed; real
+  saves and user data were preserved. No persistent test service was requested.
+
+## Historical model rebuild — 0.7.2
 
 - Fifteen class-specific original procedural hulls, six WWII aircraft silhouettes,
   and differentiated external/internal equipment models. See the three

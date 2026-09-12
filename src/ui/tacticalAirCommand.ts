@@ -1,4 +1,14 @@
 import { AIR_NAVIGATION } from "../sim/airOperations";
+import { DEFAULT_GAME_LOCALE, type GameLocale } from "../i18n/gameLocale";
+import { tacticalAirText } from "../i18n/tacticalAirLocale";
+import {
+  clampPatrolRadius,
+  northUpMapToWorld,
+  patrolAreaFromDrag,
+  type NorthUpProjection,
+} from "./tacticalPatrolGeometry";
+export { clampPatrolRadius, northUpMapToWorld } from "./tacticalPatrolGeometry";
+export type { NorthUpProjection } from "./tacticalPatrolGeometry";
 import type {
   AircraftRole,
   AirCombatEvent,
@@ -19,14 +29,6 @@ export interface TacticalMapEntity {
   point: { x: number; y: number };
   world: Vec3;
   role?: AircraftRole;
-}
-
-export interface NorthUpProjection {
-  centerX: number;
-  centerY: number;
-  scale: number;
-  worldCenterX?: number;
-  worldCenterZ?: number;
 }
 
 export interface SelectionRect {
@@ -68,26 +70,6 @@ export function entityIdsInRect(
       point.x >= rect.left && point.x <= rect.right
       && point.y >= rect.top && point.y <= rect.bottom)
     .map(({ id }) => id);
-}
-
-export function northUpMapToWorld(
-  point: Readonly<{ x: number; y: number }>,
-  projection: Readonly<NorthUpProjection>,
-): Vec3 {
-  return {
-    x: (projection.worldCenterX ?? 0)
-      + (point.x - projection.centerX) / projection.scale,
-    y: 180,
-    z: (projection.worldCenterZ ?? 0)
-      + (projection.centerY - point.y) / projection.scale,
-  };
-}
-
-export function clampPatrolRadius(radius: number): number {
-  return Math.min(
-    AIR_NAVIGATION.patrolRadiusMaxMeters,
-    Math.max(AIR_NAVIGATION.patrolRadiusMinMeters, radius),
-  );
 }
 
 export function roleSupportsCommand(
@@ -169,6 +151,7 @@ export class TacticalAirCommandController {
     private readonly canvas: HTMLCanvasElement,
     layer: HTMLElement,
     private readonly requestDraw: () => void,
+    private locale: GameLocale = DEFAULT_GAME_LOCALE,
   ) {
     const marquee = layer.querySelector<HTMLElement>(".map-marquee");
     const patrolPreview = layer.querySelector<HTMLElement>(".map-patrol-preview");
@@ -194,6 +177,11 @@ export class TacticalAirCommandController {
     this.setStatus("左键框选己方机群 · 右键空地移动 · C打开指令菜单");
   }
 
+  setLocale(locale: GameLocale): void {
+    this.locale = locale;
+    if (this.mode === "patrolArea") this.setStatus(tacticalAirText(locale).patrolDragHint);
+  }
+
   sync(
     state: BattleState,
     entities: readonly TacticalMapEntity[],
@@ -216,6 +204,7 @@ export class TacticalAirCommandController {
     for (const id of this.pendingTargetIds) {
       if (!visibleIds.has(id)) this.pendingTargetIds.delete(id);
     }
+    this.updateGesturePreview();
   }
 
   handleAirEvents(events: readonly AirCombatEvent[]): void {
@@ -395,7 +384,7 @@ export class TacticalAirCommandController {
     if (gesture.kind === "select") this.finishSquadronSelection(gesture, distance);
     else if (gesture.kind === "right") this.finishDefaultRightClick(gesture);
     else if (gesture.kind === "targetRect") this.finishTargetSelection(gesture, distance);
-    else this.finishPatrol(gesture, distance);
+    else this.finishPatrol(gesture);
     this.cancelGesture();
   };
 
@@ -408,16 +397,16 @@ export class TacticalAirCommandController {
   private updateGesturePreview(): void {
     if (!this.gesture) return;
     if (this.gesture.kind === "patrol") {
-      const radius = Math.hypot(
-        this.gesture.current.x - this.gesture.start.x,
-        this.gesture.current.y - this.gesture.start.y,
-      );
-      this.patrolPreview.hidden = false;
+      const geometry = this.projection
+        ? patrolAreaFromDrag(this.gesture.start, this.gesture.current, this.projection)
+        : undefined;
+      this.patrolPreview.hidden = !geometry;
+      if (!geometry) return;
       Object.assign(this.patrolPreview.style, {
-        left: `${this.gesture.start.x - radius}px`,
-        top: `${this.gesture.start.y - radius}px`,
-        width: `${radius * 2}px`,
-        height: `${radius * 2}px`,
+        left: `${geometry.preview.left}px`,
+        top: `${geometry.preview.top}px`,
+        width: `${geometry.preview.width}px`,
+        height: `${geometry.preview.height}px`,
       });
       return;
     }
@@ -510,13 +499,10 @@ export class TacticalAirCommandController {
     this.issueTargetCommand(targetIds);
   }
 
-  private finishPatrol(gesture: PointerGesture, distancePixels: number): void {
-    const point = this.worldPoint(gesture.start);
-    if (!point || !this.projection) return;
-    this.issue("patrolArea", {
-      center: point,
-      radius: clampPatrolRadius(distancePixels / this.projection.scale),
-    });
+  private finishPatrol(gesture: PointerGesture): void {
+    if (!this.projection) return;
+    const geometry = patrolAreaFromDrag(gesture.start, gesture.current, this.projection);
+    if (geometry) this.issue("patrolArea", geometry.area);
   }
 
   private worldPoint(point: Readonly<{ x: number; y: number }>): Vec3 | undefined {
@@ -588,10 +574,11 @@ export class TacticalAirCommandController {
       return;
     }
     this.mode = command as TacticalAirCommandMode;
+    this.palette.hidden = true;
     this.pendingTargetIds.clear();
     this.setStatus(
       this.mode === "patrolArea"
-        ? "巡逻：按住右键从中心向外拖出巡逻圆"
+        ? tacticalAirText(this.locale).patrolDragHint
         : `${MODE_LABEL[this.mode]}：右键拖框，或 Shift+右键逐个选择后按 Enter`,
     );
     this.requestDraw();

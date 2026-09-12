@@ -67,10 +67,10 @@ import {
 } from "./aircraftPresentation";
 import {
   aimingCameraPlan,
-  cameraPointerMoveAllowed,
   cameraTransitionValue,
   observationCameraPlan,
 } from "./combatCamera";
+import { CombatPointerLock } from "../controllers/combatPointerLock";
 import { applyBodyVisibility, ownShipBodyVisibility } from "./shipAimPresentation";
 import { disposeProjectileTrailResources } from "./resourceLifecycle";
 import type { AimProvider } from "../controllers/playerInput";
@@ -211,8 +211,7 @@ export class GameView implements AimProvider {
   private enteringAiming = false;
   private mouseLookSensitivity = 1;
   private cameraInputEnabled = true;
-  private lastPointerX?: number;
-  private lastPointerY?: number;
+  private readonly pointerLock: CombatPointerLock;
   private debugColliders = false;
   private underwaterView = false;
   private quality: "low" | "medium" = "low";
@@ -335,48 +334,20 @@ export class GameView implements AimProvider {
     this.camera.upperRadiusLimit = 650;
     this.camera.wheelPrecision = 12;
     this.camera.panningSensibility = 0;
-    canvas.addEventListener("pointermove", (event) => {
-      const gameplayActive = canvas.closest(".game-shell")
-        ?.classList.contains("game-active") === true;
-      if (!cameraPointerMoveAllowed(
-        this.cameraInputEnabled && gameplayActive, event.pointerType,
-      )) {
-        this.lastPointerX = undefined;
-        this.lastPointerY = undefined;
-        return;
-      }
-      const pointerLocked = document.pointerLockElement === canvas;
-      if (!pointerLocked && (this.lastPointerX === undefined || this.lastPointerY === undefined)) {
-        this.lastPointerX = event.clientX;
-        this.lastPointerY = event.clientY;
-        return;
-      }
-      const rawDeltaX = pointerLocked ? event.movementX : event.clientX - (this.lastPointerX ?? event.clientX);
-      const rawDeltaY = pointerLocked ? event.movementY : event.clientY - (this.lastPointerY ?? event.clientY);
-      const deltaX = Math.max(-80, Math.min(80, rawDeltaX));
-      const deltaY = Math.max(-80, Math.min(80, rawDeltaY));
-      this.lastPointerX = event.clientX;
-      this.lastPointerY = event.clientY;
-      this.camera.alpha -= deltaX * 0.0032 * this.mouseLookSensitivity;
-      this.camera.beta = Math.max(
-        this.camera.lowerBetaLimit ?? 0.28,
-        Math.min(
-          this.camera.upperBetaLimit ?? 1.86,
-          this.camera.beta - deltaY * 0.0026 * this.mouseLookSensitivity,
-        ),
-      );
-    });
-    canvas.addEventListener("pointerleave", () => {
-      this.lastPointerX = undefined;
-      this.lastPointerY = undefined;
-    });
-    document.addEventListener("pointerlockchange", () => {
-      const locked = document.pointerLockElement === canvas;
-      canvas.closest(".game-shell")?.classList.toggle("pointer-locked", locked);
-      if (locked) {
-        this.lastPointerX = undefined;
-        this.lastPointerY = undefined;
-      }
+    this.pointerLock = new CombatPointerLock(canvas, {
+      isActive: () => {
+        const shell = canvas.closest(".game-shell");
+        return this.cameraInputEnabled && shell?.classList.contains("game-active") === true
+          && !shell.classList.contains("map-active");
+      },
+      onMove: (deltaX, deltaY) => {
+        this.camera.alpha -= deltaX * 0.0032 * this.mouseLookSensitivity;
+        this.camera.beta = Math.max(
+          this.camera.lowerBetaLimit ?? 0.28,
+          Math.min(this.camera.upperBetaLimit ?? 1.86,
+            this.camera.beta - deltaY * 0.0026 * this.mouseLookSensitivity),
+        );
+      },
     });
     window.addEventListener("resize", () => this.engine.resize());
   }
@@ -790,18 +761,20 @@ export class GameView implements AimProvider {
 
   setCameraInputEnabled(enabled: boolean): void {
     this.cameraInputEnabled = enabled;
-    this.lastPointerX = undefined;
-    this.lastPointerY = undefined;
+    this.pointerLock.resetMotion();
+    if (!enabled) this.pointerLock.release();
+  }
+
+  setPointerLockHint(text: string): void {
+    this.pointerLock.setHintText(text);
   }
 
   requestPointerLock(): void {
-    if (document.pointerLockElement === this.canvas) return;
-    const request = this.canvas.requestPointerLock();
-    if (request) void request.catch(() => undefined);
+    this.pointerLock.request();
   }
 
   releasePointerLock(): void {
-    if (document.pointerLockElement === this.canvas) document.exitPointerLock();
+    this.pointerLock.release();
   }
 
   setDebugColliders(visible: boolean): void {

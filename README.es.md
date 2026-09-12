@@ -8,7 +8,7 @@
 
 ## Acerca del juego
 
-La versión 0.7.2 ofrece combates individuales contra la IA, cooperación contra la IA para dos jugadores y pruebas de mar sin límite; la duración objetivo de una batalla normal es de 15–20 minutos. Dirige destructores, cruceros ligeros y acorazados, organiza el control de daños y emplea artillería, torpedos, cargas de profundidad y aviación embarcada. El proyecto prioriza equipos modestos y usa TypeScript, Babylon.js, Vite y Electron.
+La versión 0.7.3 ofrece combates individuales contra la IA, cooperación contra la IA para dos jugadores y pruebas de mar sin límite; la duración objetivo de una batalla normal es de 15–20 minutos. Dirige destructores, cruceros ligeros y acorazados, organiza el control de daños y emplea artillería, torpedos, cargas de profundidad y aviación embarcada. El proyecto prioriza equipos modestos y usa TypeScript, Babylon.js, Vite y Electron.
 
 Todavía es un prototipo en desarrollo. Los gráficos, el equilibrio, los modelos y la progresión seguirán mejorando.
 

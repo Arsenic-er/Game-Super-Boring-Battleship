@@ -809,8 +809,31 @@ button { font: inherit; }
 }
 .game-shell,
 .game-shell * { cursor: none !important; }
-.game-shell.game-active .game-cursor,
 .game-shell.pointer-locked .game-cursor { display: none; }
+/* An unlocked battle exposes a normal cursor and an actionable, compact recovery prompt. */
+.game-shell.pointer-capture-needed,
+.game-shell.pointer-capture-needed * { cursor: default !important; }
+.game-shell.pointer-capture-needed .game-cursor { display: none; }
+.game-shell.pointer-capture-needed .pointer-lock-recovery { cursor: pointer !important; }
+.pointer-lock-recovery {
+  position: absolute;
+  top: 64px;
+  left: 50%;
+  transform: translateX(-50%);
+  z-index: 90;
+  max-width: calc(100% - 32px);
+  min-height: 40px;
+  padding: 9px 16px;
+  border: 1px solid #76b8bf;
+  background: rgba(7, 28, 38, .94);
+  color: #d6eeed;
+  font: inherit;
+  font-size: 13px;
+  line-height: 1.4;
+  pointer-events: auto;
+}
+.pointer-lock-recovery:focus-visible { outline: 2px solid #c4e2a2; outline-offset: 3px; }
+.pointer-lock-recovery[hidden] { display: none; }
 .game-cursor.neon-arrow { transform: translate(-3px, -3px); }
 .game-cursor.neon-hand { transform: translate(-8px, -4px); }
 .game-cursor.crosshair {

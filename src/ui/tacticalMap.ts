@@ -522,7 +522,7 @@ export class TacticalMap {
     minimapPanel.addEventListener("click", () => this.open());
     this.airCommands = new TacticalAirCommandController(largeMap, airLayer, () => {
       if (this.lastState) this.drawLargeMap(this.lastState, this.lastContacts);
-    });
+    }, this.locale);
     minimapPanel.addEventListener("keydown", (event) => {
       if (event.code === "Enter") {
         event.preventDefault();
@@ -547,6 +547,7 @@ export class TacticalMap {
 
   setLocale(locale: GameLocale): void {
     this.locale = locale;
+    this.airCommands.setLocale(locale);
     const label = tacticalAirText(locale).squadronStatus;
     this.airStatusTitle.textContent = label;
     this.airStatusTitle.closest("aside")?.setAttribute("aria-label", label);

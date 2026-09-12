@@ -7,6 +7,7 @@ import type {
 } from "../sim/types";
 
 export interface TacticalAirText {
+  patrolDragHint: string;
   squadronStatus: string;
   aircraft: string;
   airframe: string;
@@ -27,6 +28,7 @@ export interface TacticalAirText {
 }
 
 const zhCN: TacticalAirText = {
+  patrolDragHint: "巡逻：按住右键拖动确定巡逻范围（起止点为直径两端）",
   squadronStatus: "航空队状态", aircraft: "架数", airframe: "机体", fuel: "油量",
   gunAmmo: "机炮", ordnance: "挂载", rearming: "整备", mission: "任务",
   noOrder: "等待命令", ownShip: "本舰", friendlyShip: "友舰", enemyShip: "敌舰",
@@ -40,6 +42,7 @@ const zhCN: TacticalAirText = {
 export const TACTICAL_AIR_TEXT: Record<GameLocale, TacticalAirText> = {
   "zh-CN": zhCN,
   "zh-TW": {
+    patrolDragHint: "巡邏：按住右鍵拖動決定巡邏範圍（起終點為直徑兩端）",
     squadronStatus: "航空隊狀態", aircraft: "架數", airframe: "機體", fuel: "油量", gunAmmo: "機砲", ordnance: "掛載", rearming: "整備", mission: "任務", noOrder: "等待命令", ownShip: "本艦", friendlyShip: "友艦", enemyShip: "敵艦", enemyAircraft: "敵方機群",
     roles: { fighter: "戰鬥機", diveBomber: "俯衝轟炸機", torpedoBomber: "魚雷轟炸機" },
     phases: { ready: "待命", launching: "起飛", outbound: "出航", searching: "搜索", attackRun: "攻擊航線", intercepting: "攔截", patrolling: "巡邏", returning: "返航", landing: "降落", rearming: "整備", destroyed: "損失" },
@@ -47,6 +50,7 @@ export const TACTICAL_AIR_TEXT: Record<GameLocale, TacticalAirText> = {
     missions: { moveTo: "移動", defendShip: "護衛", interceptSquadron: "攔截敵機", patrolArea: "區域巡邏", strikeShip: "對艦攻擊", recall: "召回" },
   },
   "en-US": {
+    patrolDragHint: "Patrol: right-drag to set the area (drag endpoints define its diameter)",
     squadronStatus: "Air Group Status", aircraft: "Aircraft", airframe: "Strength", fuel: "Fuel", gunAmmo: "Gun ammo", ordnance: "Ordnance", rearming: "Rearming", mission: "Mission", noOrder: "Awaiting orders", ownShip: "Own ship", friendlyShip: "Friendly ship", enemyShip: "Enemy ship", enemyAircraft: "Enemy aircraft",
     roles: { fighter: "Fighter", diveBomber: "Dive bomber", torpedoBomber: "Torpedo bomber" },
     phases: { ready: "Ready", launching: "Launching", outbound: "Outbound", searching: "Searching", attackRun: "Attack run", intercepting: "Intercepting", patrolling: "Patrolling", returning: "Returning", landing: "Landing", rearming: "Rearming", destroyed: "Lost" },
@@ -54,6 +58,7 @@ export const TACTICAL_AIR_TEXT: Record<GameLocale, TacticalAirText> = {
     missions: { moveTo: "Move", defendShip: "Guard", interceptSquadron: "Intercept", patrolArea: "Patrol area", strikeShip: "Strike ship", recall: "Recall" },
   },
   "ja-JP": {
+    patrolDragHint: "哨戒：右ドラッグで範囲を指定（始点と終点が直径の両端）",
     squadronStatus: "航空隊状況", aircraft: "機数", airframe: "戦力", fuel: "燃料", gunAmmo: "機銃弾", ordnance: "兵装", rearming: "再武装", mission: "任務", noOrder: "命令待機", ownShip: "自艦", friendlyShip: "味方艦", enemyShip: "敵艦", enemyAircraft: "敵航空隊",
     roles: { fighter: "戦闘機", diveBomber: "急降下爆撃機", torpedoBomber: "雷撃機" },
     phases: { ready: "待機", launching: "発進", outbound: "進出", searching: "捜索", attackRun: "攻撃航程", intercepting: "迎撃", patrolling: "哨戒", returning: "帰投", landing: "着陸", rearming: "再武装", destroyed: "喪失" },
@@ -61,6 +66,7 @@ export const TACTICAL_AIR_TEXT: Record<GameLocale, TacticalAirText> = {
     missions: { moveTo: "移動", defendShip: "護衛", interceptSquadron: "敵機迎撃", patrolArea: "区域哨戒", strikeShip: "対艦攻撃", recall: "帰投命令" },
   },
   "es-ES": {
+    patrolDragHint: "Patrulla: arrastra con el botón derecho para definir el área (los extremos marcan el diámetro)",
     squadronStatus: "Estado de escuadrones", aircraft: "Aviones", airframe: "Fuerza", fuel: "Combustible", gunAmmo: "Munición", ordnance: "Armamento", rearming: "Rearmando", mission: "Misión", noOrder: "Esperando órdenes", ownShip: "Buque propio", friendlyShip: "Buque aliado", enemyShip: "Buque enemigo", enemyAircraft: "Aeronaves enemigas",
     roles: { fighter: "Caza", diveBomber: "Bombardero en picado", torpedoBomber: "Torpedero" },
     phases: { ready: "Listo", launching: "Despegando", outbound: "En ruta", searching: "Buscando", attackRun: "Ataque", intercepting: "Interceptando", patrolling: "Patrullando", returning: "Regresando", landing: "Aterrizando", rearming: "Rearmando", destroyed: "Perdido" },
@@ -68,6 +74,7 @@ export const TACTICAL_AIR_TEXT: Record<GameLocale, TacticalAirText> = {
     missions: { moveTo: "Mover", defendShip: "Escoltar", interceptSquadron: "Interceptar", patrolArea: "Patrullar zona", strikeShip: "Atacar buque", recall: "Retirar" },
   },
   "de-DE": {
+    patrolDragHint: "Patrouille: Mit rechter Maustaste das Gebiet ziehen (Start und Ende bestimmen den Durchmesser)",
     squadronStatus: "Fliegergruppenstatus", aircraft: "Flugzeuge", airframe: "Stärke", fuel: "Treibstoff", gunAmmo: "Bordmunition", ordnance: "Bewaffnung", rearming: "Aufrüstung", mission: "Auftrag", noOrder: "Wartet auf Befehl", ownShip: "Eigenes Schiff", friendlyShip: "Verbündetes Schiff", enemyShip: "Feindschiff", enemyAircraft: "Feindflugzeuge",
     roles: { fighter: "Jäger", diveBomber: "Sturzkampfbomber", torpedoBomber: "Torpedobomber" },
     phases: { ready: "Bereit", launching: "Startet", outbound: "Im Anflug", searching: "Sucht", attackRun: "Angriff", intercepting: "Abfangen", patrolling: "Patrouille", returning: "Rückflug", landing: "Landung", rearming: "Aufrüstung", destroyed: "Verloren" },
@@ -75,6 +82,7 @@ export const TACTICAL_AIR_TEXT: Record<GameLocale, TacticalAirText> = {
     missions: { moveTo: "Verlegen", defendShip: "Geleitschutz", interceptSquadron: "Abfangen", patrolArea: "Gebietspatrouille", strikeShip: "Schiffsangriff", recall: "Rückruf" },
   },
   "ru-RU": {
+    patrolDragHint: "Патруль: задайте область перетаскиванием правой кнопкой (начало и конец задают диаметр)",
     squadronStatus: "Состояние авиагрупп", aircraft: "Самолёты", airframe: "Боеспособность", fuel: "Топливо", gunAmmo: "Боезапас пушек", ordnance: "Подвеска", rearming: "Подготовка", mission: "Задача", noOrder: "Ожидание приказа", ownShip: "Свой корабль", friendlyShip: "Союзный корабль", enemyShip: "Корабль противника", enemyAircraft: "Авиация противника",
     roles: { fighter: "Истребитель", diveBomber: "Пикирующий бомбардировщик", torpedoBomber: "Торпедоносец" },
     phases: { ready: "Готов", launching: "Взлёт", outbound: "На маршруте", searching: "Поиск", attackRun: "Боевой заход", intercepting: "Перехват", patrolling: "Патруль", returning: "Возвращение", landing: "Посадка", rearming: "Подготовка", destroyed: "Потерян" },
