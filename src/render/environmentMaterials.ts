@@ -3,6 +3,7 @@ import { Texture } from "@babylonjs/core/Materials/Textures/texture";
 import { Color3 } from "@babylonjs/core/Maths/math.color";
 import type { Scene } from "@babylonjs/core/scene";
 import { normalizeWeatherId, weatherPreset, type WeatherId } from "../sim/weather";
+import { SkyHorizon } from "./skyHorizon";
 
 export const CLEAR_DAY_RENDER = {
   exposure: 1.1,
@@ -70,7 +71,7 @@ function skyTexture(scene: Scene, weatherId: WeatherId): Texture {
     scene,
     false,
     false,
-    Texture.NEAREST_SAMPLINGMODE,
+    Texture.TRILINEAR_SAMPLINGMODE,
   );
   texture.name = `pixel-sky-${preset.skyTexture}-texture`;
   texture.wrapU = Texture.WRAP_ADDRESSMODE;
@@ -103,5 +104,6 @@ export function createPixelSkyMaterial(
   material.emissiveColor = Color3.Black();
   material.emissiveTexture = skyTexture(scene, weatherId);
   material.specularColor = Color3.Black();
+  new SkyHorizon(material);
   return material;
 }

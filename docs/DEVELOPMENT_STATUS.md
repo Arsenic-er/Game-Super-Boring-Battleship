@@ -33,7 +33,22 @@ testing, server access and short-lived transfer staging.
 - Single-player battles use a 20-minute hard limit and are tuned toward a 15–20 minute normal duration.
 - Windows directory packages are built on the server; only the latest verified `battleship-latest-windows-x64` directory is copied to the local PC.
 
-## Current water release — 0.7.4
+## Current repair release — 0.7.5
+
+- Based on `e97d785`; map-only training contacts fix absent enemy markers without
+  changing battle concealment. The user confirmed this was not a missing 3D hull.
+- Aircraft now follow independent delayed world paths with tangent heading,
+  frame-rate-stable bank and corrected dive pitch. Actual support launch counts
+  are 6/5/5; the developer default is five. No invented aircraft or balance changes.
+- Sky angular haze and a water-only camera-height fog interval soften the horizon
+  while preserving the clear blue upper sky, global fog and underwater handling.
+- 851 tests passed, five skipped. Acceptance, screenshots and delivery status:
+  `acceptance/0.7.5-fleet-horizon.md`. No external assets, save migration or Git push.
+- Delivered locally: the single latest Windows directory is 0.7.5, with all
+  117 files hash-verified. Ten native checks passed; real saves preserved and
+  temporary QA profiles/services removed. No persistent test URL is needed.
+
+## Previous water release — 0.7.4
 
 - Based on `79d9bab`, preserving the 0.7.3 input and 0.7.2 historical-model work.
 - Integrated official Babylon WaterMaterial 9.16.1 with original generated

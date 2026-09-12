@@ -3,10 +3,24 @@
 Last updated: 2026-09-13
 
 Historical archive baseline: `96fcd51` (`0.6.12`).
-Historical model rebuild base: `6f1fbb2`; input-fix base: `d0dba77`; active version `0.7.4`.
+Historical model rebuild base: `6f1fbb2`; input-fix base: `d0dba77`; active version `0.7.5`.
 
 This is a milestone log derived from the Git history and the long development
 conversation. It is intentionally more compact than a commit-by-commit transcript.
+
+## 2026-09-13 — Training map contacts, independent aircraft and horizon
+
+- User clarified missing test enemies meant map markers. Added a training-only map
+  adapter for live enemies; normal sensor/AI information and 3D visibility unchanged.
+- Replaced rigid group rotation with bounded per-aircraft flight history, delayed
+  trajectories and physically oriented pitch/bank. A 30/60 fps regression exposed
+  tangent jitter; exponential heading response fixed it without relaxing thresholds.
+- Real UI launch inspection found six/five/five aircraft, not a general count=one
+  bug. Distinct meshes, propellers, casualty counts and focused views are verified.
+- Softened the ocean/sky seam with weather-colour sky blending and a water-only
+  height-scaled fog band. No new rendering pass, external art or gameplay fog change.
+- 851 tests passed, five skipped; real-render acceptance and Windows delivery are
+  recorded in `acceptance/0.7.5-fleet-horizon.md`. Development/build remain on server.
 
 ## 2026-09-13 — Official Babylon WaterMaterial integration
 

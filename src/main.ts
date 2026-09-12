@@ -28,6 +28,7 @@ import { FIXED_STEP } from "./sim/config";
 import { createInitialState, observe } from "./sim/simulation";
 import { deployFleetAirSupport } from "./sim/airOperations";
 import { PlayerPerceptionTracker } from "./sim/playerPerception";
+import { seaTrialsContacts } from "./sim/seaTrialsContacts";
 import type { BattleState, ControlCommand, GameMode, PlayerTargetView } from "./sim/types";
 import type { GameLaunchRequest } from "./sim/battleSetup";
 import { createLanBridgeClient } from "./net/lanBridge";
@@ -585,7 +586,11 @@ function finishFrame(
   hud.update(activeState, input.aimRange, input.selectedWeapon, perceivedTarget, observerShipId);
   voyagePanel.setTutorial(voyageSession.tutorialActive ? profile.onboarding.currentStepId ?? "move" : null,
     started && !paused && activeState.status === "running" && !multiplayerActive && !menus.isOpen() && !tacticalMap.isExpanded() && !developerPanel?.isOpen());
-  tacticalMap.update(activeState, perceivedTarget, contactViews);
+  // Training targets need chart markers even though sea trials do not run combat sensors.
+  const mapContacts = activeState.mode === "sea-trials"
+    ? seaTrialsContacts(activeState, observerShipId)
+    : contactViews;
+  tacticalMap.update(activeState, perceivedTarget, mapContacts);
   developerObserverHud.hidden = multiplayerActive || !developerView.active;
   if (!multiplayerActive && developerView.active) {
     const focusShip = activeState.ships.find(({ id }) => id === developerView.focus?.id);

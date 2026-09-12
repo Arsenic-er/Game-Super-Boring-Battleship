@@ -140,6 +140,14 @@ export interface OceanShipReflection {
   meshes: readonly AbstractMesh[];
 }
 
+/** A low camera compresses kilometre-scale surface fog into a one-pixel seam.
+ * Keep a small angular water-only transition without changing scene/ship visibility. */
+export function oceanHorizonFogRange(height: number, start: number, end: number) {
+  if (!Number.isFinite(height) || height <= 0) return { start, end };
+  const eyeHeight = Math.max(4, height);
+  return { start: Math.min(start, eyeHeight * 24), end: Math.min(end, eyeHeight * 240) };
+}
+
 export class OceanWater {
   readonly mesh: Mesh;
   readonly material: WaterMaterial;
@@ -162,7 +170,18 @@ export class OceanWater {
     this.rebuildGrid();
     // Upstream only accumulates time when deltaTime changes. Override once per bind
     // with simulation time, so fixed-dt play animates and pause actually freezes it.
-    this.material.onBindObservable.add(() => this.material.getEffect()?.setFloat("time", this.seconds / 100));
+    this.material.onBindObservable.add(() => {
+      const effect = this.material.getEffect();
+      effect?.setFloat("time", this.seconds / 100);
+      const eye = scene.activeCamera?.globalPosition;
+      if (effect && eye && scene.fogEnabled && scene.fogMode === 3 && this.mesh.applyFog) {
+        const height = eye.y - this.heightAt(eye.x, eye.z);
+        if (height > 0) {
+          const range = oceanHorizonFogRange(height, scene.fogStart, scene.fogEnd);
+          effect.setFloat4("vFogInfos", scene.fogMode, range.start, range.end, scene.fogDensity);
+        }
+      }
+    });
   }
 
   private rebuildGrid(): void {

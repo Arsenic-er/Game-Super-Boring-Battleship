@@ -61,10 +61,8 @@ import {
   createAirSquadronGeometry,
   type AirSquadronVisual,
 } from "./aircraftGeometry";
-import {
-  aircraftFormationPose,
-  airVisualSnapshot,
-} from "./aircraftPresentation";
+import { airVisualSnapshot } from "./aircraftPresentation";
+import { AircraftFormationTracker, applyAircraftWorldPoses } from "./aircraftFormationMotion";
 import {
   aimingCameraPlan,
   cameraTransitionValue,
@@ -184,6 +182,7 @@ export class GameView implements AimProvider {
   private readonly contactVisuals = new Map<string, ContactVisual>();
   private readonly shipModelCatalogReady = loadShipModelCatalog();
   private readonly airSquadronVisuals = new Map<string, AirSquadronVisual>();
+  private readonly airFormationTrackers = new WeakMap<AirSquadronVisual, AircraftFormationTracker>();
   private readonly projectileMeshes = new Map<number, ProjectileVisual>();
   private readonly depthChargeMeshes = new Map<number, Mesh>();
   private readonly underwaterTargetMeshes = new Map<string, TransformNode>();
@@ -265,7 +264,7 @@ export class GameView implements AimProvider {
     this.objectiveMaterial.disableLighting = true;
     this.objectiveRing.material = this.objectiveMaterial;
 
-    const sky = CreateSphere("sky-dome", { diameter: 28_000, segments: 8 }, this.scene);
+    const sky = CreateSphere("sky-dome", { diameter: 28_000, segments: 24 }, this.scene);
     this.skyMaterial = createPixelSkyMaterial(this.scene);
     sky.material = this.skyMaterial;
     sky.infiniteDistance = true;
@@ -936,28 +935,16 @@ export class GameView implements AimProvider {
         this.airSquadronVisuals.set(squadron.id, visual);
       }
       visual.root.setEnabled(true);
-      visual.root.position.copyFrom(toVector(snapshot.position));
-      const headingDelta = wrapAngle(snapshot.heading - visual.lastHeading);
-      const targetBank = Math.max(-0.24, Math.min(0.24, -headingDelta * 3.2));
-      visual.bank += (targetBank - visual.bank) * Math.min(1, dt * 5.5);
-      visual.root.rotation.y = snapshot.heading;
-      visual.root.rotation.z = visual.bank;
-      visual.lastHeading = snapshot.heading;
-      for (const [index, plane] of visual.planes.entries()) {
-        const pose = aircraftFormationPose(
-          snapshot.role,
-          index,
-          snapshot.aircraftCount,
-          snapshot.phase,
-          state.time,
-          squadron.id,
-        );
-        plane.root.setEnabled(Boolean(pose));
-        if (!pose) continue;
-        plane.root.position.set(
-          pose.x, pose.y, pose.z,
-        );
-        plane.root.rotation.set(pose.pitch, pose.yaw, pose.bank);
+      let tracker = this.airFormationTrackers.get(visual);
+      if (!tracker) {
+        tracker = new AircraftFormationTracker(squadron.id);
+        this.airFormationTrackers.set(visual, tracker);
+      }
+      const poses = tracker.update(snapshot, state.time);
+      applyAircraftWorldPoses(visual, poses);
+      for (let index = 0; index < visual.planes.length; index += 1) {
+        const plane = visual.planes[index]!;
+        if (!poses[index]) continue;
         plane.body.visibility = snapshot.visibility;
         plane.propeller.rotation.z += dt * (snapshot.role === "fighter" ? 34 : 27);
         for (const blade of plane.propeller.getChildMeshes()) {
