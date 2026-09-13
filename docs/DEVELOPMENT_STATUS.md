@@ -42,6 +42,10 @@ testing, server access and short-lived transfer staging.
 - Runtime harbor art and ship thumbnails are external Windows resources. Original provenance: `PORT_UI_ASSETS.md`.
 - Visual gate and precise expected deviations from the illustrative ship: project-root `design-qa.md`.
 - Final tests/package/local-delivery evidence: `acceptance/0.7.7-port.md`.
+- Delivered as the single local latest Windows folder: 133 files / 479,393,957 bytes,
+  independently SHA-256 verified after replacement. Final native Windows checks:
+  10 passed, zero errors. Complete initial hull presentation visually verified.
+  Old release and isolated QA profiles recycled; real saves retained. No Git push.
 
 ## Previous flight release — 0.7.6
 
