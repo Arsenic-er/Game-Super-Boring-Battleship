@@ -7,7 +7,8 @@ import { getMainBattery } from "../ships/mainBatteries";
 import { equipmentLocale, shipClassLocale } from "../i18n/equipmentLocale";
 import { localizeElement, translateGameText, type GameLocale } from "../i18n/gameLocale";
 import { voyageText, type VoyageMessageKey } from "../i18n/voyageLocale";
-import { DockPreview } from "../render/dockPreview";
+import { DockPreview, type DockComponentHover } from "../render/dockPreview";
+import { PORT_MOTION, portVisibility } from "./portMotion";
 import { resolveLoadoutVisualPlan } from "../render/loadoutVisualPlan";
 import { equipmentArtworkMarkup } from "./equipmentArtwork";
 
@@ -32,6 +33,7 @@ export class DockPanel {
   private readonly viewState: HTMLElement;
   private noticeSource = "配装自动保存至本机";
   private noticeKey?: VoyageMessageKey;
+  private readonly hoverTooltip: HTMLElement;
 
   constructor(private readonly host: HTMLElement, private readonly preview: DockPreview,
     private readonly getProfile: () => LocalProfile, private readonly getLocale: () => GameLocale,
@@ -43,6 +45,9 @@ export class DockPanel {
       element.setAttribute("data-i18n-keyed", "");
     }
     host.querySelector(".screen-heading")?.after(this.viewState);
+    host.querySelector<HTMLElement>(".dock-callouts")!.innerHTML = '<div class="dock-hover-tooltip" role="tooltip" data-i18n-keyed hidden></div>';
+    this.hoverTooltip = host.querySelector<HTMLElement>(".dock-hover-tooltip")!;
+    this.preview.setComponentHoverCallback?.((hover) => this.showHover(hover));
     host.addEventListener("click", (event) => {
       const button = (event.target as Element).closest<HTMLButtonElement>("button");
       if (!button || button.disabled) return;
@@ -70,16 +75,23 @@ export class DockPanel {
       if (button.classList.contains("save-ship-build")) this.save();
       if (button.classList.contains("equip-selected") && this.selectedItemId && !this.inspectionBuildId) this.onChange(equipComponent(editorProfile(), this.selectedItemId));
     });
-    const updateAnchors = () => {
-      if (!host.hidden) {
-        for (const anchor of this.preview.getInternalModuleAnchors()) {
-          const el = host.querySelector<HTMLElement>(`[data-module-anchor="${anchor.category}:${anchor.slotIndex}"]`);
-          if (el) { el.style.left = `${anchor.x}px`; el.style.top = `${anchor.y}px`; el.hidden = !anchor.visible; }
-        }
-      }
-      requestAnimationFrame(updateAnchors);
-    };
-    requestAnimationFrame(updateAnchors);
+  }
+
+  private showHover(hover?: DockComponentHover): void {
+    if (!hover || this.host.hidden) { portVisibility(this.hoverTooltip, false, PORT_MOTION.hover); return; }
+    const title = equipmentLocale(this.getLocale(), hover.equipmentId).name;
+    const category = this.t(CATEGORY_META[hover.category].label);
+    this.hoverTooltip.innerHTML = `<b>${html(title)}</b><span>${html(category)}</span>`;
+    if (this.hoverTooltip.hidden || this.hoverTooltip.inert) portVisibility(this.hoverTooltip, true, PORT_MOTION.hover);
+    const canvas = this.host.querySelector<HTMLCanvasElement>(".dock-preview")!;
+    const x = Math.max(8, Math.min(hover.canvasX + 18, canvas.clientWidth - this.hoverTooltip.offsetWidth - 8));
+    const y = Math.max(8, Math.min(hover.canvasY - this.hoverTooltip.offsetHeight - 14, canvas.clientHeight - this.hoverTooltip.offsetHeight - 8));
+    this.hoverTooltip.style.left = `${x}px`; this.hoverTooltip.style.top = `${y}px`;
+  }
+  inspectEquipment(category: EquipmentCategory, equipmentId: string): void {
+    this.category = category;
+    this.selectedItemId = this.getProfile().inventory[equipmentId] > 0 ? equipmentId : undefined;
+    this.render();
   }
 
   private t(source: string): string { return translateGameText(source, this.getLocale()); }
@@ -150,10 +162,10 @@ export class DockPanel {
     }).join("");
     this.host.querySelector<HTMLElement>(".component-filters")!.innerHTML = ["all", ...categories].map((category) => `<button data-dock-category="${category}" class="${category === this.category ? "active" : ""}">${html(this.t(category === "all" ? "全部" : CATEGORY_META[category as EquipmentCategory].label))}</button>`).join("");
     const owned = EQUIPMENT_CATALOG.filter((item) => profile.inventory[item.id] > 0 && (this.category === "all" || item.category === this.category));
-    if (!owned.some(({ id }) => id === this.selectedItemId)) this.selectedItemId = owned[0]?.id;
+    if (this.selectedItemId && !owned.some(({ id }) => id === this.selectedItemId)) this.selectedItemId = undefined;
     this.host.querySelector<HTMLElement>(".inventory-grid")!.innerHTML = owned.map((item) => {
       const text = equipmentLocale(locale, item.id);
-      return `<button class="inventory-item rarity-${item.rarity}${slots[item.category].includes(item.id) ? " installed" : ""}" data-item="${item.id}">${equipmentArtworkMarkup(item)}<span>${html(text.name)}</span><small>${html(text.origin)} · ×${profile.inventory[item.id]}</small></button>`;
+      return `<button class="inventory-item rarity-${item.rarity}${slots[item.category].includes(item.id) ? " installed" : ""}${this.selectedItemId === item.id ? " active" : ""}" data-item="${item.id}">${equipmentArtworkMarkup(item)}<span>${html(text.name)}</span><small>${html(text.origin)} · ×${profile.inventory[item.id]}</small></button>`;
     }).join("");
     const item = this.selectedItemId ? EQUIPMENT_BY_ID[this.selectedItemId] : undefined;
     const detail = this.host.querySelector<HTMLElement>(".component-detail")!;
@@ -172,10 +184,11 @@ export class DockPanel {
         this.preview.previewEquipment(candidate, candidate ? Math.max(0, slots[candidate.category].findIndex((id) => !id)) : 0);
       });
     } else this.preview.previewEquipment(item, item ? Math.max(0, slots[item.category].findIndex((id) => !id)) : 0);
-    this.host.querySelector<HTMLElement>(".dock-callouts")!.innerHTML = plan.internalModules.map((module) => `<span class="dock-module-callout" data-module-anchor="${module.category}:${module.slotIndex}">${html(equipmentLocale(locale, module.equipmentId).name)}</span>`).join("");
+    this.showHover(this.preview.getComponentHover?.());
     const status = this.host.querySelector<HTMLElement>(".dock-preview-status");
     if (status) status.textContent = item ? `${this.t(slots[item.category].includes(item.id) ? "当前已安装" : "候选装配预览")} · ${equipmentLocale(locale, item.id).name}` : "";
     for (const button of this.host.querySelectorAll<HTMLButtonElement>(".auto-equip-ship,.save-ship-build")) button.disabled = locked || Boolean(build);
     localizeElement(this.host, locale);
+    this.host.dispatchEvent?.(new CustomEvent("dock-preview-change"));
   }
 }

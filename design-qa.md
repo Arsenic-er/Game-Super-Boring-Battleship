@@ -1,63 +1,44 @@
-# Design QA — Grey Sea Action 0.5.0 dock
+# Sunny-port implementation — design QA
 
-- Source visual truth: `C:\Users\jiang\.codex\generated_images\019f5647-7d38-70d3-9530-38bf92b6ea2b\exec-dd661151-01c9-48e0-9b3a-e0507c157648.png`
-- Implementation screenshot: `C:\Users\jiang\Documents\战舰\.v050-edit\dock-implementation-stable.png`
-- Combined comparison evidence: `C:\Users\jiang\Documents\战舰\.v050-edit\dock-design-comparison-final-vertical.png`
-- Viewport: 1440 × 1024 CSS pixels
-- State: main menu / 船坞 / 全部组件 / destroyer DD-01
+final result: passed
 
-## Findings
+## Visual truth and evidence
 
-- No actionable P0/P1/P2 findings remain.
-- [P3] The live Babylon dock ship uses fewer small deck fittings than the concept render. This is intentional for the first low-GPU implementation; the important silhouette, stepped bridge, funnels, mast, torpedo assembly, forward/rear gun positions and modular callouts are present.
-- [P3] The implementation uses Font Awesome military/mechanical icons instead of the concept's bespoke raster item art. Icons are sharp, consistent and avoid placeholder graphics; bespoke component thumbnails can be added later without changing the inventory model.
+- Approved source: `.qa/port-077/approved-reference.png` (conversation ImageGen result `exec-8b000980-3d5d-44d1-902b-ceed12210091.png`).
+- Final implementation: `.qa/port-077/component-hover.png`, `.qa/port-077/port-wide.png`.
+- Source and implementation: 1672 × 941 pixels; CSS viewport 1672 × 941, deviceScaleFactor 1. No density conversion or browser chrome.
+- State: sunny dockyard, J-class selected, actual default loadout; hover capture identifies the real aft main gun. The source illustrates a fore-gun hover. That target-position difference is expected, not an alignment defect.
+- Both source and final implementation were opened together in the same image-comparison tool input. The source and intermediate failure capture were likewise opened together before fixes.
+- Responsive evidence: `.qa/port-077/port-1280.png` (1280 × 720) and `port-1024.png` (1024 × 640), both 1×.
+- Additional states: equipment, loadouts, voyage, battle-setup, multiplayer, store, codex, English/German/Russian port screenshots in the same evidence directory. Seven languages were exercised through the real language selector.
+- Focused inspection: the full-resolution source and implementation made the title/nav, component tooltip and bottom selector legible in the same comparison input. Those three regions were inspected directly; a separate cropped artifact was not needed.
+
+## Findings and iteration history
+
+1. **P1: ship too small and wrong initial angle.** The first 1280-wide capture occupied roughly 420 px of ship width, and the bow pointed upper-right. Replaced loose axis-aligned-box framing with cached real-vertex perspective fitting, corrected target centering, and changed initial view to alpha .55 / beta 1.30. Final real models occupy approximately 83% of the available canvas width at the compact viewport, without clipping masts; 15 hulls and four aspects are unit-covered. Final captures show the intended dominant center/right ship and lower-right bow.
+2. **P2: opaque gray ship-thumbnail backgrounds.** Re-rendered all 15 existing real ship models with transparent backgrounds; did not substitute stock ships. Final captures show separate readable hull silhouettes without gray rectangles.
+3. **P2: inherited navigation border and a bright canvas rectangle.** Removed the old tab-strip border; cleared the transparent WebGL canvas to RGBA 0/0/0/0 so premultiplied-alpha composition does not add a blue rectangular tint. Post-fix full-view comparison has no canvas-edge seam.
+4. **P2: closing a drawer could return focus to its own hidden close button.** Kept focus ownership on the opening control and stopped restoring focus into hidden/inert ancestors. Real browser Escape and close-button tests pass.
+5. **P2: rapid reversal restarted opacity from an endpoint.** New transitions start from the current computed opacity/transform, cancel previous work and ignore obsolete completion callbacks. Unit tests cover interruption, reduced motion and runtimes without Web Animations; browser seven-toggle stress test passes.
+6. **Route regression prevention:** Escape is handled by the existing menu controller so nested battle preparation/LAN pages close before leaving mode selection. Help and settings remain available without putting instructions on the initial port screen.
+7. **P2: incomplete first-frame model on native Windows.** A native screenshot caught ready turrets before the hull shader was ready. The preview now stays transparent until the complete scene is ready, then fades in over 350 ms; it does not stop the render loop needed to compile shaders. Re-captured `.qa/port-077/initial-complete-hull.png` shows the full Fletcher hull on first presentation. Initial boot and subsequent class changes use the same gate; reduced-motion users get immediate presentation when ready.
 
 ## Required fidelity surfaces
 
-- Fonts and typography: passed. Consolas / Microsoft YaHei military pixel hierarchy is consistent; headings, small telemetry copy and rarity labels remain legible.
-- Spacing and layout rhythm: passed after iteration. The 1440 × 1024 frame fills the viewport without horizontal overflow; low-height layouts use a dedicated compact breakpoint.
-- Colors and visual tokens: passed. Deep navy, cyan instrument lines, muted purple, gold and red-gold match the selected visual direction.
-- Image quality and asset fidelity: passed for the production constraint. The central visual is an actual interactive 3D ship preview, not placeholder or CSS art.
-- Copy and content: passed. Chinese labels, component families, hull compatibility, rarity hierarchy and slot counts match the approved system.
+- **Fonts/typography:** uses the established bold Fusion pixel font and its existing fallback/license pipeline. Cream title, smaller subtitle, left navigation and primary gold action retain the reference hierarchy. Long western-language titles wrap; seven-language text remains functional. The illustrative logo font is not passed off as the exact runtime font.
+- **Spacing/layout rhythm:** left navigation, center/right interactive model, low ship selector, lower-right departure action; 1024/1280/1672 controls fit the viewport. Dense equipment/build controls are independently scrollable on-demand drawers.
+- **Colors/tokens:** sunny blue harbor, cream/gold actions, navy drawers. New backdrop follows the approved empty-harbor art direction. No global scanline filter added.
+- **Image/asset quality:** original generated empty harbor plus actual 3D meshes and transparent game-model thumbnails. The illustrative reference vessel is much more detailed than the current game model; preserving the actual editable model is an intentional scope constraint of this UI release, not a claim of model-art parity. This release does not rebuild hull geometry or turn the backdrop into a 3D harbor.
+- **Copy/content:** real captain name, class/loadout and inventory data; only hovered component is named. Help text is behind Help. Existing first-voyage onboarding remains opt-in at single-player entry, not an initial-screen instruction wall.
 
-## Focused comparison evidence
+## Interaction evidence
 
-The full-view comparison was supplemented by direct inspection of the store guarantee panel, dock inventory/detail panel and side-gun locked state. No additional crop was needed because those controls are readable at the captured desktop size.
+13 browser checks pass: clean startup, drawer Escape/focus, close-button focus, rapid toggles, actual-mesh hover, hover exit, mode navigation, 1280/1024 containment, profile preservation, all seven locales, armory/codex navigation, and preparation/LAN-directory reachability. Browser console errors and failed requests: zero. The test uses isolated Chromium storage and closes its temporary loopback server. SwiftShader timings are not a hardware gaming-FPS claim.
 
-## Comparison history
+## Remaining non-blocking refinements
 
-1. Initial implementation: P1 — `.game-menu-card.start-card` specificity kept the menu at 680 px and produced horizontal overflow. Fix: override with `.game-menu-card.command-center` at 1420 px maximum width. Post-fix evidence showed card width 1408 px and scroll width 1402 px at a 1440 px viewport.
-2. First dock pass: P1 — the preview camera cropped the bow and three inventory rows pushed the selected-component details below the primary viewport. Fix: camera radius 155 → 184, inventory maximum height 330 → 226, item height 90 → 70.
-3. Low-height pass: P2 — 1280 × 720 screens required internal scrolling before the install action. Fix: add a max-height 800 compact layout, reduce hull/inventory rows and size the dock/store to available panel height.
-4. Performance pass: P2 — the hidden dock scene rendered continuously. Fix: suspend hidden rendering and cap visible dock preview rendering at 20 FPS.
+- P3: a restrained outline on the hovered mesh could supplement the currently working tooltip.
+- P3: further hull detail, flags, water-contact shading and a dynamic 3D harbor are future art/rendering work; the ship remains fully interactive, not an image overlay.
+- OS-specific input and packaged asset checks are recorded separately in `docs/acceptance/0.7.7-port.md`.
 
-## Primary interactions tested
-
-- Enter store; perform ten-draw; supply tickets decreased 120 → 110.
-- Purple guarantee reached 10 / 10 on the tenth draw.
-- Drawn equipment appeared in inventory.
-- Category filtering and empty side-gun inventory state worked.
-- Destroyer side-gun slot displayed locked.
-- Purple magazine installed and persisted in menu state.
-- Sea trials launched with the equipped Mk.II gun.
-- Equipped magazine changed observed reload to 6.9 seconds.
-- Browser console warnings/errors checked: none.
-- Automated tests: 29 passed.
-
-## Implementation checklist
-
-- [x] Store draw and guarantee loop
-- [x] Local inventory and profile migration
-- [x] Hull slot compatibility
-- [x] Interactive 3D dock preview
-- [x] Component filter, detail and equip loop
-- [x] Battle performance modifiers
-- [x] Responsive low-height layout
-- [x] Console and interaction verification
-
-## Follow-up polish
-
-- Replace Font Awesome component pictograms with dedicated pixel-art item renders when the final art pipeline is ready.
-- Add additional swappable hull assets after light cruiser and battleship gameplay exists.
-
-final result: passed
+All actionable UI P0/P1/P2 findings listed above have been fixed and re-captured. No assertion of pixel-identical ship geometry or stable 60 FPS is made.

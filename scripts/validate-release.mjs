@@ -27,6 +27,8 @@ await walk(root);
 assert(files.some(file => file.path.startsWith('resources/app.asar.unpacked/dist/assets/textures/')));
 assert(files.some(file => file.path.startsWith('resources/app.asar.unpacked/dist/assets/cursors/')));
 assert(files.some(file => file.path.startsWith('resources/app.asar.unpacked/dist/assets/equipment/')));
+assert(files.some(file => file.path === 'resources/app.asar.unpacked/dist/assets/ui/port-harbor.png'));
+assert.equal(files.filter(file => file.path.startsWith('resources/app.asar.unpacked/dist/assets/ui/ships/') && file.path.endsWith('.png')).length, 15);
 // Current sound effects are synthesized by Web Audio; no source audio directory exists.
 files.sort((a, b) => a.path.localeCompare(b.path));
 const report = { version: packaged.version, fileCount: files.length, totalBytes: files.reduce((sum, file) => sum + file.bytes, 0), asarEntries: entries.length, excludedDevelopmentDependencies: true, files };

@@ -1,3 +1,13 @@
+## 2026-09-14 — Sunny dockyard, 0.7.7
+
+Implemented approved concept 1 in the real game. Added on-demand drawers, seven-locale
+port navigation, component hover picking, smooth cancellable transitions and stable
+orbit-camera damping. Cached actual model vertices for perspective framing; all 15 hulls
+remain inspectable across window sizes. Rendered transparent thumbnails from real models
+and generated an original empty-harbor backdrop. Kept core equipment, saves, battle,
+tutorial and LAN routes. See `acceptance/0.7.7-port.md`, `PORT_UI_ASSETS.md` and root
+`design-qa.md`. No raw subagent transcript is needed to continue development.
+
 # Condensed Development Log
 
 Last updated: 2026-09-13

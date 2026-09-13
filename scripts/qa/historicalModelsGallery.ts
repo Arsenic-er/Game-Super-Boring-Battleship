@@ -22,7 +22,7 @@ import { EQUIPMENT_CATALOG, SHIP_CLASS_SLOT_COUNTS } from "../../src/profile/equ
 import { SHIP_CLASSES, SHIP_CLASS_IDS, getShipClass } from "../../src/ships/classes";
 
 type Entry = { kind: "aircraft" | "ships" | "equipment"; id: string; name: string; category: string };
-type GalleryOptions = { hullOnly: boolean; background: "neutral" | "sky"; rarity: "common" | "purple" | "gold" | "redGold" };
+type GalleryOptions = { hullOnly: boolean; background: "neutral" | "sky" | "transparent"; rarity: "common" | "purple" | "gold" | "redGold" };
 
 const canvas = document.querySelector("canvas")!;
 const engine = new Engine(canvas, true, { preserveDrawingBuffer: true, stencil: true, antialias: true }, false);
@@ -63,7 +63,7 @@ async function load(entry: Entry, options: GalleryOptions) {
   scene?.dispose();
   activeEntry = entry;
   scene = new Scene(engine);
-  scene.clearColor = options.background === "sky" ? new Color4(.62, .76, .84, 1) : new Color4(.24, .27, .30, 1);
+  scene.clearColor = options.background === "transparent" ? new Color4(0, 0, 0, 0) : options.background === "sky" ? new Color4(.62, .76, .84, 1) : new Color4(.24, .27, .30, 1);
   // Exact CLEAR_DAY_RENDER and gameView light directions/colours. No invented flat-light preset.
   scene.imageProcessingConfiguration.exposure = CLEAR_DAY_RENDER.exposure;
   scene.imageProcessingConfiguration.contrast = CLEAR_DAY_RENDER.contrast;

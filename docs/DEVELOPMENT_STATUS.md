@@ -1,6 +1,6 @@
 # Condensed Development Status
 
-Last updated: 2026-09-13
+Last updated: 2026-09-14
 
 This is the current operational handoff. Product decisions are preserved in
 `CONVERSATION_SUMMARY.md`; milestone history is preserved in `DEVELOPMENT_LOG.md`.
@@ -33,7 +33,17 @@ testing, server access and short-lived transfer staging.
 - Single-player battles use a 20-minute hard limit and are tuned toward a 15–20 minute normal duration.
 - Windows directory packages are built on the server; only the latest verified `battleship-latest-windows-x64` directory is copied to the local PC.
 
-## Current flight release — 0.7.6
+## Current port release — 0.7.7
+
+- Based on `2c9d439`; implements the approved sunny-port direction with existing interactive hulls and loadouts.
+- On-demand equipment, loadout, captain and help drawers; actual-mesh hover labels; no persistent start-screen key guide.
+- Interruptible 120/220 ms UI transitions, damped camera motion, cached perspective framing and transparent thumbnails for 15 real game models.
+- Seven-locale port text; previous save/economy/LAN flow retained. No save migration or balance change.
+- Runtime harbor art and ship thumbnails are external Windows resources. Original provenance: `PORT_UI_ASSETS.md`.
+- Visual gate and precise expected deviations from the illustrative ship: project-root `design-qa.md`.
+- Final tests/package/local-delivery evidence: `acceptance/0.7.7-port.md`.
+
+## Previous flight release — 0.7.6
 
 - Based on `6039a63`; replaces the planar authoritative flight model as well as
   formation following. Bank, pitch and airspeed determine three-dimensional travel.

@@ -1,6 +1,6 @@
 # Conversation Summary and Product Memory
 
-Last condensed: 2026-09-12
+Last condensed: 2026-09-14
 
 Project owner: **Arsenic-er / koko**
 
@@ -13,6 +13,14 @@ development conversation. It intentionally does not reproduce raw chat messages,
 sub-agent transcripts, temporary patches, credentials, or repeated status updates.
 
 ## 1. Core product direction
+
+### Approved port direction (2026-09-14)
+
+- User selected sunny-harbor UI concept 1 and requested smooth, interruptible UI motion.
+- Start in the dockyard; keep instructions in Help, not always visible on the first screen.
+- Component names appear only on hover over real 3D geometry. Keep real equipment/save logic.
+- User authorized a temporary isolated server-side automated browser when the in-app browser connection failed; close test services afterward.
+- Continue delivering one latest unpacked Windows directory; keep real user saves intact.
 
 - A lightweight 3D World War II naval-combat game for ordinary PCs.
 - Realism is the reference point, but pacing and readability may be compressed in

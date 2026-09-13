@@ -1,6 +1,7 @@
 import "./style.css";
 import "./pixel.css";
 import "./voyage.css";
+import "./port.css";
 import "@fortawesome/fontawesome-free/css/all.min.css";
 import { PlayerInput } from "./controllers/playerInput";
 import {
@@ -445,7 +446,7 @@ window.addEventListener("keydown", (event) => {
     if (event.code === "Escape") { event.preventDefault(); voyagePanel.hideBriefing(); }
     return;
   }
-  if (!started && event.code === "Escape") { if (menus.isSettingsOpen()) { event.preventDefault(); menus.handleEscape(); } return; }
+  if (!started && event.code === "Escape") { event.preventDefault(); menus.handleEscape(); return; }
   if (!started || state.status !== "running") return;
   if (event.code === "F1" && voyageSession.tutorialActive && !menus.isOpen()) {
     event.preventDefault(); voyageSession.skipTutorial(); syncVoyageProfile(); return;

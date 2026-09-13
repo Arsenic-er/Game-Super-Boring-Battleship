@@ -48,6 +48,7 @@ import {
 import { WEATHER_IDS, WEATHER_PRESETS, type WeatherId } from "../sim/weather";
 import { DockPreview } from "../render/dockPreview";
 import { DockPanel } from "./dockPanel";
+import { PortShell } from "./portShell";
 import { equipmentLocale } from "../i18n/equipmentLocale";
 import { voyageText } from "../i18n/voyageLocale";
 import type { LanGuidanceReason } from "../net/lanGuidance";
@@ -140,6 +141,7 @@ export class GameMenus {
   private readonly codexBody: HTMLElement;
   private readonly dockPreview: DockPreview;
   private readonly dockPanel: DockPanel;
+  private portShell?: PortShell;
   private settingsFromStart = false;
   private readonly multiplayerMenu: MultiplayerMenu;
   private settings: GameSettings;
@@ -337,6 +339,12 @@ export class GameMenus {
       event.stopImmediatePropagation(); this.commanderName.value = this.profile.commanderName;
     }, true);
     this.applyLocale();
+    this.portShell = new PortShell(this.startOverlay, {
+      getLocale: () => this.settings.locale, getProfile: () => this.profile,
+      navigate: (tab) => this.setStartTab(tab), preview: this.dockPreview,
+      selectComponent: (hover) => this.dockPanel.inspectEquipment(hover.category, hover.equipmentId),
+    });
+    this.setStartTab("dock");
   }
 
   private renderStaticContent(): void {
@@ -500,6 +508,7 @@ export class GameMenus {
   showBattleSetup(): void { this.openBattleSetup(); }
 
   private openBattleSetup(): void {
+    this.setStartTab("mission");
     this.battleSetupOpen = true;
     this.panels.mission.classList.add("setup-active");
     const panel = this.panels.mission.querySelector<HTMLElement>(".battle-setup");
@@ -521,6 +530,7 @@ export class GameMenus {
   }
 
   private openMultiplayerMenu(): void {
+    this.setStartTab("mission");
     this.closeBattleSetup();
     this.panels.mission.classList.add("multiplayer-active");
     const panel = this.panels.mission.querySelector<HTMLElement>(".multiplayer-menu-host");
@@ -675,6 +685,7 @@ export class GameMenus {
     localizeElement(document.body, this.settings.locale);
     for (const selector of this.languageSelectors) selector.value = this.settings.locale;
     document.body.dataset.locale = this.settings.locale;
+    this.portShell?.refresh();
   }
 
   setMultiplayerLobby(snapshot: import("../net/lobbyState").LobbySnapshot, localPeerId: string): void {
@@ -706,9 +717,10 @@ export class GameMenus {
     for (const button of this.tabButtons) { const active = button.dataset.menuTab === tab; button.classList.toggle("active", active); button.setAttribute("aria-selected", String(active)); }
     if (tab === "store") this.setArmoryView(this.armoryView);
     if (tab === "dock") {
-      if (enteringDock) this.dockPanel.inspect(this.profile.selectedBattleBuildId ?? undefined); else this.dockPanel.render();
+      if (enteringDock) this.dockPanel.inspect(); else this.dockPanel.render();
       setTimeout(() => this.dockPreview.resize(), 0);
     }
+    this.portShell?.onTab(tab);
   }
   private start(request: GameLaunchRequest): void { if (this.callbacks.onStart(request) !== false) this.startOverlay.hidden = true; }
   openPause(): void { this.pauseOpen = true; this.settingsOpen = false; this.pauseOverlay.hidden = false; this.settingsOverlay.hidden = true; this.callbacks.onPause(); }
@@ -717,7 +729,17 @@ export class GameMenus {
   private exitToMenu(): void { this.showStart(); this.callbacks.onExitToMenu(); }
   private openSettings(): void { if (this.pauseOpen) this.settingsFromStart = false; this.settingsOpen = true; this.pauseOverlay.hidden = true; this.settingsOverlay.hidden = false; const back = this.settingsOverlay.querySelector<HTMLElement>(".settings-back"); if (back) back.textContent = this.t(this.settingsFromStart ? "返回主菜单" : "返回暂停菜单"); }
   private backToPause(): void { this.settingsOpen = false; this.settingsOverlay.hidden = true; this.pauseOverlay.hidden = this.settingsFromStart; }
-  handleEscape(): void { if (this.settingsOpen) this.backToPause(); else if (this.pauseOpen) this.resume(); else this.openPause(); }
+  handleEscape(): void {
+    if (this.settingsOpen) this.backToPause();
+    else if (!this.startOverlay.hidden) {
+      // Close the current nested route before leaving the mode-selection screen.
+      if (this.battleSetupOpen) this.closeBattleSetup();
+      else if (this.panels.mission.classList.contains("multiplayer-active")) this.closeMultiplayerMenu();
+      else this.portShell?.handleEscape();
+    }
+    else if (this.pauseOpen) this.resume();
+    else this.openPause();
+  }
   isOpen(): boolean { return !this.startOverlay.hidden || this.pauseOpen || this.settingsOpen; }
   isSettingsOpen(): boolean { return this.settingsOpen; }
   closeAll(): void { this.startOverlay.hidden = true; this.pauseOverlay.hidden = true; this.settingsOverlay.hidden = true; this.pauseOpen = false; this.settingsOpen = false; }
@@ -726,7 +748,7 @@ export class GameMenus {
   setLanGuidance(reason: LanGuidanceReason): void { this.multiplayerMenu.setGuidance(reason); }
   showMultiplayerDirectory(): void { this.showStart(); this.multiplayerMenu.returnToDirectory(); this.openMultiplayerMenu(); }
   refreshProfileLock(): void { this.commanderName.disabled = Boolean(this.callbacks.isProfileLocked?.()); this.renderProfile(); }
-  showStart(): void { this.pauseOverlay.hidden = true; this.settingsOverlay.hidden = true; this.startOverlay.hidden = false; this.pauseOpen = false; this.settingsOpen = false; this.closeBattleSetup(); this.closeMultiplayerMenu(); this.setStartTab("mission"); }
+  showStart(): void { this.pauseOverlay.hidden = true; this.settingsOverlay.hidden = true; this.startOverlay.hidden = false; this.pauseOpen = false; this.settingsOpen = false; this.closeBattleSetup(); this.closeMultiplayerMenu(); this.setStartTab("dock"); }
   setQuality(quality: "low" | "medium"): void { for (const button of this.qualityButtons) button.classList.toggle("active", button.dataset.quality === quality); }
   private emitSettings(): void { this.updateSensitivityLabels(); this.applyLocale(); this.callbacks.onSettingsChange({ ...this.settings }); }
   private updateSensitivityLabels(): void { this.steeringValue.textContent = `${Math.round(this.settings.steeringSensitivity * 100)}%`; this.aimValue.textContent = `${Math.round(this.settings.aimSensitivity * 100)}%`; this.masterVolumeValue.textContent = `${Math.round(this.settings.masterVolume * 100)}%`; this.muteAudio.textContent = this.settings.muted ? "静音：开" : "静音：关"; this.muteAudio.setAttribute("aria-pressed", String(this.settings.muted)); this.muteAudio.classList.toggle("active", this.settings.muted); for (const button of this.uiSoundButtons) { const active = button.dataset.uiSoundStyle === this.settings.uiSoundStyle; button.classList.toggle("active", active); button.setAttribute("aria-pressed", String(active)); } }

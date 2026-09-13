@@ -14,7 +14,7 @@ for (let i = 2; i < process.argv.length; i++) {
   args.set(key.slice(2), inline ?? (next && !next.startsWith('--') ? process.argv[++i] : true));
 }
 if (args.has('help')) {
-  console.log('node scripts/inspect-historical-models.mjs [--kind aircraft|ships|equipment|all] [--ids a,b] [--views threequarter,side,top] [--hull-only] [--rarity common|purple|gold|redGold] [--background neutral|sky] [--port 5193] [--out .qa/historical-models]');
+  console.log('node scripts/inspect-historical-models.mjs [--kind aircraft|ships|equipment|all] [--ids a,b] [--views threequarter,side,top] [--hull-only] [--rarity common|purple|gold|redGold] [--background neutral|sky|transparent] [--port 5193] [--out .qa/historical-models]');
   process.exit(0);
 }
 const kind = String(args.get('kind') ?? 'all');
@@ -23,7 +23,7 @@ const views = String(args.get('views') ?? 'threequarter,side,top').split(',');
 const options = { hullOnly: args.has('hull-only'), rarity: String(args.get('rarity') ?? 'common'), background: String(args.get('background') ?? 'neutral') };
 if (!['all', 'aircraft', 'ships', 'equipment'].includes(kind)) throw Error('Invalid --kind');
 if (!['common', 'purple', 'gold', 'redGold'].includes(options.rarity)) throw Error('Invalid --rarity');
-if (!['neutral', 'sky'].includes(options.background)) throw Error('Invalid --background');
+if (!['neutral', 'sky', 'transparent'].includes(options.background)) throw Error('Invalid --background');
 if (views.some(view => !['threequarter', 'side', 'top', 'front', 'underside'].includes(view))) throw Error('Invalid --views');
 const output = resolve(repo, String(args.get('out') ?? '.qa/historical-models'));
 if (!output.startsWith(resolve(repo, '.qa') + '/')) throw Error('--out must remain inside this repository .qa directory');
@@ -54,7 +54,7 @@ try {
     optimizeDeps: { entries: ['scripts/qa/historicalModelsGallery.ts'] },
     server: { host: '127.0.0.1', port, strictPort: true, hmr: false, watch: { ignored: ['**/*'] } },
     plugins: [{ name: 'historical-qa-only', configureServer(vite) {
-      vite.middlewares.use('/__historical_qa', (_request, response) => { response.setHeader('Content-Type', 'text/html'); response.end(html); });
+      vite.middlewares.use('/__historical_qa', (_request, response) => { response.setHeader('Content-Type', 'text/html'); response.end(options.background === 'transparent' ? html.replace('background:#3d454d', 'background:transparent') : html); });
     } }],
   });
   await server.listen();
@@ -82,7 +82,7 @@ try {
         const metrics = await page.evaluate(view => window.__historicalModels.render(view), view);
         if (metrics.actualDrawCalls <= 0 || metrics.modelTriangles <= 0) throw Error('Engine rendered no model geometry');
         const shot = join(folder, `${view}.png`);
-        await page.locator('canvas').screenshot({ path: shot, timeout: 30000 });
+        await page.locator('canvas').screenshot({ path: shot, timeout: 30000, omitBackground: options.background === 'transparent' });
         asset.shots.push({ view, path: relative(repo, shot) }); asset.views.push(metrics);
       }
       console.log(JSON.stringify({ id: entry.id, triangles: asset.views[0].modelTriangles, draws: asset.views[0].actualDrawCalls, size: asset.views[0].bounds.size }));

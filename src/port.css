@@ -1,0 +1,171 @@
+/* Sunny port. The persistent controls remain small; equipment is an on-demand drawer. */
+.port-shell {
+  --port-cream: #f4eccf; --port-gold: #edcb79; --port-muted: #b9d0df;
+  --port-ink: #102b40; --port-panel: rgba(8,27,43,.96);
+  padding: 0; overflow: hidden; isolation: isolate;
+  background: #19618d url('/assets/ui/port-harbor.png') center / cover no-repeat;
+  color: var(--port-cream); text-shadow: 1px 2px 2px #102b40;
+}
+.port-shell [hidden] { display: none !important; }
+.port-shell .game-menu-card.command-center {
+  position: relative; width: 100%; height: 100%; max-height: none; margin: 0; padding: 0;
+  border: 0 !important; background: transparent; box-shadow: none; overflow: hidden;
+}
+.port-shell .command-center::before { display: none; }
+.port-shell button { font: inherit; text-transform: none; cursor: pointer; }
+.port-shell button:not(:disabled) { transition: color 120ms ease, background-color 120ms ease, border-color 120ms ease, box-shadow 120ms ease, opacity 120ms ease; }
+.port-shell button:hover,.port-shell button:active { transform: none; }
+.port-shell button:focus-visible { outline: 2px solid var(--port-gold); outline-offset: 4px; }
+.port-shell button:disabled { cursor: not-allowed; opacity: .5; }
+.port-brand { position: absolute; top: 4.2%; left: 3.2%; z-index: 4; width: 42%; max-width: 600px; pointer-events: none; }
+.port-brand h1 { margin: 0; color: var(--port-cream); font-size: clamp(28px,3.2vw,52px); line-height: 1.12; letter-spacing: -.02em; text-shadow: 3px 4px 0 #102b40; }
+.port-brand p { margin: 18px 0 0 3px; font-size: clamp(11px,1.1vw,18px); letter-spacing: .12em; color: var(--port-cream); line-height: 1.2; }
+.port-shell .command-tabs { position: absolute; z-index: 5; top: 24%; left: 1.8%; width: 16%; min-width: 160px; margin: 0; padding: 0; border: 0; background: none; display: flex; flex-direction: column; gap: 17px; }
+.port-shell .command-tabs button { display: flex; align-items: center; gap: 20px; min-height: 62px; padding: 14px 18px; border: 0; border-left: 4px solid transparent; color: #c3d7e1; background: transparent; box-shadow: none; font-size: clamp(17px,1.6vw,27px); text-align: left; text-shadow: 1px 2px 3px #102b40; }
+.port-shell .command-tabs button i { margin: 0; width: 30px; flex: 0 0 30px; text-align: center; }
+.port-shell .command-tabs button.active { background: rgba(12,39,55,.52); border-left-color: var(--port-gold); color: var(--port-gold); }
+.port-shell .command-tabs button:hover { color: var(--port-cream); background: rgba(12,39,55,.42); box-shadow: none; }
+.port-account { position: absolute; z-index: 8; top: 2.5%; right: 2.5%; max-width: 26%; display: flex; align-items: center; gap: 12px; padding: 9px 12px; border: 0; background: rgba(10,40,65,.23); color: var(--port-cream); font-size: 18px !important; box-shadow: none; }
+.port-account span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.port-account i { font-size: 23px; }
+.port-utilities { position: absolute; z-index: 6; bottom: 5.8%; left: 2.6%; display: flex; flex-direction: column; align-items: flex-start; gap: 10px; }
+.port-shell .port-utilities button { display: flex; align-items: center; gap: 10px; min-height: 32px; margin: 0; padding: 3px 5px; border: 0; background: transparent; color: #d1e0e8; box-shadow: none; font-size: 15px; }
+.port-shell .port-utilities button:hover { color: var(--port-gold); }
+.port-shell .port-departure { position: absolute; z-index: 6; right: 2.8%; bottom: 5%; display: flex; align-items: center; justify-content: center; gap: 18px; width: 20%; min-width: 190px; max-width: 340px; height: 83px; padding: 12px 20px; border: 2px solid #ffde8a; border-bottom: 5px solid #a37934; background: #eac36d; color: #112b3d; box-shadow: 3px 5px 0 rgba(8,30,50,.42), inset 0 0 0 3px #d8ab53; font-size: clamp(25px,2.7vw,43px); text-shadow: none; }
+.port-shell .port-departure:hover { background: #f8d885; box-shadow: 3px 5px 0 rgba(8,30,50,.42), inset 0 0 0 3px #f3c770; }
+.port-shell .port-departure:active { border-bottom-width: 2px; }
+.port-shell[data-port-tab="mission"] .port-departure { visibility: hidden; }
+
+.port-shell .command-center .dock-panel { position: absolute; inset: 0; display: block; width: 100%; height: 100%; padding: 0; overflow: visible; pointer-events: none; }
+.port-shell .dock-panel .dock-layout { position: static; display: contents; height: auto; }
+.port-shell .dock-panel .dock-blueprint { position: absolute; left: 17%; right: 0; top: 14%; bottom: 21%; width: auto; height: auto; min-height: 0; border: 0; background: transparent; box-shadow: none; overflow: hidden; pointer-events: auto; }
+.port-shell .dock-preview { display: block; width: 100%; height: 100%; min-height: 0; touch-action: none; outline: none; }
+.port-shell .dock-preview:focus-visible { outline: 1px solid rgba(237,203,121,.7); outline-offset: -2px; }
+.port-shell .dock-callouts { z-index: 8; }
+.dock-hover-tooltip { position: absolute; max-width: 285px; padding: 8px 12px; border: 1px solid #e0c17a; background: rgba(9,30,46,.95); color: #f4eccf; font-size: 14px; line-height: 1.4; text-shadow: none; pointer-events: none; box-shadow: 2px 3px 7px rgba(0,0,0,.18); }
+.dock-hover-tooltip b,.dock-hover-tooltip span { display: block; }
+.dock-hover-tooltip b { font-size: 15px; overflow-wrap: anywhere; }
+.dock-hover-tooltip span { color: #aacbd8; font-size: 12px; margin-top: 2px; }
+.port-ship-caption { position: absolute; z-index: 4; left: 18%; bottom: 18.4%; max-width: 55%; pointer-events: auto; }
+.port-ship-caption h2 { margin: 0 0 7px; font-size: clamp(24px,2.5vw,40px); color: var(--port-cream); line-height: 1.1; text-shadow: 2px 3px 0 #18394b; }
+.port-ship-caption p { margin: 0; font-size: 17px; line-height: 1.3; color: #e1e6db; }
+.port-ship-actions { display: flex; gap: 18px; position: absolute; left: calc(100% + 24px); bottom: 1px; white-space: nowrap; }
+.port-shell .port-ship-actions button { padding: 7px 10px; color: #f4e4b9; font-size: 13px; border: 1px solid rgba(235,211,147,.45); background: rgba(9,36,55,.6); }
+.port-shell .port-button { display: inline-flex; align-items: center; justify-content: center; gap: 8px; min-height: 34px; box-shadow: none; }
+.port-shell .port-icon-button { width: 36px; min-width: 36px; padding: 6px; background: rgba(13,40,57,.8); color: #f0e5c6; border: 1px solid rgba(218,201,157,.35); }
+.port-shell .dock-panel .hull-list { position: absolute; z-index: 4; left: 18%; bottom: 3.7%; width: 56%; height: 115px; display: flex; align-items: stretch; gap: 20px; overflow-x: auto; overflow-y: hidden; min-height: 0; max-height: none; padding: 5px 3px 8px; border: 0; background: transparent; box-shadow: none; pointer-events: auto; scrollbar-width: none; scroll-snap-type: x proximity; }
+.port-shell .hull-list::-webkit-scrollbar { display: none; }
+.port-shell .hull-family { display: contents; }
+.port-shell .hull-list h3,.port-shell .hull-list h4 { display: none; }
+.port-shell .hull-option { flex: 0 0 calc((100% - 40px) / 3); display: flex; flex-direction: column; justify-content: flex-end; align-items: center; gap: 6px; height: 98px; min-width: 145px; width: auto; margin: 0; padding: 3px 7px 8px; border: 0; border-bottom: 2px solid rgba(202,220,228,.4); background: rgba(9,35,52,.18); color: #c4d4df; box-shadow: none; scroll-snap-align: start; text-shadow: 1px 2px 2px #123247; }
+.port-shell .hull-option img { width: 100%; height: 60px; object-fit: cover; object-position: center; pointer-events: none; filter: grayscale(1) brightness(1.5); mix-blend-mode: screen; }
+.port-shell .hull-option b { font-size: 15px; line-height: 1.15; text-align: center; }
+.port-shell .hull-option > span,.port-shell .hull-option > small { display: none; }
+.port-shell .hull-option.active { border: 2px solid var(--port-gold); color: var(--port-gold); background: rgba(9,35,52,.5); box-shadow: inset 0 0 10px rgba(225,188,102,.12); }
+.port-shell .hull-option:hover { background: rgba(9,35,52,.5); color: var(--port-cream); }
+.port-ship-paging { position: absolute; z-index: 5; left: 17.5%; right: 24.7%; bottom: .4%; display: flex; justify-content: space-between; pointer-events: none; }
+.port-ship-paging button { pointer-events: auto; min-height: 26px !important; height: 26px; font-size: 11px !important; opacity: .7; }
+
+.port-shell .port-drawer { position: absolute; z-index: 18; top: 15%; right: 2.4%; bottom: 17%; width: min(425px,36%); max-width: calc(100% - 32px); height: auto; max-height: none; display: flex; flex-direction: column; gap: 14px; padding: 20px; border: 1px solid #8e9b9e; border-top: 3px solid var(--port-gold); background: var(--port-panel); box-shadow: 0 12px 35px rgba(0,16,32,.35); color: #e6e9dc; pointer-events: auto; overflow: auto; overscroll-behavior: contain; scrollbar-width: thin; scrollbar-color: #b9a16c #102b40; text-shadow: none; }
+.port-drawer-heading { display: flex; align-items: center; justify-content: space-between; gap: 12px; flex: 0 0 auto; }
+.port-shell .port-drawer-heading h2 { font-size: 22px; color: var(--port-cream); margin: 0; }
+.port-shell .port-drawer-equipment .slot-list { display: grid; grid-template-columns: repeat(4,minmax(0,1fr)); gap: 5px; font-size: 10px; }
+.port-shell .port-drawer-equipment .slot-list>div { display: flex; flex-direction: column; align-items: center; gap: 4px; padding: 5px 0; background: transparent; }
+.port-shell .slot-list .stock-armament { display: none; }
+.port-shell .port-drawer-equipment .component-filters { display: flex; flex-wrap: wrap; gap: 5px; flex: 0 0 auto; }
+.port-shell .component-filters button { min-height: 30px; font-size: 11px; padding: 5px 9px; border: 1px solid #3d5668; background: #183448; color: #d2e0e3; box-shadow: none; }
+.port-shell .component-filters button.active { border-color: var(--port-gold); color: var(--port-gold); background: #263e48; }
+.port-shell .port-drawer-equipment .inventory-grid { display: grid; grid-template-columns: repeat(3,minmax(0,1fr)); min-height: 90px; max-height: 34vh; flex: 1 1 0; overflow-y: auto; gap: 7px; align-content: start; scrollbar-width: thin; }
+.port-shell .inventory-item { min-height: 90px; border-width: 1px; padding: 7px; background: rgba(36,61,72,.62); box-shadow: none; }
+.port-shell .inventory-item span { font-size: 10px; line-height: 1.3; }
+.port-shell .inventory-item small { font-size: 9px; color: #b9c7cc; }
+.port-shell .inventory-item.active { outline: 2px solid var(--port-gold); outline-offset: -2px; }
+.port-shell .component-detail { flex: 0 0 auto; max-height: 28vh; overflow: auto; border-top: 1px solid #3a5667; padding-top: 10px; font-size: 12px; line-height: 1.45; }
+.port-shell .component-detail .detail-heading b { font-size: 13px; }
+.port-shell .component-detail button { width: 100%; min-height: 38px; color: #112b3d; background: var(--port-gold); border: 1px solid #ffe5a1; }
+.port-shell .dock-preview-status { position: static; border: 0; margin: 0; padding: 0; max-width: none; background: transparent; color: #b3c9d4; font-size: 11px; white-space: normal; }
+.port-shell .port-drawer-builds { width: min(580px,48%); }
+.port-shell .dock-build-tools { display: flex; flex-wrap: wrap; gap: 9px; }
+.port-shell .dock-build-tools input { min-width: 100px; width: 100%; min-height: 38px; background: #162f42; border: 1px solid #587180; color: #e8e5d7; padding: 8px; font: inherit; }
+.port-shell .dock-save-state { flex: 1 1 100%; font-size: 12px; color: #b7c9ce; }
+.port-shell .dock-build-tools button,.port-shell .saved-build-card button,.port-shell .dock-view-state button { padding: 7px 10px; border: 1px solid #506775; background: #203e51; color: #e8e5d7; box-shadow: none; font-size: 11px; }
+.port-shell .dock-view-state { font-size: 12px; line-height: 1.4; margin: 0; min-height: 0; }
+.port-shell .saved-build-list { min-height: 80px; max-height: none; flex: 1 1 0; overflow: auto; display: flex; flex-direction: column; gap: 10px; }
+.port-shell .saved-build-card { min-width: 0; max-width: none; padding: 12px 0; border: 0; border-bottom: 1px solid #355165; background: transparent; box-shadow: none; }
+.port-shell .saved-build-card.selected { border-bottom-color: var(--port-gold); }
+.port-shell .port-drawer-profile { top: 9%; bottom: auto; width: min(460px,44%); }
+.port-shell .profile-strip { display: flex; flex-direction: column; align-items: stretch; gap: 18px; padding: 0; border: 0; background: transparent; box-shadow: none; margin: 0; }
+.port-shell .profile-strip label { width: 100%; }
+.port-shell .profile-strip input,.port-shell .profile-strip select { width: 100%; min-height: 38px; font-size: 15px; color: #eef0df; background: #17354c; }
+.port-shell .profile-resources { display: grid; grid-template-columns: repeat(2,minmax(0,1fr)); gap: 10px; }
+.port-shell .port-drawer-help { left: 20%; right: auto; width: min(740px,73%); }
+.port-shell .port-drawer-help>p,.port-shell .port-drawer-help .mission-brief { font-size: 15px; line-height: 1.7; border: 0; padding: 0; background: transparent; color: #d6e2e3; }
+.port-shell .port-drawer-help .menu-controls { display: grid; grid-template-columns: repeat(2,minmax(0,1fr)); gap: 10px; }
+.port-shell .port-drawer-help .menu-controls span { font-size: 14px; display: flex; align-items: center; gap: 10px; min-height: 42px; background: #193749; border: 0; }
+
+.port-shell .command-center .menu-tab-panel:not(.dock-panel) { position: absolute; z-index: 7; left: 20%; top: 18%; right: 2.4%; bottom: 4%; width: auto; height: auto; padding: 24px; background: var(--port-panel); border: 1px solid #627f8f; border-top: 3px solid var(--port-gold); overflow: auto; scrollbar-width: thin; }
+.port-shell .port-panel-back { width: fit-content; min-height: 30px; margin: 0 0 18px; padding: 4px 0; border: 0; background: transparent; color: #d8c48e; font-size: 13px; }
+.port-shell .mission-panel>p { display: none; }
+.port-shell .mission-panel>h1 { font-size: 30px; margin: 5px 0 26px; color: var(--port-cream); }
+.port-shell .mode-choice { display: grid; grid-template-columns: repeat(3,minmax(0,1fr)); gap: 20px; }
+.port-shell .mode-card { display: flex; flex-direction: column; align-items: flex-start; gap: 15px; min-height: 230px; padding: 26px 20px; border: 1px solid #456174; border-bottom: 3px solid #b59a60; background: #16394f; color: #eee9d5; box-shadow: none; text-align: left; }
+.port-shell .mode-card:hover { background: #234d66; border-color: #d9bb72; }
+.port-shell .mode-card i { font-size: 30px; color: var(--port-gold); }
+.port-shell .mode-card b { font-size: 20px; }
+.port-shell .mode-card span { font-size: 14px; line-height: 1.55; color: #bfd0d8; }
+.port-shell .screen-heading h2 { color: var(--port-cream); }
+.port-shell .eyebrow { color: #a5bdc8; text-shadow: none; }
+.port-shell .store-layout,.port-shell .warehouse-layout { min-height: 0; }
+.port-shell .armory-catalog,.port-shell .warehouse-catalog,.port-shell .armory-nav,.port-shell .warehouse-nav,.port-shell .armory-side,.port-shell .warehouse-detail { border: 1px solid #3b5566; background: #102e43; box-shadow: none; }
+.port-shell .armory-grid,.port-shell .warehouse-grid { min-height: 0; }
+.port-shell .codex-table-wrap { overflow: auto; }
+.port-shell .codex-note { font-size: 13px; line-height: 1.6; color: #afc4cf; }
+.port-shell .battle-setup-grid { gap: 18px; }
+.port-shell .battle-setup-grid>section { min-width: 0; }
+.port-shell .mission-panel.setup-active>.port-panel-back,.port-shell .mission-panel.multiplayer-active>.port-panel-back { display: none; }
+.port-shell .mission-panel.setup-active>h1,.port-shell .mission-panel.multiplayer-active>h1 { display: none; }
+
+@media(max-width:1150px) {
+  .port-brand { left: 2.4%; width: 47%; top: 4%; }
+  .port-brand h1 { font-size: 31px; }
+  .port-brand p { font-size: 11px; margin-top: 12px; }
+  .port-shell .command-tabs { min-width: 145px; width: 16%; left: 1%; gap: 12px; }
+  .port-shell .command-tabs button { gap: 12px; padding: 11px; min-height: 51px; font-size: 18px; }
+  .port-shell .command-tabs button i { width: 23px; flex-basis: 23px; }
+  .port-shell .port-departure { min-width: 155px; height: 68px; width: 19%; font-size: 28px; }
+  .port-ship-actions { position: static; margin-top: 10px; }
+  .port-ship-caption { bottom: 19%; }
+  .port-ship-caption h2 { font-size: 27px; }
+  .port-ship-caption p { font-size: 13px; }
+  .port-shell .port-drawer { width: 42%; padding: 15px; }
+  .port-shell .port-drawer-builds { width: 57%; }
+  .port-shell .port-drawer-help { width: 74%; }
+  .port-shell .command-center .menu-tab-panel:not(.dock-panel) { left: 18%; padding: 18px; }
+  .port-shell .mode-choice { gap: 12px; }
+  .port-shell .mode-card { padding: 20px 15px; }
+}
+@media(max-height:740px) {
+  .port-brand { top: 3%; }
+  .port-brand h1 { font-size: 35px; }
+  .port-brand p { margin-top: 10px; }
+  .port-shell .command-tabs { gap: 7px; top: 24%; }
+  .port-shell .command-tabs button { min-height: 45px; padding: 10px 13px; }
+  .port-shell .dock-panel .hull-list { height: 91px; bottom: 3%; }
+  .port-shell .hull-option { height: 80px; }
+  .port-shell .hull-option img { height: 45px; }
+  .port-shell .hull-option b { font-size: 12px; }
+  .port-ship-caption { bottom: 19.5%; }
+  .port-ship-caption h2 { font-size: 24px; }
+  .port-ship-caption p { font-size: 12px; }
+  .port-ship-actions { position: absolute; left: calc(100% + 18px); margin: 0; gap: 8px; }
+  .port-shell .port-ship-actions button { font-size: 11px; }
+  .port-shell .port-departure { height: 65px; font-size: 30px; }
+  .port-shell .port-drawer { top: 14%; bottom: 15%; gap: 10px; }
+  .port-shell .port-drawer-profile { bottom: auto; }
+  .port-shell .port-drawer-equipment .slot-list { display: none; }
+  .port-shell .port-utilities { bottom: 4.5%; gap: 5px; }
+  .port-shell .mode-card { min-height: 190px; }
+}
+@media(prefers-reduced-motion:reduce) {
+  .port-shell *, .port-shell *::before, .port-shell *::after { transition-duration: 0ms !important; animation-duration: 0ms !important; scroll-behavior: auto !important; }
+}
