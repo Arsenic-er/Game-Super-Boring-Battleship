@@ -1,0 +1,188 @@
+{
+  "checks": [
+    {
+      "name": "startup is uncluttered dockyard without instructions or permanent component labels",
+      "evidence": true
+    },
+    {
+      "name": "equipment drawer closes with Escape and restores focus",
+      "evidence": true
+    },
+    {
+      "name": "close button returns focus to its opening control",
+      "evidence": true
+    },
+    {
+      "name": "seven rapid toggles leave exactly one fully interactive panel",
+      "evidence": true
+    },
+    {
+      "name": "hovering actual 3D geometry identifies its component",
+      "evidence": "QF 4.7 in Mk IX / CP Mk XVIII 单装速射炮\n主炮"
+    },
+    {
+      "name": "component tooltip disappears when pointer leaves ship",
+      "evidence": true
+    },
+    {
+      "name": "departure opens real mode selection; Escape returns to port",
+      "evidence": true
+    },
+    {
+      "name": "persistent controls fit 1280px viewport",
+      "evidence": true
+    },
+    {
+      "name": "persistent controls fit 1024px viewport",
+      "evidence": true
+    },
+    {
+      "name": "viewing, opening drawers and navigation preserve profile data",
+      "evidence": true
+    },
+    {
+      "name": "all seven languages update port controls and window title",
+      "evidence": true
+    },
+    {
+      "name": "armory and collection remain accessible and return to dockyard",
+      "evidence": true
+    },
+    {
+      "name": "single-player preparation and multiplayer directory are reachable",
+      "evidence": true
+    }
+  ],
+  "errors": [],
+  "failedRequests": [],
+  "screenshots": [
+    {
+      "name": "initial-complete-hull",
+      "path": "/home/ubuntu/battleship/.worktrees/v071-first-voyage/.qa/port-077/initial-complete-hull.png",
+      "viewport": {
+        "width": 1672,
+        "height": 941
+      }
+    },
+    {
+      "name": "port-wide",
+      "path": "/home/ubuntu/battleship/.worktrees/v071-first-voyage/.qa/port-077/port-wide.png",
+      "viewport": {
+        "width": 1672,
+        "height": 941
+      }
+    },
+    {
+      "name": "equipment",
+      "path": "/home/ubuntu/battleship/.worktrees/v071-first-voyage/.qa/port-077/equipment.png",
+      "viewport": {
+        "width": 1672,
+        "height": 941
+      }
+    },
+    {
+      "name": "loadouts",
+      "path": "/home/ubuntu/battleship/.worktrees/v071-first-voyage/.qa/port-077/loadouts.png",
+      "viewport": {
+        "width": 1672,
+        "height": 941
+      }
+    },
+    {
+      "name": "component-hover",
+      "path": "/home/ubuntu/battleship/.worktrees/v071-first-voyage/.qa/port-077/component-hover.png",
+      "viewport": {
+        "width": 1672,
+        "height": 941
+      }
+    },
+    {
+      "name": "voyage",
+      "path": "/home/ubuntu/battleship/.worktrees/v071-first-voyage/.qa/port-077/voyage.png",
+      "viewport": {
+        "width": 1672,
+        "height": 941
+      }
+    },
+    {
+      "name": "port-1280",
+      "path": "/home/ubuntu/battleship/.worktrees/v071-first-voyage/.qa/port-077/port-1280.png",
+      "viewport": {
+        "width": 1280,
+        "height": 720
+      }
+    },
+    {
+      "name": "port-1024",
+      "path": "/home/ubuntu/battleship/.worktrees/v071-first-voyage/.qa/port-077/port-1024.png",
+      "viewport": {
+        "width": 1024,
+        "height": 640
+      }
+    },
+    {
+      "name": "port-en-US",
+      "path": "/home/ubuntu/battleship/.worktrees/v071-first-voyage/.qa/port-077/port-en-US.png",
+      "viewport": {
+        "width": 1672,
+        "height": 941
+      }
+    },
+    {
+      "name": "port-de-DE",
+      "path": "/home/ubuntu/battleship/.worktrees/v071-first-voyage/.qa/port-077/port-de-DE.png",
+      "viewport": {
+        "width": 1672,
+        "height": 941
+      }
+    },
+    {
+      "name": "port-ru-RU",
+      "path": "/home/ubuntu/battleship/.worktrees/v071-first-voyage/.qa/port-077/port-ru-RU.png",
+      "viewport": {
+        "width": 1672,
+        "height": 941
+      }
+    },
+    {
+      "name": "store",
+      "path": "/home/ubuntu/battleship/.worktrees/v071-first-voyage/.qa/port-077/store.png",
+      "viewport": {
+        "width": 1672,
+        "height": 941
+      }
+    },
+    {
+      "name": "codex",
+      "path": "/home/ubuntu/battleship/.worktrees/v071-first-voyage/.qa/port-077/codex.png",
+      "viewport": {
+        "width": 1672,
+        "height": 941
+      }
+    },
+    {
+      "name": "battle-setup",
+      "path": "/home/ubuntu/battleship/.worktrees/v071-first-voyage/.qa/port-077/battle-setup.png",
+      "viewport": {
+        "width": 1672,
+        "height": 941
+      }
+    },
+    {
+      "name": "multiplayer",
+      "path": "/home/ubuntu/battleship/.worktrees/v071-first-voyage/.qa/port-077/multiplayer.png",
+      "viewport": {
+        "width": 1672,
+        "height": 941
+      }
+    }
+  ],
+  "renderer": "Chromium SwiftShader; visual/interaction QA, not a hardware FPS measurement",
+  "profileKeys": [
+    "grey-sea-game-settings-v1",
+    "grey-sea-local-profile-v7"
+  ],
+  "ok": true,
+  "serverClosed": true,
+  "finishedAt": "2026-09-13T18:51:54.684Z"
+}

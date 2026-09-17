@@ -1,3 +1,12 @@
+## 2026-09-17 — Two-repository retirement backup
+
+Prepared the 0.7.7 game branch and private asset repository for server retirement.
+Refreshed the source-asset mirrors, condensed recovery instructions and final QA
+evidence. Kept generated builds/caches out of Git. Both pushed checkpoints must pass
+independent fresh-clone verification before the two project directories are removed;
+the local Windows game and AppData saves remain untouched. See
+`SERVER_RETIREMENT_2026-09-17.md`. No game logic changed.
+
 ## 2026-09-14 — Sunny dockyard, 0.7.7
 
 Implemented approved concept 1 in the real game. Added on-demand drawers, seven-locale
@@ -10,10 +19,10 @@ tutorial and LAN routes. See `acceptance/0.7.7-port.md`, `PORT_UI_ASSETS.md` and
 
 # Condensed Development Log
 
-Last updated: 2026-09-13
+Last updated: 2026-09-17
 
 Historical archive baseline: `96fcd51` (`0.6.12`).
-Historical model rebuild base: `6f1fbb2`; input-fix base: `d0dba77`; active version `0.7.6`.
+Historical model rebuild base: `6f1fbb2`; input-fix base: `d0dba77`; active version `0.7.7`.
 
 This is a milestone log derived from the Git history and the long development
 conversation. It is intentionally more compact than a commit-by-commit transcript.

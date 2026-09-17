@@ -1,0 +1,674 @@
+{
+  "version": "0.7.7",
+  "fileCount": 133,
+  "totalBytes": 479393957,
+  "asarEntries": 13487,
+  "excludedDevelopmentDependencies": true,
+  "files": [
+    {
+      "path": "chrome_100_percent.pak",
+      "bytes": 119905,
+      "sha256": "d76fe8fa3a14cd73e4c858746e2ab2d2fa6f2df38a906fa5814b50a8a895fc96"
+    },
+    {
+      "path": "chrome_200_percent.pak",
+      "bytes": 197089,
+      "sha256": "b74ad439f3d3762657f3ba533a6af3ac63315c838ed46519891366f43d834a0e"
+    },
+    {
+      "path": "d3dcompiler_47.dll",
+      "bytes": 4741488,
+      "sha256": "a05f99734f7c4822fefc12b367af21fd0976ed6608752fb1e1e80b6ece7ecbbb"
+    },
+    {
+      "path": "dxcompiler.dll",
+      "bytes": 25616896,
+      "sha256": "1085707889573af5b32e7644d47a7c5f0809ed0818217d75f6eaedee37a2a767"
+    },
+    {
+      "path": "dxil.dll",
+      "bytes": 1509760,
+      "sha256": "77e039c905030a641e53658a008b74e90635a5ea9b6b79eabd0f2003bdfca59a"
+    },
+    {
+      "path": "ffmpeg.dll",
+      "bytes": 3067904,
+      "sha256": "8b7cbc841fd42443cfa4011badb5cf6b9fb41a7a2c277ccbf8e0c321ae44af37"
+    },
+    {
+      "path": "icudtl.dat",
+      "bytes": 10876560,
+      "sha256": "bd8c145abdf3f8383276ce01dfa4ae48709bef9fef1c0711eb7c3fab4f6eb7c2"
+    },
+    {
+      "path": "libEGL.dll",
+      "bytes": 474624,
+      "sha256": "c459e2cf46578da98ba8955e94f29fde8001ba3f44197a3ec521a9c91b538e7c"
+    },
+    {
+      "path": "libGLESv2.dll",
+      "bytes": 8023552,
+      "sha256": "39955886b88e2c2978c8472225430c497abf90b1fad906d7b3b6fdf581ce9ddf"
+    },
+    {
+      "path": "LICENSE.electron.txt",
+      "bytes": 1096,
+      "sha256": "5154e165bd6c2cc0cfbcd8916498c7abab0497923bafcd5cb07673fe8480087d"
+    },
+    {
+      "path": "LICENSES.chromium.html",
+      "bytes": 20313957,
+      "sha256": "b911161e6594ec76b872498b423c54406168f2974e0d407a847f7de1e5ff94dd"
+    },
+    {
+      "path": "locales/af.pak",
+      "bytes": 613722,
+      "sha256": "e16a85aae42dd387971140f0bcea4ad9c25c5f1d06407e7e46cc549241db0d58"
+    },
+    {
+      "path": "locales/am.pak",
+      "bytes": 994404,
+      "sha256": "03fa71456bbb5e88694a519adc8f8ec9ebfdaaf4ecd8f381343f15a1805e3afb"
+    },
+    {
+      "path": "locales/ar.pak",
+      "bytes": 1095898,
+      "sha256": "e952c3a544f0b91cf26e91c8c7a763755cca9591aa915a9d3e63a6cf6daacf6a"
+    },
+    {
+      "path": "locales/bg.pak",
+      "bytes": 1137844,
+      "sha256": "889c68ea8206027dcebd1835884eff52f53c59dfb00fa112c43a2fbb87083ce7"
+    },
+    {
+      "path": "locales/bn.pak",
+      "bytes": 1460793,
+      "sha256": "1b3cb0d1ac1627b51b3a208f3f29864bf415bff3d1d0d5a8b84e7ae4ab2455b4"
+    },
+    {
+      "path": "locales/ca.pak",
+      "bytes": 691926,
+      "sha256": "5da35ba1fb3132d4725bb32d1b1c2a5703ac86effb7ef294470b73887e27b663"
+    },
+    {
+      "path": "locales/cs.pak",
+      "bytes": 718396,
+      "sha256": "0d6a7d8bb08c1c6b8a4735fb364bf7b81b66797e48ea34ef06f78c9d87d15f26"
+    },
+    {
+      "path": "locales/da.pak",
+      "bytes": 644425,
+      "sha256": "73e7ff20f472675b6fe5be87535563ea19fda72dddc64d5e0f068211dfee3703"
+    },
+    {
+      "path": "locales/de.pak",
+      "bytes": 693010,
+      "sha256": "99c50acbe4dca9edde03189ed793f8d6f000793f0938320a39370a11855544f4"
+    },
+    {
+      "path": "locales/el.pak",
+      "bytes": 1250786,
+      "sha256": "e580ee2585ae5f5e9d3cc874c2f1b3773861db3493ae7c08d5c1a3bd4bacbc66"
+    },
+    {
+      "path": "locales/en-GB.pak",
+      "bytes": 559609,
+      "sha256": "bc3c6c433ad7fa76df796fd37d413889be6d2e2759d54680dc3549a0b1bd99f9"
+    },
+    {
+      "path": "locales/en-US.pak",
+      "bytes": 565800,
+      "sha256": "39d605d22eb267d68ea4268d5e2a38a88ec0e2ed6dec23395a7da47f99c58184"
+    },
+    {
+      "path": "locales/es-419.pak",
+      "bytes": 682813,
+      "sha256": "7a30d5e3ae178d15384cd7fff6aea467fa938c6261cab11fa870a3dff84e4df8"
+    },
+    {
+      "path": "locales/es.pak",
+      "bytes": 679423,
+      "sha256": "7d92ead9e4168f52274e3729457adf50d896d0fde01aecd873d6e0122744f954"
+    },
+    {
+      "path": "locales/et.pak",
+      "bytes": 620125,
+      "sha256": "dad68aad8c36da532a58f018124d4182173b2589f6f8c44cdd3f7dbb5304ee68"
+    },
+    {
+      "path": "locales/fa.pak",
+      "bytes": 1026720,
+      "sha256": "b88eb1d00a6bd70c969a44c57f2fce5760001d16713a43288595c2efd43c3247"
+    },
+    {
+      "path": "locales/fi.pak",
+      "bytes": 632141,
+      "sha256": "cd1a5e8b30a1a0e8a35830174e66c89d21dde97614a93749eedabd3731516f0d"
+    },
+    {
+      "path": "locales/fil.pak",
+      "bytes": 715474,
+      "sha256": "6c86424d7415a92456ebf6d7a17b1e4cfcfb25da833a4c5377c502c24e335ff8"
+    },
+    {
+      "path": "locales/fr.pak",
+      "bytes": 738084,
+      "sha256": "92fdf24ee5cd7977dae8940c092f743683278432a7dd68a52a5c069f32f60d7a"
+    },
+    {
+      "path": "locales/gu.pak",
+      "bytes": 1443467,
+      "sha256": "dae744e959d1a536cd51e925f2aa80b7ba23f981a989368b9b6f87df03194627"
+    },
+    {
+      "path": "locales/he.pak",
+      "bytes": 898516,
+      "sha256": "fc4011bf24266691363cfecd0a0c233f3197c9706bb0c5ede73cbc25a8f71e97"
+    },
+    {
+      "path": "locales/hi.pak",
+      "bytes": 1529365,
+      "sha256": "0f78af66fa88302da0e1241175abe0291512c32521792adab5efd67c6196fca5"
+    },
+    {
+      "path": "locales/hr.pak",
+      "bytes": 690892,
+      "sha256": "24c82c47f0bd227e91a83a5d3f929ba5f557a0a262b3b7293f7941faa3b45941"
+    },
+    {
+      "path": "locales/hu.pak",
+      "bytes": 738244,
+      "sha256": "0bed3bc4d3258dbbcdfd4a2479c666d35aa2eb2794127c7135067f650bb50455"
+    },
+    {
+      "path": "locales/id.pak",
+      "bytes": 612159,
+      "sha256": "bb63434850472affa79247d4b79465b89fc4ebd290478015e88d04be55d4c276"
+    },
+    {
+      "path": "locales/it.pak",
+      "bytes": 668936,
+      "sha256": "a4990034b1e74404b83e9578016ff7fd81468f62ecfde48bec4e3a05df782b40"
+    },
+    {
+      "path": "locales/ja.pak",
+      "bytes": 815268,
+      "sha256": "61000f96276079f74db0fde6b8294324811f271fee2835917c42312ac9b7b0b5"
+    },
+    {
+      "path": "locales/kn.pak",
+      "bytes": 1661406,
+      "sha256": "41a2028199741a4827bc470772aead42276cf630aad61e344191d4708cff6bb0"
+    },
+    {
+      "path": "locales/ko.pak",
+      "bytes": 693731,
+      "sha256": "2d77980cb8d944305ed6b2dd4413862e205bce2de4b3a1eedacfc91e1836999f"
+    },
+    {
+      "path": "locales/lt.pak",
+      "bytes": 751706,
+      "sha256": "541b0f03ed863ac8bfdb2fba2c0ae03bc27802ba99b9863eb0a950b705bc4f61"
+    },
+    {
+      "path": "locales/lv.pak",
+      "bytes": 748765,
+      "sha256": "2743e698bd3c862750967709049af14152babd32052fb0ee7e9901fa5acc6d48"
+    },
+    {
+      "path": "locales/ml.pak",
+      "bytes": 1705247,
+      "sha256": "364e991b719876b6491bd678fa2b1303e69fca5014ea83e885ca6a5775cf1c42"
+    },
+    {
+      "path": "locales/mr.pak",
+      "bytes": 1414904,
+      "sha256": "a68fb1c2ee67eaf807186571278da7c78bc782ed06607e0c6822ac3c71cef9cd"
+    },
+    {
+      "path": "locales/ms.pak",
+      "bytes": 644374,
+      "sha256": "0e73c1e883e1ed27b0f110d087480880f4f4369c01736ec616174dde24553b1b"
+    },
+    {
+      "path": "locales/nb.pak",
+      "bytes": 616030,
+      "sha256": "b0597a6739575752dd29727c94c22449551f50f5bcaf7f83b49a536ebf1a28ad"
+    },
+    {
+      "path": "locales/nl.pak",
+      "bytes": 641855,
+      "sha256": "6c05ab0a374d00b5c66788458ff7def7871fbf66cc1f629868529bfebb2911c1"
+    },
+    {
+      "path": "locales/pl.pak",
+      "bytes": 717434,
+      "sha256": "b593df8af8325210acab036337f261e59c43140a8bb982587e7a73d65ac59c81"
+    },
+    {
+      "path": "locales/pt-BR.pak",
+      "bytes": 672814,
+      "sha256": "a7401824b914d20565e6698d98851405820dcf2d639aec762b65bdae383cd94e"
+    },
+    {
+      "path": "locales/pt-PT.pak",
+      "bytes": 676692,
+      "sha256": "3ed3bfbb85bd4aab260dd18e63b591dc777a5768110d96662e60559eac77bb4b"
+    },
+    {
+      "path": "locales/ro.pak",
+      "bytes": 702275,
+      "sha256": "e835583f8d95853fabebfea1c9ddd6a5569826d99ae2234a4e1dabc1fe483057"
+    },
+    {
+      "path": "locales/ru.pak",
+      "bytes": 1163087,
+      "sha256": "6a098a4df1813c73c9f72da68bb7a956e889132d2ebdb536c2555dfa62d2c21d"
+    },
+    {
+      "path": "locales/sk.pak",
+      "bytes": 729969,
+      "sha256": "86b15f91b88269066a8b9974472cd0e10bbba6985a37230ef98f2a4ca75111f3"
+    },
+    {
+      "path": "locales/sl.pak",
+      "bytes": 698884,
+      "sha256": "6ad9e4479833aae833be42fd27c355d5f5106e35ec46d7358c8913ec86265ab0"
+    },
+    {
+      "path": "locales/sr.pak",
+      "bytes": 1075610,
+      "sha256": "e8e42e99d233acf6906b52f5d1241ab13775d81b715fd2359558efb1fe3cbb5f"
+    },
+    {
+      "path": "locales/sv.pak",
+      "bytes": 623816,
+      "sha256": "6370cc715d38e8cb519ae7891b779aca1470d9e3f893893f9badcf8052ea6def"
+    },
+    {
+      "path": "locales/sw.pak",
+      "bytes": 660329,
+      "sha256": "4364411b30c18975b70182a61b6d4f2866913633acaabc849b67807553cab0ca"
+    },
+    {
+      "path": "locales/ta.pak",
+      "bytes": 1696416,
+      "sha256": "3e32e86952c9bbf35625f8842970cab653613894b8f6ae7a9130eb34334bdf32"
+    },
+    {
+      "path": "locales/te.pak",
+      "bytes": 1571646,
+      "sha256": "cc83c58f09a7830829a8c4ad3deee97f87003ebe553844945b7800c9ea6f6666"
+    },
+    {
+      "path": "locales/th.pak",
+      "bytes": 1320614,
+      "sha256": "a413ab6322a4d65e013c167426ed26ab0eeffce5dbcc349e3338bff061f369dc"
+    },
+    {
+      "path": "locales/tr.pak",
+      "bytes": 672382,
+      "sha256": "530a771c8d66c89aea81f094fc4cecf16ddc5e9eb617afa2edbc5250210ad20d"
+    },
+    {
+      "path": "locales/uk.pak",
+      "bytes": 1172427,
+      "sha256": "fcf34b72b374f8f41cf630ee6e9a690d15673b0867e90f93268eede8364d4a88"
+    },
+    {
+      "path": "locales/ur.pak",
+      "bytes": 1009975,
+      "sha256": "043af5d35bbfc218c295d97367e2d433faf2a141a98792e2cafaba16b4bc171c"
+    },
+    {
+      "path": "locales/vi.pak",
+      "bytes": 799477,
+      "sha256": "e00e36e809b15f7251895efc63f05da6246326984d261963eea87e5dbce15239"
+    },
+    {
+      "path": "locales/zh-CN.pak",
+      "bytes": 571468,
+      "sha256": "27d412caf44e0d206eb8afa5e3f846988fab8f8358f0f84f5260e2c671c3b619"
+    },
+    {
+      "path": "locales/zh-TW.pak",
+      "bytes": 564070,
+      "sha256": "852c7930e92eeb8bcec75a92ebae9253eeed0662e7e7508aaf4b7315a268cc17"
+    },
+    {
+      "path": "resources.pak",
+      "bytes": 7146735,
+      "sha256": "c4a2da02b8c54c3604c2b753fe6953d6f789c5460d0b9a7e41661a4c59628238"
+    },
+    {
+      "path": "resources/app.asar",
+      "bytes": 106114564,
+      "sha256": "55757c09b598705a738713e66fcc275495b5b1c40af20ddf04f4ce2ccaa2c60f"
+    },
+    {
+      "path": "resources/app.asar.unpacked/dist/assets/cursors/crosshair.png",
+      "bytes": 415,
+      "sha256": "b8ba569348f5c90990bf23b121e98d71e46be4d9af4f4faaba005ae03d42ecd4"
+    },
+    {
+      "path": "resources/app.asar.unpacked/dist/assets/cursors/neon-arrow.png",
+      "bytes": 180,
+      "sha256": "2b564fedfddd501e61ccac27e9914737d71dec4ab9fbe62989c7cf1161101749"
+    },
+    {
+      "path": "resources/app.asar.unpacked/dist/assets/cursors/neon-hand.png",
+      "bytes": 231,
+      "sha256": "4b366aecaf276978d9af37e250c967432174cdbcf5b96bbbb6e8ef37fdb2a45a"
+    },
+    {
+      "path": "resources/app.asar.unpacked/dist/assets/equipment/antiAir-common.svg",
+      "bytes": 876,
+      "sha256": "e15c1be57e3d05dcef403a61acd7ca9acca91704a39ff4bd3d8f049579f3a5bd"
+    },
+    {
+      "path": "resources/app.asar.unpacked/dist/assets/equipment/antiAir-gold.svg",
+      "bytes": 907,
+      "sha256": "3e8c87ba2b78acebb4038606199bc0a0560f76977f569dffdf990a58e8d8e886"
+    },
+    {
+      "path": "resources/app.asar.unpacked/dist/assets/equipment/antiAir-purple.svg",
+      "bytes": 1149,
+      "sha256": "9d0e9755dea619221b671404a46b9ea2824eaa881b37fd3e165b4b2fb8dac0ea"
+    },
+    {
+      "path": "resources/app.asar.unpacked/dist/assets/equipment/antiAir-redGold.svg",
+      "bytes": 1022,
+      "sha256": "0c0de78378d5f99eaa504c487e988a00bbd1b29a135e3ba6fcd59cc6c08da9a3"
+    },
+    {
+      "path": "resources/app.asar.unpacked/dist/assets/equipment/depthCharge-common.svg",
+      "bytes": 933,
+      "sha256": "bc350d0b670456ae8899a2c13fe4083b8162212788972670ca6845dd19f35c69"
+    },
+    {
+      "path": "resources/app.asar.unpacked/dist/assets/equipment/depthCharge-gold.svg",
+      "bytes": 1017,
+      "sha256": "f898d1f2c72932ed3ed1c7a6b3a358a4365f6691f38474fcda4e835e256c0c13"
+    },
+    {
+      "path": "resources/app.asar.unpacked/dist/assets/equipment/depthCharge-purple.svg",
+      "bytes": 973,
+      "sha256": "b4630d30722b5da28cafa5d8022f33f9519ad9e50b54d00aeed17190d5ab7abd"
+    },
+    {
+      "path": "resources/app.asar.unpacked/dist/assets/equipment/depthCharge-redGold.svg",
+      "bytes": 1220,
+      "sha256": "f967fadee8723b19b093878c9c622d6117f3de1b76830f5f26d012ca535d5502"
+    },
+    {
+      "path": "resources/app.asar.unpacked/dist/assets/equipment/engine-common.svg",
+      "bytes": 1054,
+      "sha256": "b8f8e823e73ee865278e0dacd4b0bcbd697c9b9b61d54515c6c37d9a5d99e458"
+    },
+    {
+      "path": "resources/app.asar.unpacked/dist/assets/equipment/engine-gold.svg",
+      "bytes": 1209,
+      "sha256": "787c6e81a0e64caaced634fa3182bc3abe2e230e2b3c2d3348772df9591f276b"
+    },
+    {
+      "path": "resources/app.asar.unpacked/dist/assets/equipment/engine-purple.svg",
+      "bytes": 1188,
+      "sha256": "b1190bfa9ebed106edade9739ec612012f891caf8808eedf933c20b4bf62458e"
+    },
+    {
+      "path": "resources/app.asar.unpacked/dist/assets/equipment/engine-redGold.svg",
+      "bytes": 1292,
+      "sha256": "a9fe96a1134ecf79aecb65d96d8e6ccf90ff2b4a9ba27914b7c5a1654a82789a"
+    },
+    {
+      "path": "resources/app.asar.unpacked/dist/assets/equipment/magazine-common.svg",
+      "bytes": 975,
+      "sha256": "12e8417359a4986ce11945ef298d6868e43117ed5883df56fb90dd3206e12d86"
+    },
+    {
+      "path": "resources/app.asar.unpacked/dist/assets/equipment/magazine-gold.svg",
+      "bytes": 1067,
+      "sha256": "e5b521af1080addd194af86082c79e30df74a8c144fcfa6a598f297767e646fe"
+    },
+    {
+      "path": "resources/app.asar.unpacked/dist/assets/equipment/magazine-purple.svg",
+      "bytes": 1024,
+      "sha256": "a76a7de0fd0774343badbd47d7ea1717b487b92a455799d6075a75cc9bfe35bf"
+    },
+    {
+      "path": "resources/app.asar.unpacked/dist/assets/equipment/magazine-redGold.svg",
+      "bytes": 1122,
+      "sha256": "c4a18350e4c8fc722688a090186d6e93ba198c262efce0ff8443f0b3636e57f6"
+    },
+    {
+      "path": "resources/app.asar.unpacked/dist/assets/equipment/mainGun-common.svg",
+      "bytes": 888,
+      "sha256": "d8712005ef4df9008bbb976449bb0f375430c9f76abb9b6350511978160073a3"
+    },
+    {
+      "path": "resources/app.asar.unpacked/dist/assets/equipment/mainGun-gold.svg",
+      "bytes": 927,
+      "sha256": "822f16703b513646193ecb86e243bab88181516a339a8e27c672d95332e38c86"
+    },
+    {
+      "path": "resources/app.asar.unpacked/dist/assets/equipment/mainGun-purple.svg",
+      "bytes": 928,
+      "sha256": "2e71de4fc198a1c4025d0b54c57e212ef7d9f66b10f4795bb9e7ee074c721b0f"
+    },
+    {
+      "path": "resources/app.asar.unpacked/dist/assets/equipment/mainGun-redGold.svg",
+      "bytes": 932,
+      "sha256": "f4b63854d94a731933149a4ef2dd280ec263db24b8ad03060fb198c166fd2753"
+    },
+    {
+      "path": "resources/app.asar.unpacked/dist/assets/equipment/sideGun-common.svg",
+      "bytes": 922,
+      "sha256": "39b191e6f84c9270d332de95bbf8f6309b1bae2c9ecc4df9e5c44aa2903bc924"
+    },
+    {
+      "path": "resources/app.asar.unpacked/dist/assets/equipment/sideGun-gold.svg",
+      "bytes": 916,
+      "sha256": "f424c83ee4df8f4ee3b810e581d0bf10ed4e0317fffb0a53982ddf306d7bec62"
+    },
+    {
+      "path": "resources/app.asar.unpacked/dist/assets/equipment/sideGun-purple.svg",
+      "bytes": 923,
+      "sha256": "5fd7a963205c5e8d8b97676585efff5f97f528bb8479fb22d3f8ea44cfa664af"
+    },
+    {
+      "path": "resources/app.asar.unpacked/dist/assets/equipment/sideGun-redGold.svg",
+      "bytes": 960,
+      "sha256": "271077af43690c1593570740286e593deda209b8cacba889c4ba88a956a35004"
+    },
+    {
+      "path": "resources/app.asar.unpacked/dist/assets/equipment/steering-common.svg",
+      "bytes": 1032,
+      "sha256": "23a4516e94cbfb80d4f83a8ef74662b6205758fe91dd6fe51daeb16f7332e45e"
+    },
+    {
+      "path": "resources/app.asar.unpacked/dist/assets/equipment/steering-gold.svg",
+      "bytes": 1188,
+      "sha256": "677ba8c82babb36f0a7112f7e69af2f013da3873858c97b4aa46e5a2257b61d0"
+    },
+    {
+      "path": "resources/app.asar.unpacked/dist/assets/equipment/steering-purple.svg",
+      "bytes": 1175,
+      "sha256": "e39b8018b6307e649d2030d44d8e7947c276c641601d67d63510445bae5c1225"
+    },
+    {
+      "path": "resources/app.asar.unpacked/dist/assets/equipment/steering-redGold.svg",
+      "bytes": 1333,
+      "sha256": "ac2cf44d175eaee7d98a9b1e213ccf087f7276ded1f0c9d0b7709318fd781205"
+    },
+    {
+      "path": "resources/app.asar.unpacked/dist/assets/equipment/torpedo-common.svg",
+      "bytes": 916,
+      "sha256": "927ea8bfec2eba528a95a14e9062c51986909a2a8d158d027b63f6df682adb75"
+    },
+    {
+      "path": "resources/app.asar.unpacked/dist/assets/equipment/torpedo-gold.svg",
+      "bytes": 1082,
+      "sha256": "1ac5f4dd08f9e3e9cd4976b80cddb2e303a00449dcd3887741011c5a1b7a70e8"
+    },
+    {
+      "path": "resources/app.asar.unpacked/dist/assets/equipment/torpedo-purple.svg",
+      "bytes": 971,
+      "sha256": "abb906d44e0ae76085a017a22d394aeaeb60a83e0a865718d84e5a70f5a886d1"
+    },
+    {
+      "path": "resources/app.asar.unpacked/dist/assets/equipment/torpedo-redGold.svg",
+      "bytes": 1016,
+      "sha256": "d67c2fc5cb71d01293dfaaac5c4325517655924d382b17bb626d6045da09b321"
+    },
+    {
+      "path": "resources/app.asar.unpacked/dist/assets/ships/catalog.json",
+      "bytes": 43,
+      "sha256": "b9200584d618aaed7cb9a01d2f7a36c73f8562af6733cddb93f5ca791410901b"
+    },
+    {
+      "path": "resources/app.asar.unpacked/dist/assets/ships/README.md",
+      "bytes": 469,
+      "sha256": "dd6ca486aeda878d4d7429b88394f92e893cf227d541f8d308d08e52389f6c39"
+    },
+    {
+      "path": "resources/app.asar.unpacked/dist/assets/textures/pixel-ocean-v1.png",
+      "bytes": 1807823,
+      "sha256": "d30e1f4a03065ae548f9e2d731c5d3299b875ade45170dcee9e48000bc1da303"
+    },
+    {
+      "path": "resources/app.asar.unpacked/dist/assets/textures/pixel-sky-clear-v1.png",
+      "bytes": 1017449,
+      "sha256": "efb0a413c9e635a4dea28d170b624ade1066ffec739b2ab128b88f19467e26a6"
+    },
+    {
+      "path": "resources/app.asar.unpacked/dist/assets/textures/pixel-sky-overcast-v1.png",
+      "bytes": 1126180,
+      "sha256": "cf05933e7b4689ee96dc3be68a5671929aa06d9806ffdb9cd8d93bf6669a290c"
+    },
+    {
+      "path": "resources/app.asar.unpacked/dist/assets/textures/torpedo-wake-pixel.png",
+      "bytes": 15649,
+      "sha256": "f2762ea61d9bb17eed03d7bf33e25e5eaf4da763ff78f25af7462115101c15c7"
+    },
+    {
+      "path": "resources/app.asar.unpacked/dist/assets/textures/ww2-destroyer-pixel-atlas.png",
+      "bytes": 2235548,
+      "sha256": "e4bf065bed4534123033f3e69a090bfbde8d9f39f5860b7a4d429ce6522f8966"
+    },
+    {
+      "path": "resources/app.asar.unpacked/dist/assets/textures/ww2-vfx-pixel-atlas.png",
+      "bytes": 411108,
+      "sha256": "9e8ec351afb5d870db5bbf5c216f3ee2e0c466eb4c92c74ebc272e2c887edc16"
+    },
+    {
+      "path": "resources/app.asar.unpacked/dist/assets/ui/port-harbor.png",
+      "bytes": 2185289,
+      "sha256": "415f088f6b3aafbd93bd37013abdbb865ed2d189792fa02f7ae9a1c3052ced23"
+    },
+    {
+      "path": "resources/app.asar.unpacked/dist/assets/ui/ships/agano.png",
+      "bytes": 29964,
+      "sha256": "07ef53a23b2dd7bc5e64478f444d71cac0bf0395bc80118393e4235d8415c466"
+    },
+    {
+      "path": "resources/app.asar.unpacked/dist/assets/ui/ships/bismarck.png",
+      "bytes": 38119,
+      "sha256": "740d7448569e89faf226995d62dfac39891f6b7cb54732f0ed78c0207683fa5c"
+    },
+    {
+      "path": "resources/app.asar.unpacked/dist/assets/ui/ships/cleveland.png",
+      "bytes": 30196,
+      "sha256": "2625430a47466cd9b07d78163f4a7b842153d4e57d39f48de1c086b83ac0d37a"
+    },
+    {
+      "path": "resources/app.asar.unpacked/dist/assets/ui/ships/dido.png",
+      "bytes": 28761,
+      "sha256": "d00dfee57de9cedaf87c421a22d9cd155d4e49aa4537a0753526376bdba00e78"
+    },
+    {
+      "path": "resources/app.asar.unpacked/dist/assets/ui/ships/edinburgh.png",
+      "bytes": 31822,
+      "sha256": "8ef7c25cf2a49d7b94d88f2d15fb9c508a6635f547df99429cf76cd3673a679c"
+    },
+    {
+      "path": "resources/app.asar.unpacked/dist/assets/ui/ships/fletcher.png",
+      "bytes": 24845,
+      "sha256": "fc0649d33534916bfd21c69c4c04b1af6fef175f22932eede4302569ebe2649b"
+    },
+    {
+      "path": "resources/app.asar.unpacked/dist/assets/ui/ships/j-class.png",
+      "bytes": 23849,
+      "sha256": "b4dae73e4be4dc8e71d968a9ad9b88b7b517c1f8ea1616c6d9463efb701a2471"
+    },
+    {
+      "path": "resources/app.asar.unpacked/dist/assets/ui/ships/kagero.png",
+      "bytes": 26707,
+      "sha256": "664c8f1382f2161de77cb0eee22ab64e3fbfe5d27a861931cd732a59d395a82c"
+    },
+    {
+      "path": "resources/app.asar.unpacked/dist/assets/ui/ships/king-george-v.png",
+      "bytes": 37196,
+      "sha256": "23b16a9b52fdb4525180c775427611f01d5e38805403e2a6dd26d7f5d9c2d74a"
+    },
+    {
+      "path": "resources/app.asar.unpacked/dist/assets/ui/ships/north-carolina.png",
+      "bytes": 37020,
+      "sha256": "7bb4082b0f7d14bf9f3f3262fb35d28d2b9bfa7c98c1974e6574c06cc5a45169"
+    },
+    {
+      "path": "resources/app.asar.unpacked/dist/assets/ui/ships/nurnberg.png",
+      "bytes": 29431,
+      "sha256": "110cb81082d50cf1f0c0bb8615e3968a84f92cfcb63912675a6b130c964d5fa2"
+    },
+    {
+      "path": "resources/app.asar.unpacked/dist/assets/ui/ships/richelieu.png",
+      "bytes": 36784,
+      "sha256": "3e6f078aba2450ddb1ed2c17a1967143a4590f227dcdb846feafb6e12454f7b3"
+    },
+    {
+      "path": "resources/app.asar.unpacked/dist/assets/ui/ships/tashkent.png",
+      "bytes": 28455,
+      "sha256": "28c2ddde500707c49d904890d563403a5838f16e7afb1f0f7a33983e77e39d35"
+    },
+    {
+      "path": "resources/app.asar.unpacked/dist/assets/ui/ships/type-1936a.png",
+      "bytes": 27601,
+      "sha256": "9e0cb8c1cb57d0e8291d31d345cf36efc17b973bed5472370db150d18e482b1d"
+    },
+    {
+      "path": "resources/app.asar.unpacked/dist/assets/ui/ships/yamato.png",
+      "bytes": 42031,
+      "sha256": "e16db34f9a359da51765aef14a3644ac00121e0c3853e95b8fcf6af6e92b0c2f"
+    },
+    {
+      "path": "snapshot_blob.bin",
+      "bytes": 365488,
+      "sha256": "67b1473834c011a3b4e7b3c395694de4d417415b432141278d5dd6a9726905dc"
+    },
+    {
+      "path": "Super Boring Battleship Game.exe",
+      "bytes": 225449472,
+      "sha256": "826d4b8973ec1e5426dcd22e40ea96f795f6cc6ba788992ac77b2ce2950f7d75"
+    },
+    {
+      "path": "v8_context_snapshot.bin",
+      "bytes": 740048,
+      "sha256": "e2ecf544ace3397c1d167e71dc83a099e4d990af1d56b6844f260876027136c2"
+    },
+    {
+      "path": "vk_swiftshader_icd.json",
+      "bytes": 106,
+      "sha256": "32d83ff113fef532a9f97e0d2831f8656628ab1c99e9060f0332b1532839afd9"
+    },
+    {
+      "path": "vk_swiftshader.dll",
+      "bytes": 5502464,
+      "sha256": "dc150d40c7ca24dc1d132990bdefa1168e3af5244e8c6e5e84a7d3f2ae20ead4"
+    },
+    {
+      "path": "vulkan-1.dll",
+      "bytes": 930304,
+      "sha256": "db1ca92ddd19d5e02cf336a781c3770a9cead750c4cab780898f174f41d598d1"
+    }
+  ]
+}

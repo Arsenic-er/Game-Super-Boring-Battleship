@@ -1,6 +1,6 @@
 # Conversation Summary and Product Memory
 
-Last condensed: 2026-09-14
+Last condensed: 2026-09-17
 
 Project owner: **Arsenic-er / koko**
 
@@ -13,6 +13,14 @@ development conversation. It intentionally does not reproduce raw chat messages,
 sub-agent transcripts, temporary patches, credentials, or repeated status updates.
 
 ## 1. Core product direction
+
+### Server retirement request (2026-09-17)
+
+- Push the complete latest game and source assets to their separate existing repositories.
+- Only after an independent remote restore check, remove this project's server directories.
+- Keep the owner's single local 0.7.7 Windows folder and real saves untouched.
+- Restore the game from `codex/v072-historical-models`, not the older default `main`.
+- Follow `SERVER_RETIREMENT_2026-09-17.md`; raw transcripts and caches are not project memory.
 
 ### Approved port direction (2026-09-14)
 

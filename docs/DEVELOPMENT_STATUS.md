@@ -1,6 +1,6 @@
 # Condensed Development Status
 
-Last updated: 2026-09-14
+Last updated: 2026-09-17
 
 This is the current operational handoff. Product decisions are preserved in
 `CONVERSATION_SUMMARY.md`; milestone history is preserved in `DEVELOPMENT_LOG.md`.
@@ -9,7 +9,11 @@ credentials, caches or generated builds in the repositories.
 
 ## Source of truth
 
-- Server: `ubuntu@100.97.101.5` (Tailscale on the same GPU-273312 host; public IPv4 remains 150.65.181.188)
+- Retirement checkpoint: `SERVER_RETIREMENT_2026-09-17.md`. Restore from the two Git
+  repositories; the old server is being cleared after remote restore verification.
+- Backup tag in both repositories: `backup-2026-09-17`.
+- Former server: `ubuntu@100.97.101.5` (GPU-273312; public IPv4 150.65.181.188).
+  The paths below are historical locations, not durable storage.
 - Game project: `/home/ubuntu/battleship`
 - Asset project: `/home/ubuntu/battleship-assets`
 - Active worktree: `/home/ubuntu/battleship/.worktrees/v071-first-voyage`
