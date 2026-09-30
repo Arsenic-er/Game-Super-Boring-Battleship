@@ -1,3 +1,13 @@
+## Latest operational decision — 2026-10-01
+
+The owner requested recovery on the newest server recorded in the “嘿嘿嘿” project.
+GPU-821560 is now the development host; canonical paths and verified recovery hashes
+are recorded in `SERVER_RECOVERY_2026-10-01.md` and `DEVELOPMENT_STATUS.md`.
+Continue using subagents for bounded work. Build on the server, deliver one latest
+unpacked Windows folder, preserve real AppData saves and leave no persistent preview
+service. The next completed small feature is dockyard component hover outlines;
+this is not a new ship-model rebuild, balance change or automatic Git push.
+
 # Conversation Summary and Product Memory
 
 Last condensed: 2026-09-17
@@ -241,7 +251,7 @@ sub-agent transcripts, temporary patches, credentials, or repeated status update
 ## 12. Resume checklist after server migration
 
 1. Clone both repositories.
-2. Install Node.js 24.x and run `npm install` in the game repository.
+2. Use the project-local Node.js 24.x runtime and run `npm ci` in the game repository.
 3. Read this file, `docs/DEVELOPMENT_STATUS.md`, `docs/DEVELOPMENT_LOG.md`,
    `docs/ARCHITECTURE.md`, and the asset repository's `PAUSE_HANDOFF.md`.
 4. Run `npm test -- --run`, `npm run build`,

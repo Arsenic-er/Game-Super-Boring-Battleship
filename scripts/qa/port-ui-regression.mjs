@@ -6,7 +6,7 @@ import assert from 'node:assert/strict';
 process.env.PLAYWRIGHT_BROWSERS_PATH ??= resolve('.qa/browsers');
 process.env.LD_LIBRARY_PATH = [resolve('.qa/sysroot/usr/lib/x86_64-linux-gnu'), process.env.LD_LIBRARY_PATH].filter(Boolean).join(':');
 const { chromium } = await import('../../.qa/node_modules/playwright/index.mjs');
-const out = resolve('.qa/port-077');
+const out = resolve('.qa/port-078');
 await mkdir(out, { recursive: true });
 const report = { checks: [], errors: [], failedRequests: [], screenshots: [], renderer: 'Chromium SwiftShader; visual/interaction QA, not a hardware FPS measurement' };
 let server, browser, page;
@@ -15,6 +15,44 @@ async function shot(name) {
   const path = resolve(out, `${name}.png`); await page.screenshot({ path });
   report.screenshots.push({ name, path, viewport: page.viewportSize() });
 }
+async function outlineState() {
+  return page.locator('.dock-preview').evaluate(canvas => ({
+    key: canvas.dataset.dockHoverComponent ?? '',
+    meshes: Number(canvas.dataset.dockOutlineMeshCount ?? 0),
+  }));
+}
+async function findOutlinedComponent() {
+  const box = await page.locator('.dock-preview').boundingBox();
+  for (let y=.25; y<.82; y+=.065) for (let x=.12; x<.94; x+=.055) {
+    const point = {x:box.x+box.width*x,y:box.y+box.height*y};
+    await page.mouse.move(point.x,point.y);
+    await page.waitForTimeout(85);
+    const state = await outlineState();
+    if (state.meshes > 0) {
+      // First triangle hits can sit on an animated barrel edge. Find the
+      // interior of the same component without freezing the ship motion.
+      const hits = [];
+      for (let dy=-24;dy<=24;dy+=8) for (let dx=-24;dx<=24;dx+=8) {
+        const candidate={x:point.x+dx,y:point.y+dy};
+        await page.mouse.move(candidate.x,candidate.y);
+        await page.waitForTimeout(120);
+        const sample=await outlineState();
+        if(sample.key===state.key && sample.meshes===state.meshes) hits.push(candidate);
+      }
+      if(!hits.length) continue;
+      const center=hits.reduce((a,p)=>({x:a.x+p.x/hits.length,y:a.y+p.y/hits.length}),{x:0,y:0});
+      hits.sort((a,b)=>Math.hypot(a.x-center.x,a.y-center.y)-Math.hypot(b.x-center.x,b.y-center.y));
+      for(const candidate of hits.slice(0,6)) {
+        await page.mouse.move(candidate.x,candidate.y); await page.waitForTimeout(220);
+        if((await outlineState()).key!==state.key) continue;
+        await page.waitForTimeout(220);
+        if((await outlineState()).key===state.key) return {...candidate,...state};
+      }
+    }
+  }
+  throw Error('No actual external component was outlined');
+}
+
 try {
   server = await preview({ preview: { host: '127.0.0.1', port: 5278, strictPort: true }, clearScreen: false });
   browser = await chromium.launch({ headless: true, args: ['--no-sandbox', '--use-angle=swiftshader', '--enable-unsafe-swiftshader'] });
@@ -71,6 +109,42 @@ try {
   await page.mouse.move(10,10); await page.locator('.dock-hover-tooltip').waitFor({ state: 'hidden' });
   assert.equal(await page.locator('.dock-hover-tooltip:visible').count(), 0);
   check('component tooltip disappears when pointer leaves ship');
+  await shot('outline-before');
+  let outlined = await findOutlinedComponent();
+  assert.match(outlined.key, /^(mainGun|torpedo|antiAir|sideGun|depthCharge):/);
+  assert.ok(outlined.meshes > 0 && outlined.meshes < 100);
+  assert.equal(await page.locator('.dock-hover-tooltip:visible').count(), 1);
+  await page.waitForTimeout(250); await shot('outline-hover');
+  check('actual external component has a bounded outline matching its tooltip', outlined);
+  for (let cycle=0; cycle<30; cycle++) {
+    await page.mouse.move(10,10); await page.waitForTimeout(30);
+    assert.equal((await outlineState()).meshes, 0);
+    await page.mouse.move(outlined.x,outlined.y);
+    await page.waitForFunction(key=>document.querySelector('.dock-preview')?.dataset.dockHoverComponent===key,
+      outlined.key,{timeout:1500});
+    assert.equal((await outlineState()).key, outlined.key);
+    assert.equal((await outlineState()).meshes, outlined.meshes);
+  }
+  check('thirty hover/leave cycles retain one component and clear every time');
+  await page.mouse.down();
+  assert.equal((await outlineState()).meshes, 0);
+  await page.mouse.move(outlined.x+24,outlined.y+12,{steps:3});
+  assert.equal((await outlineState()).meshes, 0);
+  await page.mouse.up();
+  await page.mouse.move(10,10); await page.waitForTimeout(400);
+  outlined = await findOutlinedComponent();
+  await page.mouse.wheel(0,160);
+  await page.waitForTimeout(100);
+  assert.equal((await outlineState()).meshes, 0);
+  check('orbit drag and zoom clear the previous component outline');
+  for (const [width,height] of [[1280,720],[1440,900]]) {
+    await page.setViewportSize({width,height}); await page.waitForTimeout(650);
+    const sample = await findOutlinedComponent();
+    await page.waitForTimeout(180); await shot(`outline-${width}`);
+    check(`component outline renders at ${width}x${height}`,sample);
+  }
+  await page.mouse.move(10,10);
+  await page.setViewportSize({width:1672,height:941}); await page.waitForTimeout(650);
   await page.locator('.port-departure').click(); await page.waitForTimeout(300);
   assert.equal(await page.locator('.mission-panel:visible').count(), 1);
   await shot('voyage');

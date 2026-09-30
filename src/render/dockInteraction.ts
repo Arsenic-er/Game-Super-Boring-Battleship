@@ -153,7 +153,8 @@ export class DockRenderCadence {
   }
 }
 
-function componentOwner(node: Node, actual: DockActualVisual): Omit<DockComponentHover, "canvasX" | "canvasY" | "internal"> | undefined {
+export function dockComponentOwner(node: Node, actual: DockActualVisual): Omit<DockComponentHover, "canvasX" | "canvasY" | "internal"> | undefined {
+  if (node === actual.root || !node.isDescendantOf(actual.root)) return undefined;
   for (let current: Node | null = node; current && current !== actual.root; current = current.parent) {
     const meta = current.metadata as Partial<DockComponentHover> | null;
     if (!meta || !VISUAL_EQUIPMENT_CATEGORIES.includes(meta.category as EquipmentCategory)
@@ -172,9 +173,9 @@ export function pickDockComponent(scene: Scene, actual: DockActualVisual, ray: R
   canvasX: number, canvasY: number): DockComponentHover | undefined {
   if (![canvasX, canvasY].every(Number.isFinite) || !actual.root.isEnabled()) return undefined;
   const picked = scene.pickWithRay(ray, (mesh) => mesh.isEnabled() && mesh.isVisible && mesh.visibility > 0
-    && mesh.getTotalVertices() > 0 && mesh.isDescendantOf(actual.root), false);
+    && mesh.material?.alpha !== 0 && mesh.getTotalVertices() > 0 && mesh.isDescendantOf(actual.root), false);
   if (!picked?.hit || !picked.pickedMesh || !picked.pickedPoint) return undefined;
-  const owner = componentOwner(picked.pickedMesh, actual);
+  const owner = dockComponentOwner(picked.pickedMesh, actual);
   if (owner) return { ...owner, canvasX, canvasY, internal: false };
   const localPoint = Vector3.TransformCoordinates(picked.pickedPoint, actual.root.computeWorldMatrix(true).clone().invert());
   // A compartment is discoverable from its nearby hull skin, not from a permanent

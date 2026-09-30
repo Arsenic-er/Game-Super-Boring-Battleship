@@ -1,6 +1,6 @@
 # Condensed Development Status
 
-Last updated: 2026-09-17
+Last updated: 2026-10-01
 
 This is the current operational handoff. Product decisions are preserved in
 `CONVERSATION_SUMMARY.md`; milestone history is preserved in `DEVELOPMENT_LOG.md`.
@@ -9,15 +9,16 @@ credentials, caches or generated builds in the repositories.
 
 ## Source of truth
 
-- Retirement checkpoint: `SERVER_RETIREMENT_2026-09-17.md`. Restore from the two Git
-  repositories; the old server is being cleared after remote restore verification.
-- Backup tag in both repositories: `backup-2026-09-17`.
-- Former server: `ubuntu@100.97.101.5` (GPU-273312; public IPv4 150.65.181.188).
-  The paths below are historical locations, not durable storage.
+- Active server: GPU-821560, `ubuntu@100.64.214.54` over Tailscale; public IPv4
+  `150.65.181.212`. Local SSH alias: `gpu-821560-ts`.
+- Recovery checkpoint: `SERVER_RECOVERY_2026-10-01.md`. Both repositories were
+  restored from `backup-2026-09-17` and every tracked file matched its recorded hash.
+- GPU-273312 and its nested worktree paths are retired; do not reconnect there.
 - Game project: `/home/ubuntu/battleship`
 - Asset project: `/home/ubuntu/battleship-assets`
-- Active worktree: `/home/ubuntu/battleship/.worktrees/v071-first-voyage`
-- Active branch: `codex/v072-historical-models`, based on `6f1fbb2`
+- Active checkout: `/home/ubuntu/battleship` (no nested worktree on this server).
+- Project-local runtime: `export PATH="$HOME/battleship/.tools/node/bin:$PATH"`.
+- Active branch: `codex/v072-historical-models`; recovery baseline `2a6c473`.
 - Game repository: `Arsenic-er/Game-Super-Boring-Battleship`
 - Asset repository: `Arsenic-er/Game-Super-Boring-Battleship-Assets`
 - Stack: TypeScript 7, Babylon.js 9, Vite 8, Vitest 4, Electron
@@ -37,7 +38,20 @@ testing, server access and short-lived transfer staging.
 - Single-player battles use a 20-minute hard limit and are tuned toward a 15–20 minute normal duration.
 - Windows directory packages are built on the server; only the latest verified `battleship-latest-windows-x64` directory is copied to the local PC.
 
-## Current port release — 0.7.7
+## Current continuation — 0.7.8
+
+- Restored both exact retirement backups on GPU-821560; all 225 asset-mirror hashes match.
+- Installed project-local Node 24.21.0 and clean lockfile dependencies; no global tool or
+  other-project service changes. See `SERVER_RECOVERY_2026-10-01.md`.
+- Added restrained outlines to the actually hovered external equipment. Slot identity,
+  model occlusion and tooltip hit results are shared; internal compartments remain text-only.
+- Dragging, zooming, hiding, changing loadout and disposal clear and restore outline state.
+- 988 tests passed, 5 existing skips; 18 real-browser checks and 11 native Windows checks
+  passed. Full verification and scope limits: `acceptance/0.7.8-dock-hover.md`.
+- One latest local Windows folder: 133 files / 479,414,646 bytes, all SHA-256 verified.
+  Real saves preserved; previous 0.7.7 recycled. No Git push or persistent preview service.
+
+## Previous port release — 0.7.7
 
 - Based on `2c9d439`; implements the approved sunny-port direction with existing interactive hulls and loadouts.
 - On-demand equipment, loadout, captain and help drawers; actual-mesh hover labels; no persistent start-screen key guide.

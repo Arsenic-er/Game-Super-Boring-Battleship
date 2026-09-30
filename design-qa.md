@@ -37,7 +37,7 @@ final result: passed
 
 ## Remaining non-blocking refinements
 
-- P3: a restrained outline on the hovered mesh could supplement the currently working tooltip.
+- Resolved in 0.7.8: restrained depth-tested outlines supplement the real component tooltip. They target one installed slot and clear on exit/drag/zoom. See `docs/acceptance/0.7.8-dock-hover.md`; `.qa/port-078/outline-hover.png`, `outline-1280.png`, `outline-1440.png` and the native Windows capture were visually inspected.
 - P3: further hull detail, flags, water-contact shading and a dynamic 3D harbor are future art/rendering work; the ship remains fully interactive, not an image overlay.
 - OS-specific input and packaged asset checks are recorded separately in `docs/acceptance/0.7.7-port.md`.
 

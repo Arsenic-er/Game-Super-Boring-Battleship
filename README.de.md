@@ -8,7 +8,7 @@
 
 ## Über das Spiel
 
-Version 0.7.7 bietet Einzelgefechte gegen die KI, gemeinsame KI-Gefechte für zwei Spieler und zeitlich unbegrenzte Seeerprobungen; ein normales Gefecht ist auf 15–20 Minuten ausgelegt. Kommandiere Zerstörer, leichte Kreuzer und Schlachtschiffe, organisiere die Schadensabwehr und setze Geschütze, Torpedos, Wasserbomben sowie Trägerflugzeuge ein. Das Projekt ist für durchschnittliche PCs ausgelegt und nutzt TypeScript, Babylon.js, Vite und Electron.
+Version 0.7.8 bietet Einzelgefechte gegen die KI, gemeinsame KI-Gefechte für zwei Spieler und zeitlich unbegrenzte Seeerprobungen; ein normales Gefecht ist auf 15–20 Minuten ausgelegt. Kommandiere Zerstörer, leichte Kreuzer und Schlachtschiffe, organisiere die Schadensabwehr und setze Geschütze, Torpedos, Wasserbomben sowie Trägerflugzeuge ein. Das Projekt ist für durchschnittliche PCs ausgelegt und nutzt TypeScript, Babylon.js, Vite und Electron.
 
 Das Spiel ist noch ein Prototyp in Entwicklung. Grafik, Balance, Schiffsmodelle und Fortschrittssystem werden weiter verbessert.
 

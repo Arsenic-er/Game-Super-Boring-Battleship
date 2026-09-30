@@ -16,6 +16,7 @@ import { loadRegisteredShipModel } from "./shipModelFactory";
 import { createPixelShipPalette } from "./shipMaterials";
 import { DockLoadoutRenderer, type LoadoutApplyResult } from "./dockLoadoutRenderer";
 import { resolveLoadoutVisualPlan, slotsFromVisualPlan, VISUAL_EQUIPMENT_CATEGORIES, type ResolvedLoadoutVisualPlan } from "./loadoutVisualPlan";
+import { DockComponentHighlight } from "./dockComponentHighlight";
 
 import { DockHoverState, DockOrbitMotion, DockRenderCadence, DOCK_ORBIT_LIMITS, DOCK_DEFAULT_ORBIT, dockFraming, pickDockComponent, type DockBounds, type DockComponentHover } from "./dockInteraction";
 
@@ -42,6 +43,7 @@ export class DockPreview {
   private readonly orbit = new DockOrbitMotion();
   private readonly cadence = new DockRenderCadence();
   private readonly hover = new DockHoverState();
+  private readonly highlight = new DockComponentHighlight();
   private readonly previousTouchAction: string;
   private readonly previousOpacity: string;
   private presentedRoot?: TransformNode;
@@ -58,7 +60,7 @@ export class DockPreview {
     event.preventDefault();
     this.drag = { pointerId: event.pointerId, clientX: event.clientX, clientY: event.clientY };
     this.pointer = { clientX: event.clientX, clientY: event.clientY };
-    this.hover.update(undefined, true);
+    this.setHover(undefined, true);
     try { this.canvas.setPointerCapture(event.pointerId); } catch { /* Detached canvas during a panel switch. */ }
     this.cadence.request(performance.now());
   };
@@ -67,7 +69,7 @@ export class DockPreview {
     if (this.drag?.pointerId === event.pointerId) {
       this.orbit.rotate(event.clientX - this.drag.clientX, event.clientY - this.drag.clientY);
       this.drag.clientX = event.clientX; this.drag.clientY = event.clientY;
-      this.hover.update(undefined, true);
+      this.setHover(undefined, true);
     }
     this.cadence.request(performance.now());
   };
@@ -77,16 +79,19 @@ export class DockPreview {
     if (this.canvas.hasPointerCapture(event.pointerId)) this.canvas.releasePointerCapture(event.pointerId);
     this.cadence.request(performance.now());
   };
-  private readonly handlePointerLeave = (): void => { this.pointer = undefined; this.hover.update(); };
+  private readonly handlePointerLeave = (): void => { this.pointer = undefined; this.setHover(); };
+  private readonly handleVisibilityChange = (): void => {
+    if (document.hidden) this.handleCancel();
+  };
   private readonly handleCancel = (): void => {
     const pointerId = this.drag?.pointerId;
-    this.drag = undefined; this.pointer = undefined; this.hover.update();
+    this.drag = undefined; this.pointer = undefined; this.setHover();
     if (pointerId !== undefined && this.canvas.hasPointerCapture(pointerId)) this.canvas.releasePointerCapture(pointerId);
   };
   private readonly handleWheel = (event: WheelEvent): void => {
     event.preventDefault();
     const pixels = event.deltaY * (event.deltaMode === 1 ? 16 : event.deltaMode === 2 ? this.canvas.clientHeight : 1);
-    this.orbit.zoom(pixels); this.hover.update(); this.cadence.request(performance.now());
+    this.orbit.zoom(pixels); this.setHover(); this.cadence.request(performance.now());
   };
   private readonly handleContextMenu = (event: Event): void => event.preventDefault();
 
@@ -122,6 +127,7 @@ export class DockPreview {
     canvas.addEventListener("wheel", this.handleWheel, { passive: false });
     canvas.addEventListener("contextmenu", this.handleContextMenu);
     window.addEventListener("blur", this.handleCancel);
+    document.addEventListener("visibilitychange", this.handleVisibilityChange);
     new HemisphericLight("dock-hemi", new Vector3(0, 1, 0), this.scene).intensity = 0.8;
     new DirectionalLight("dock-key", new Vector3(-0.4, -1, 0.35), this.scene).intensity = 1.25;
     this.shipRoot = new TransformNode("dock-ship", this.scene);
@@ -162,6 +168,7 @@ export class DockPreview {
       for (const cradle of current?.equipment.gunCradles ?? []) cradle.rotation.x = -.05 - Math.sin(seconds * .31) * .025;
       for (const [index, propeller] of (current?.hull.propellers ?? []).entries())
         propeller.rotation.z = seconds * (index === 0 ? 2.2 : -2.2);
+      this.updateComponentHover();
       this.scene.render();
       // Rendering compiles shaders and loads textures. Never present only the
       // ready turrets while the hull's first material is still compiling.
@@ -177,7 +184,6 @@ export class DockPreview {
             this.presentation = canvas.animate([{ opacity: 0 }, { opacity: 1 }], { duration: 350, easing: "ease-out" });
         }
       }
-      this.updateComponentHover();
     });
     window.addEventListener("resize", this.handleResize);
     // Locale changes, saved-build rows and the pending rail resize the canvas without a window event.
@@ -187,21 +193,22 @@ export class DockPreview {
 
   async setLoadout(plan: ResolvedLoadoutVisualPlan): Promise<LoadoutApplyResult> {
     this.requestedPlan = plan;
-    this.hover.update();
+    this.handleCancel();
     this.cadence.request(performance.now());
     const previousClass = this.renderer.current?.plan.shipClassId;
     const result = await this.renderer.setLoadout(plan);
     if (!this.disposed && (result.status === "applied" || result.status === "fallback-applied")) {
       this.updateFramingBounds();
       this.fitCamera(previousClass !== plan.shipClassId);
-      this.hover.update(); this.cadence.request(performance.now());
+      this.setHover(); this.cadence.request(performance.now());
     }
     return result;
   }
 
   previewEquipment(item?: EquipmentDefinition, slotIndex = 0): void {
+    this.handleCancel();
     this.renderer.previewEquipment(item, slotIndex);
-    this.hover.update(); this.cadence.request(performance.now());
+    this.cadence.request(performance.now());
   }
 
   private updateFramingBounds(): void {
@@ -243,20 +250,29 @@ export class DockPreview {
   setComponentHoverCallback(callback?: (hover: DockComponentHover | undefined) => void): void {
     this.hover.subscribe(callback);
   }
+  private setHover(value?: DockComponentHover, dragging = false): void {
+    this.hover.update(value, dragging);
+    const current = this.hover.current;
+    if (this.highlight.update(this.renderer.current, current)) this.cadence.request(performance.now());
+    // Read-only acceptance signals; gameplay and selection never read these values.
+    this.canvas.dataset.dockHoverComponent = current
+      ? `${current.category}:${current.slotIndex}:${current.equipmentId}` : "";
+    this.canvas.dataset.dockOutlineMeshCount = String(this.highlight.meshCount);
+  }
   private updateComponentHover(): void {
     const actual = this.renderer.current;
-    if (!actual || !this.pointer || this.drag || this.orbit.moving) { this.hover.update(); return; }
+    if (!actual || !this.pointer || this.drag || this.orbit.moving) { this.setHover(); return; }
     const rect = this.canvas.getBoundingClientRect();
     const x = this.pointer.clientX - rect.left, y = this.pointer.clientY - rect.top;
     if (x < 0 || y < 0 || x > rect.width || y > rect.height || rect.width <= 0 || rect.height <= 0) {
-      this.hover.update(); return;
+      this.setHover(); return;
     }
     // Babylon accepts CSS pixels adjusted by hardware scaling. Also compensate
     // for a CSS-scaled canvas rather than accidentally picking at render-pixel coordinates.
     const pickX = x / rect.width * this.engine.getRenderWidth() * this.engine.getHardwareScalingLevel();
     const pickY = y / rect.height * this.engine.getRenderHeight() * this.engine.getHardwareScalingLevel();
     const ray = this.scene.createPickingRay(pickX, pickY, Matrix.Identity(), this.camera);
-    this.hover.update(pickDockComponent(this.scene, actual, ray, x, y));
+    this.setHover(pickDockComponent(this.scene, actual, ray, x, y));
   }
   /** Compatibility bridge: old label loops must actively hide every unhovered compartment. */
   getInternalModuleAnchors(): InternalModuleAnchor[] {
@@ -291,11 +307,12 @@ export class DockPreview {
   resize(): void {
     if (this.disposed) return;
     if (this.canvas.clientWidth > 0 && this.canvas.clientHeight > 0) { this.engine.resize(); this.fitCamera(); }
-    this.hover.update(); this.cadence.request(performance.now());
+    this.setHover(); this.cadence.request(performance.now());
   }
   dispose(): void {
     this.disposed = true;
     this.handleCancel(); this.hover.subscribe(undefined);
+    this.highlight.dispose();
     this.canvas.removeEventListener("pointerdown", this.handlePointerDown);
     this.canvas.removeEventListener("pointermove", this.handlePointerMove);
     this.canvas.removeEventListener("pointerup", this.handlePointerUp);
@@ -307,7 +324,10 @@ export class DockPreview {
     this.canvas.style.touchAction = this.previousTouchAction;
     this.presentation?.cancel(); this.canvas.style.opacity = this.previousOpacity;
     delete this.canvas.dataset.modelReady;
+    delete this.canvas.dataset.dockHoverComponent;
+    delete this.canvas.dataset.dockOutlineMeshCount;
     window.removeEventListener("blur", this.handleCancel);
+    document.removeEventListener("visibilitychange", this.handleVisibilityChange);
     window.removeEventListener("resize", this.handleResize);
     this.resizeObserver?.disconnect();
     this.engine.stopRenderLoop();

@@ -1,0 +1,117 @@
+{
+  "version": "0.7.8",
+  "checks": [
+    {
+      "name": "0.7.8 packaged boot and isolated renderer",
+      "evidence": {
+        "url": "file:///C:/Users/jiang/Documents/%E6%88%98%E8%88%B0/release/.incoming-0.7.8/resources/app.asar/dist/index.html",
+        "languages": 7,
+        "nodeIntegration": "undefined"
+      }
+    },
+    {
+      "name": "desktop LAN preload",
+      "evidence": {
+        "desktop": true,
+        "canHost": true,
+        "canDiscover": true
+      }
+    },
+    {
+      "name": "packaged 3D component hover outlines and clears",
+      "evidence": {
+        "key": "mainGun:4:mainGun-common",
+        "count": 2
+      }
+    },
+    {
+      "name": "starting sea trials captures the actual native pointer lock",
+      "evidence": true
+    },
+    {
+      "name": "native EXE renders animated official water without a GL error",
+      "evidence": {
+        "renderer": "ANGLE (Intel, Intel(R) Iris(R) Xe Graphics (0x00009A49) Direct3D11 vs_5_0 ps_5_0, D3D11)",
+        "waveHeight": [
+          0.065
+        ],
+        "timeSamples": 500,
+        "firstTime": 0.16281900000095367,
+        "lastTime": 0.02716666666666662,
+        "draws": 56305
+      }
+    },
+    {
+      "name": "native moves beyond window coordinates reach the captured canvas",
+      "evidence": {
+        "width": 1427,
+        "height": 865,
+        "bearings": [
+          "-0.0°",
+          "-14.7°",
+          "-0.0°",
+          "-14.7°"
+        ],
+        "moves": [
+          {
+            "trusted": true,
+            "dx": 1429,
+            "dy": 16
+          },
+          {
+            "trusted": true,
+            "dx": -3827,
+            "dy": 0
+          },
+          {
+            "trusted": true,
+            "dx": 5027,
+            "dy": 0
+          },
+          {
+            "trusted": true,
+            "dx": -6227,
+            "dy": 0
+          }
+        ]
+      }
+    },
+    {
+      "name": "controlled relative samples update the packaged game camera while locked",
+      "evidence": {
+        "turnBefore": "-14.7°",
+        "turnAfter": "+1.8°",
+        "input": "injected PointerEvent samples"
+      }
+    },
+    {
+      "name": "three map open/close cycles release then recapture",
+      "evidence": true
+    },
+    {
+      "name": "real lock loss freezes mouse-look and trusted click recaptures",
+      "evidence": {
+        "before": "+1.8°",
+        "after": "+1.8°"
+      }
+    },
+    {
+      "name": "developer panel does not steal the free pointer",
+      "evidence": true
+    },
+    {
+      "name": "pause and main menu keep the pointer free",
+      "evidence": true
+    }
+  ],
+  "errors": [],
+  "lastClick": {
+    "selector": ".exit-main-menu",
+    "point": {
+      "x": 713.5,
+      "y": 562.625
+    },
+    "hit": "menu-button exit-main-menu"
+  },
+  "ok": true
+}

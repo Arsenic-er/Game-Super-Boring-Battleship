@@ -1,7 +1,7 @@
 {
   "name": "battleship",
   "private": true,
-  "version": "0.7.7",
+  "version": "0.7.8",
   "description": "A lightweight 3D WWII naval combat game with single-player battles, two-player LAN co-op, modular damage and AI-controlled fleet aviation.",
   "author": {
     "name": "Arsenic-er",

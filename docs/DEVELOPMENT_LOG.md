@@ -1,3 +1,18 @@
+## 2026-10-01 — New-server recovery and component hover, 0.7.8
+
+Recovered the game branch and private assets from `backup-2026-09-17` onto
+GPU-821560, using the server details in the owner's “嘿嘿嘿” project. Verified
+every tracked file and all 225 asset-mirror entries. Development now uses canonical
+`~/battleship`, not the old nested worktree, with isolated project-local tools.
+
+Finished the remaining dockyard hover-outline refinement with a bounded subagent:
+only the actually hovered installed mount is outlined; internal compartments do not
+gain misleading visible machinery. Restored prior mesh properties on cleanup and
+covered 30 lifecycle repetitions. No combat, economy, save or imported-art change.
+988 tests, 18 browser checks and 11 native Windows checks passed; the server-built
+0.7.8 folder replaced the one local latest package after complete hash verification.
+See `acceptance/0.7.8-dock-hover.md`. No remote push or main merge was performed.
+
 ## 2026-09-17 — Two-repository retirement backup
 
 Prepared the 0.7.7 game branch and private asset repository for server retirement.
@@ -19,10 +34,10 @@ tutorial and LAN routes. See `acceptance/0.7.7-port.md`, `PORT_UI_ASSETS.md` and
 
 # Condensed Development Log
 
-Last updated: 2026-09-17
+Last updated: 2026-10-01
 
 Historical archive baseline: `96fcd51` (`0.6.12`).
-Historical model rebuild base: `6f1fbb2`; input-fix base: `d0dba77`; active version `0.7.7`.
+Historical model rebuild base: `6f1fbb2`; input-fix base: `d0dba77`; active version `0.7.8`.
 
 This is a milestone log derived from the Git history and the long development
 conversation. It is intentionally more compact than a commit-by-commit transcript.
