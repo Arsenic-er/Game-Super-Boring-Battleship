@@ -1,0 +1,255 @@
+{
+  "checks": [
+    {
+      "name": "startup is uncluttered dockyard without instructions or permanent component labels",
+      "evidence": true
+    },
+    {
+      "name": "equipment drawer closes with Escape and restores focus",
+      "evidence": true
+    },
+    {
+      "name": "close button returns focus to its opening control",
+      "evidence": true
+    },
+    {
+      "name": "seven rapid toggles leave exactly one fully interactive panel",
+      "evidence": true
+    },
+    {
+      "name": "hovering actual 3D geometry identifies its component",
+      "evidence": "QF 4.7 in Mk IX / CP Mk XVIII 单装速射炮\n主炮"
+    },
+    {
+      "name": "component tooltip disappears when pointer leaves ship",
+      "evidence": true
+    },
+    {
+      "name": "actual external component has a bounded outline matching its tooltip",
+      "evidence": {
+        "x": 908.7289062499999,
+        "y": 419.92140625,
+        "key": "mainGun:1:mainGun-common",
+        "meshes": 2
+      }
+    },
+    {
+      "name": "thirty hover/leave cycles retain one component and clear every time",
+      "evidence": true
+    },
+    {
+      "name": "orbit drag and zoom clear the previous component outline",
+      "evidence": true
+    },
+    {
+      "name": "component outline renders at 1280x720",
+      "evidence": {
+        "x": 828.5412500000001,
+        "y": 361.905859375,
+        "key": "mainGun:0:mainGun-common",
+        "meshes": 2
+      }
+    },
+    {
+      "name": "component outline renders at 1440x900",
+      "evidence": {
+        "x": 461.957421875,
+        "y": 370.325,
+        "key": "mainGun:2:mainGun-common",
+        "meshes": 2
+      }
+    },
+    {
+      "name": "departure opens real mode selection; Escape returns to port",
+      "evidence": true
+    },
+    {
+      "name": "persistent controls fit 1280px viewport",
+      "evidence": true
+    },
+    {
+      "name": "persistent controls fit 1024px viewport",
+      "evidence": true
+    },
+    {
+      "name": "viewing, opening drawers and navigation preserve profile data",
+      "evidence": true
+    },
+    {
+      "name": "all seven languages update port controls and window title",
+      "evidence": true
+    },
+    {
+      "name": "armory and collection remain accessible and return to dockyard",
+      "evidence": true
+    },
+    {
+      "name": "single-player preparation and multiplayer directory are reachable",
+      "evidence": true
+    }
+  ],
+  "errors": [],
+  "failedRequests": [],
+  "screenshots": [
+    {
+      "name": "initial-complete-hull",
+      "path": "/home/ubuntu/battleship/.qa/port-079/initial-complete-hull.png",
+      "viewport": {
+        "width": 1672,
+        "height": 941
+      }
+    },
+    {
+      "name": "port-wide",
+      "path": "/home/ubuntu/battleship/.qa/port-079/port-wide.png",
+      "viewport": {
+        "width": 1672,
+        "height": 941
+      }
+    },
+    {
+      "name": "equipment",
+      "path": "/home/ubuntu/battleship/.qa/port-079/equipment.png",
+      "viewport": {
+        "width": 1672,
+        "height": 941
+      }
+    },
+    {
+      "name": "loadouts",
+      "path": "/home/ubuntu/battleship/.qa/port-079/loadouts.png",
+      "viewport": {
+        "width": 1672,
+        "height": 941
+      }
+    },
+    {
+      "name": "component-hover",
+      "path": "/home/ubuntu/battleship/.qa/port-079/component-hover.png",
+      "viewport": {
+        "width": 1672,
+        "height": 941
+      }
+    },
+    {
+      "name": "outline-before",
+      "path": "/home/ubuntu/battleship/.qa/port-079/outline-before.png",
+      "viewport": {
+        "width": 1672,
+        "height": 941
+      }
+    },
+    {
+      "name": "outline-hover",
+      "path": "/home/ubuntu/battleship/.qa/port-079/outline-hover.png",
+      "viewport": {
+        "width": 1672,
+        "height": 941
+      }
+    },
+    {
+      "name": "outline-1280",
+      "path": "/home/ubuntu/battleship/.qa/port-079/outline-1280.png",
+      "viewport": {
+        "width": 1280,
+        "height": 720
+      }
+    },
+    {
+      "name": "outline-1440",
+      "path": "/home/ubuntu/battleship/.qa/port-079/outline-1440.png",
+      "viewport": {
+        "width": 1440,
+        "height": 900
+      }
+    },
+    {
+      "name": "voyage",
+      "path": "/home/ubuntu/battleship/.qa/port-079/voyage.png",
+      "viewport": {
+        "width": 1672,
+        "height": 941
+      }
+    },
+    {
+      "name": "port-1280",
+      "path": "/home/ubuntu/battleship/.qa/port-079/port-1280.png",
+      "viewport": {
+        "width": 1280,
+        "height": 720
+      }
+    },
+    {
+      "name": "port-1024",
+      "path": "/home/ubuntu/battleship/.qa/port-079/port-1024.png",
+      "viewport": {
+        "width": 1024,
+        "height": 640
+      }
+    },
+    {
+      "name": "port-en-US",
+      "path": "/home/ubuntu/battleship/.qa/port-079/port-en-US.png",
+      "viewport": {
+        "width": 1672,
+        "height": 941
+      }
+    },
+    {
+      "name": "port-de-DE",
+      "path": "/home/ubuntu/battleship/.qa/port-079/port-de-DE.png",
+      "viewport": {
+        "width": 1672,
+        "height": 941
+      }
+    },
+    {
+      "name": "port-ru-RU",
+      "path": "/home/ubuntu/battleship/.qa/port-079/port-ru-RU.png",
+      "viewport": {
+        "width": 1672,
+        "height": 941
+      }
+    },
+    {
+      "name": "store",
+      "path": "/home/ubuntu/battleship/.qa/port-079/store.png",
+      "viewport": {
+        "width": 1672,
+        "height": 941
+      }
+    },
+    {
+      "name": "codex",
+      "path": "/home/ubuntu/battleship/.qa/port-079/codex.png",
+      "viewport": {
+        "width": 1672,
+        "height": 941
+      }
+    },
+    {
+      "name": "battle-setup",
+      "path": "/home/ubuntu/battleship/.qa/port-079/battle-setup.png",
+      "viewport": {
+        "width": 1672,
+        "height": 941
+      }
+    },
+    {
+      "name": "multiplayer",
+      "path": "/home/ubuntu/battleship/.qa/port-079/multiplayer.png",
+      "viewport": {
+        "width": 1672,
+        "height": 941
+      }
+    }
+  ],
+  "renderer": "Chromium SwiftShader; visual/interaction QA, not a hardware FPS measurement",
+  "profileKeys": [
+    "grey-sea-game-settings-v1",
+    "grey-sea-local-profile-v7"
+  ],
+  "ok": true,
+  "serverClosed": true,
+  "finishedAt": "2026-10-02T21:14:50.092Z"
+}

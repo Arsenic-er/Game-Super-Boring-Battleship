@@ -1,3 +1,19 @@
+## 2026-10-03 — Consistent dock installation, 0.7.9
+
+Continued development entirely on GPU-821560 and updated the working agreement to
+stop automatic local downloads and staging. A code audit found candidate ghosts
+and install wording used the first empty slot while the transaction replaced slot
+zero for new models. Extracted one shared target resolver without changing policy;
+owned-copy exhaustion now disables the button. Existing seven-language strings,
+saved blueprints, economy and combat behavior are preserved.
+
+Added 14 focused regressions and an actual-browser install/preview harness. Final
+suite: 1002 passed, five existing skips; 44 focused tests, six installation-flow
+checks and 18 production-port checks passed. One unchanged balance-batch test hit
+its 30-second timeout during the initial run with packaging in parallel; serial
+rerun passed without changing assertions or timeouts. Windows output remains on
+the server; no local EXE test/download. See `acceptance/0.7.9-dock-install.md`.
+
 ## 2026-10-01 — New-server recovery and component hover, 0.7.8
 
 Recovered the game branch and private assets from `backup-2026-09-17` onto
@@ -34,10 +50,10 @@ tutorial and LAN routes. See `acceptance/0.7.7-port.md`, `PORT_UI_ASSETS.md` and
 
 # Condensed Development Log
 
-Last updated: 2026-10-01
+Last updated: 2026-10-03
 
 Historical archive baseline: `96fcd51` (`0.6.12`).
-Historical model rebuild base: `6f1fbb2`; input-fix base: `d0dba77`; active version `0.7.8`.
+Historical model rebuild base: `6f1fbb2`; input-fix base: `d0dba77`; active version `0.7.9`.
 
 This is a milestone log derived from the Git history and the long development
 conversation. It is intentionally more compact than a commit-by-commit transcript.

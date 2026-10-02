@@ -1,0 +1,64 @@
+{
+  "version": "0.7.9",
+  "checks": [
+    {
+      "name": "new model previews the real slot-zero ghost without altering save",
+      "evidence": {
+        "itemId": "mainGun-gold",
+        "slotIndex": 0,
+        "rootName": "dock-inspection-mainGun-gold-0",
+        "meshCount": 3
+      }
+    },
+    {
+      "name": "new model installs exactly where it was previewed",
+      "evidence": [
+        "mainGun-gold",
+        null,
+        null,
+        null,
+        null
+      ]
+    },
+    {
+      "name": "same model appends to first empty slot",
+      "evidence": [
+        "mainGun-gold",
+        "mainGun-gold",
+        null,
+        null,
+        null
+      ]
+    },
+    {
+      "name": "exhausted inventory leaves comparison preview but blocks install",
+      "evidence": {
+        "itemId": "mainGun-gold",
+        "slotIndex": 2,
+        "rootName": "dock-inspection-mainGun-gold-2",
+        "meshCount": 3
+      }
+    },
+    {
+      "name": "equipping preserves owned counts and saved blueprints",
+      "evidence": {
+        "ownedGold": 2,
+        "savedBuild": [
+          "mainGun-common",
+          "mainGun-common",
+          "mainGun-common",
+          "mainGun-common",
+          "mainGun-common"
+        ]
+      }
+    },
+    {
+      "name": "all seven locales retain correct disabled state and translated text",
+      "evidence": true
+    }
+  ],
+  "errors": [],
+  "renderer": "isolated real Chromium/Babylon development-module QA; not native Windows or GPU performance",
+  "ok": true,
+  "serverClosed": true
+}

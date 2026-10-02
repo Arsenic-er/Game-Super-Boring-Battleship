@@ -6,7 +6,7 @@ import assert from 'node:assert/strict';
 process.env.PLAYWRIGHT_BROWSERS_PATH ??= resolve('.qa/browsers');
 process.env.LD_LIBRARY_PATH = [resolve('.qa/sysroot/usr/lib/x86_64-linux-gnu'), process.env.LD_LIBRARY_PATH].filter(Boolean).join(':');
 const { chromium } = await import('../../.qa/node_modules/playwright/index.mjs');
-const out = resolve('.qa/port-078');
+const out = resolve(process.env.PORT_QA_OUT ?? '.qa/port-079');
 await mkdir(out, { recursive: true });
 const report = { checks: [], errors: [], failedRequests: [], screenshots: [], renderer: 'Chromium SwiftShader; visual/interaction QA, not a hardware FPS measurement' };
 let server, browser, page;

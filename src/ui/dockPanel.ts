@@ -1,6 +1,7 @@
 import { CATEGORY_META, EQUIPMENT_BY_ID, EQUIPMENT_CATALOG, SHIP_CLASS_SLOT_COUNTS, isEquipmentCompatible } from "../profile/equipmentCatalog";
 import type { EquipmentCategory } from "../profile/equipmentCatalog";
-import { autoEquipBestOwnedComponents, equipComponent, normalizeLocalProfile, selectShipClass, type LocalProfile, type SavedShipBuild } from "../profile/localProfile";
+import { autoEquipBestOwnedComponents, equipComponent, installedCopies, normalizeLocalProfile, selectShipClass, type LocalProfile, type SavedShipBuild } from "../profile/localProfile";
+import { resolveAutomaticEquipmentSlot } from "../profile/automaticEquipmentSlot";
 import { deleteShipBuild, overwriteShipBuild, saveCurrentShipBuild, savedBuildReadiness, selectBattleBuild } from "../profile/savedBuilds";
 import { SHIP_CLASSES, type ShipClassId } from "../ships/classes";
 import { getMainBattery } from "../ships/mainBatteries";
@@ -171,7 +172,12 @@ export class DockPanel {
     const detail = this.host.querySelector<HTMLElement>(".component-detail")!;
     if (item) {
       const text = equipmentLocale(locale, item.id); const compatible = isEquipmentCompatible(item, shipClassId);
-      detail.innerHTML = `<div class="detail-heading rarity-${item.rarity}">${equipmentArtworkMarkup(item, "detail")}<div><b>${html(text.name)}</b><small>${html(text.origin)}</small></div></div><p>${html(text.description)}</p><dl><div><dt>${html(this.t("核心增益"))}</dt><dd>+${Math.round(item.bonus * 100)}%</dd></div><div><dt>${html(this.t("槽位占用"))}</dt><dd>${slots[item.category].filter(Boolean).length}/${slots[item.category].length}</dd></div></dl><button class="equip-selected" ${locked || !compatible || build ? "disabled" : ""}>${html(this.t(compatible ? slots[item.category].some((slot) => !slot) ? "安装到空槽" : "替换首个槽位" : "该舰级不可安装"))}</button>`;
+      const target = compatible ? resolveAutomaticEquipmentSlot(slots[item.category], item.id) : undefined;
+      const enoughCopies = target && (slots[item.category][target.slotIndex] === item.id
+        || profile.inventory[item.id] > installedCopies(profile, item.id));
+      const actionText = !target ? "该舰级不可安装" : !enoughCopies ? "组件不足"
+        : target.action === "install" ? "安装到空槽" : "替换首个槽位";
+      detail.innerHTML = `<div class="detail-heading rarity-${item.rarity}">${equipmentArtworkMarkup(item, "detail")}<div><b>${html(text.name)}</b><small>${html(text.origin)}</small></div></div><p>${html(text.description)}</p><dl><div><dt>${html(this.t("核心增益"))}</dt><dd>+${Math.round(item.bonus * 100)}%</dd></div><div><dt>${html(this.t("槽位占用"))}</dt><dd>${slots[item.category].filter(Boolean).length}/${slots[item.category].length}</dd></div></dl><button class="equip-selected" ${locked || !target || !enoughCopies || build ? "disabled" : ""}>${html(this.t(actionText))}</button>`;
     } else detail.textContent = this.t("选择组件查看详情");
     const plan = resolveLoadoutVisualPlan(shipClassId, slots);
     const nextKey = JSON.stringify([shipClassId, slots]);
@@ -181,9 +187,13 @@ export class DockPanel {
         if (generation !== this.previewGeneration) return;
         if (result.status === "failed") { this.planKey = ""; this.notice("", "buildUnavailable"); }
         const candidate = this.selectedItemId ? EQUIPMENT_BY_ID[this.selectedItemId] : undefined;
-        this.preview.previewEquipment(candidate, candidate ? Math.max(0, slots[candidate.category].findIndex((id) => !id)) : 0);
+        const target = candidate && isEquipmentCompatible(candidate, shipClassId) ? resolveAutomaticEquipmentSlot(slots[candidate.category], candidate.id) : undefined;
+        this.preview.previewEquipment(target ? candidate : undefined, target?.slotIndex ?? 0);
       });
-    } else this.preview.previewEquipment(item, item ? Math.max(0, slots[item.category].findIndex((id) => !id)) : 0);
+    } else {
+      const target = item && isEquipmentCompatible(item, shipClassId) ? resolveAutomaticEquipmentSlot(slots[item.category], item.id) : undefined;
+      this.preview.previewEquipment(target ? item : undefined, target?.slotIndex ?? 0);
+    }
     this.showHover(this.preview.getComponentHover?.());
     const status = this.host.querySelector<HTMLElement>(".dock-preview-status");
     if (status) status.textContent = item ? `${this.t(slots[item.category].includes(item.id) ? "当前已安装" : "候选装配预览")} · ${equipmentLocale(locale, item.id).name}` : "";

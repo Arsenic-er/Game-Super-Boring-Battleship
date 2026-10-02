@@ -24,6 +24,7 @@ import {
   createMinimumSeaReadySlotLoadout,
   optimizeOwnedSlotLoadout,
 } from "./loadoutPolicy";
+import { resolveAutomaticEquipmentSlot } from "./automaticEquipmentSlot";
 
 export type SlotLoadout = Record<EquipmentCategory, (string | null)[]>;
 
@@ -504,14 +505,10 @@ export function equipComponent(source: LocalProfile, itemId: string): LocalProfi
   ) return profile;
   const slotLoadoutsByShipClass = structuredClone(profile.slotLoadoutsByShipClass);
   const slots = slotLoadoutsByShipClass[profile.shipClassId][item.category];
-  const emptyIndex = slots.findIndex((id) => id === null);
-  if (slots.includes(itemId) && emptyIndex >= 0) {
-    if (availableCopies(profile, itemId) <= 0) return profile;
-    slots[emptyIndex] = itemId;
-  } else {
-    if (slots[0] !== itemId && availableCopies(profile, itemId) <= 0) return profile;
-    slots[0] = itemId;
-  }
+  const target = resolveAutomaticEquipmentSlot(slots, itemId);
+  if (!target) return profile;
+  if (slots[target.slotIndex] !== itemId && availableCopies(profile, itemId) <= 0) return profile;
+  slots[target.slotIndex] = itemId;
   return normalizeLocalProfile({ ...profile, slotLoadoutsByShipClass });
 }
 

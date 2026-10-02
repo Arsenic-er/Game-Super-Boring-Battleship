@@ -1,6 +1,6 @@
 # Condensed Development Status
 
-Last updated: 2026-10-01
+Last updated: 2026-10-03
 
 This is the current operational handoff. Product decisions are preserved in
 `CONVERSATION_SUMMARY.md`; milestone history is preserved in `DEVELOPMENT_LOG.md`.
@@ -24,8 +24,10 @@ credentials, caches or generated builds in the repositories.
 - Stack: TypeScript 7, Babylon.js 9, Vite 8, Vitest 4, Electron
 - Server preview service: disabled; LAN validation uses packaged desktop instances.
 
-The Windows workspace is not a canonical development copy. Use it only for browser
-testing, server access and short-lived transfer staging.
+The Windows workspace is a remote-control endpoint only. As of 2026-10-03, all
+development, builds, tests and artifacts stay on the server. Do not create local
+staging or download packages/source/logs without fresh explicit consent. See
+`../AGENTS.md`; this overrides the older automatic local-delivery workflow.
 
 ## Product direction
 
@@ -36,9 +38,24 @@ testing, server access and short-lived transfer staging.
 - Bold pixel UI; supported locales: zh-Hans, zh-Hant, en, ja, es, de and ru.
 - An unpacked Windows x64 game directory is the default test and release target; a ZIP of that complete directory is the optional distribution artifact.
 - Single-player battles use a 20-minute hard limit and are tuned toward a 15–20 minute normal duration.
-- Windows directory packages are built on the server; only the latest verified `battleship-latest-windows-x64` directory is copied to the local PC.
+- Windows directory packages are built and kept on the server; a local download requires fresh explicit user consent.
 
-## Current continuation — 0.7.8
+## Current continuation — 0.7.9
+
+- Fixed candidate-preview, action-label and installed-slot disagreement using one
+  automatic slot resolver. Existing new-model replacement / same-model append rules remain.
+- Unavailable owned copies disable installation; incompatible candidates do not create ghosts.
+- 1002 tests passed, 5 existing skipped, 44 focused checks, six real installation-flow
+  checks and 18 production port checks. An initial concurrent-package run hit the
+  existing 30-second balance-batch timeout; a standalone serial rerun passed unchanged.
+- Server-built Windows directory: 133 files / 479,414,908 bytes. No local download or
+  native Windows retest under the new server-only agreement. Details and limitations:
+  `acceptance/0.7.9-dock-install.md`.
+- User authorized pushing the current game branch and private asset mirror. Preserve
+  existing branch history and confirm remote hashes after normal fast-forward pushes.
+- Runtime artwork/model geometry, combat balance and save format are unchanged.
+
+## Previous continuation — 0.7.8
 
 - Restored both exact retirement backups on GPU-821560; all 225 asset-mirror hashes match.
 - Installed project-local Node 24.21.0 and clean lockfile dependencies; no global tool or

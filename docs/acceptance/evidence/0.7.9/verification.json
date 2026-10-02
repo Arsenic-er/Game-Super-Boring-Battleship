@@ -1,0 +1,36 @@
+{
+  "version": "0.7.9",
+  "fullSuite": {
+    "passed": 1002,
+    "skipped": 5,
+    "failed": 0,
+    "passingFiles": 103,
+    "skippedFiles": 2,
+    "durationSeconds": 98.99,
+    "workers": 1,
+    "log": ".qa/dock-install-079/full-tests-serial.log",
+    "initialRun": "One unchanged balance-batch 30s timeout; rerun passed without test changes"
+  },
+  "focusedPassed": 44,
+  "browserInstallChecks": 6,
+  "browserPortChecks": 18,
+  "serverOnly": true,
+  "nativeWindowsRetested": false,
+  "package": {
+    "fileCount": 133,
+    "totalBytes": 479414908,
+    "excludedDevelopmentDependencies": true,
+    "criticalFiles": [
+      {
+        "path": "resources/app.asar",
+        "bytes": 106135515,
+        "sha256": "f96e5e9b5f513b21cf16cc8dff31b7c4d80005a60b586201457217e29f5ed799"
+      },
+      {
+        "path": "Super Boring Battleship Game.exe",
+        "bytes": 225449472,
+        "sha256": "13b3513188b81ee31d8b85a804d9225b0bfc1f2ff7782db63aa9d00ee63f87ed"
+      }
+    ]
+  }
+}

@@ -1,3 +1,13 @@
+## Latest working agreement — 2026-10-03
+
+All development, editing, dependencies, builds, tests, results and Git publishing
+stay on the designated server. Windows is remote control only; do not create new
+local worktrees, staging, caches or archives. Do not download source, binaries,
+models, full logs or results without fresh explicit consent for the specific files.
+This supersedes all earlier automatic local Windows delivery requests. The user
+requested continued development and Git push; keep using bounded subagents and
+do not alter unrelated projects or personal saves. See `../AGENTS.md`.
+
 ## Latest operational decision — 2026-10-01
 
 The owner requested recovery on the newest server recorded in the “嘿嘿嘿” project.
