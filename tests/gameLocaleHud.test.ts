@@ -2,6 +2,16 @@ import { describe, expect, it } from "vitest";
 import { SUPPORTED_GAME_LOCALES, translateGameText } from "../src/i18n/gameLocale";
 
 describe("bridge instrument localization", () => {
+  it("translates the hold-to-show control in every supported locale", () => {
+    for (const locale of SUPPORTED_GAME_LOCALES) {
+      for (const label of ["中键", "按住显示瞄准标识"]) {
+        const translated = translateGameText(label, locale);
+        expect(translated).toBeTruthy();
+        if (locale !== "zh-CN") expect(translated).not.toBe(label);
+      }
+    }
+  });
+
   it("translates the new persistent HUD labels in every supported language", () => {
     const labels = ["舰船航行仪表", "详细舰况", "罗经", "舵角", "车钟", "舰体", "可恢复", "正舵"];
     for (const locale of SUPPORTED_GAME_LOCALES) {

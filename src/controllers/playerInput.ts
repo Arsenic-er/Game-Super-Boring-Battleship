@@ -44,6 +44,7 @@ export class PlayerInput {
   private range = 2_200;
   private steeringSensitivity = 1;
   private aiming = false;
+  private aimReadoutHeld = false;
   private weaponSlot: WeaponSlot = "mainGun";
   private torpedoSpread: TorpedoSpreadMode = "narrow";
   private firePressed = false;
@@ -55,13 +56,40 @@ export class PlayerInput {
   private activeShip?: ShipState;
   private suppressed = false;
 
-  constructor(canvas: HTMLCanvasElement, private readonly aimProvider: AimProvider) {
+  constructor(private readonly canvas: HTMLCanvasElement, private readonly aimProvider: AimProvider) {
     window.addEventListener("keydown", this.onKeyDown);
     window.addEventListener("keyup", this.onKeyUp);
     window.addEventListener("blur", this.cancelHeldInputs);
     document.addEventListener("visibilitychange", this.onVisibilityChange);
     canvas.addEventListener("wheel", this.onWheel, { passive: false });
+    canvas.addEventListener("mousedown", this.onMouseDown);
+    canvas.addEventListener("auxclick", this.onAuxClick);
+    window.addEventListener("mouseup", this.onMouseUp);
+    window.addEventListener("pointercancel", this.clearAimReadout);
+    document.addEventListener("pointerlockchange", this.onPointerLockChange);
   }
+
+  // Mouse events also report middle-button changes while another button is held.
+  private onMouseDown = (event: MouseEvent): void => {
+    if (event.button !== 1) return;
+    event.preventDefault();
+    this.aimReadoutHeld = !this.suppressed && document.pointerLockElement === this.canvas;
+  };
+
+  // Pointer-lock recenter moves may report buttons=0; only a real release ends the hold.
+  private onMouseUp = (event: MouseEvent): void => {
+    if (event.button === 1) this.clearAimReadout();
+  };
+
+  private onAuxClick = (event: MouseEvent): void => {
+    if (event.button === 1) event.preventDefault();
+  };
+
+  private clearAimReadout = (): void => { this.aimReadoutHeld = false; };
+
+  private onPointerLockChange = (): void => {
+    if (document.pointerLockElement !== this.canvas) this.clearAimReadout();
+  };
 
   private onKeyDown = (event: KeyboardEvent): void => {
     if (this.suppressed) {
@@ -107,6 +135,7 @@ export class PlayerInput {
   };
 
   private cancelHeldInputs = (): void => {
+    this.clearAimReadout();
     this.pressed.clear();
     this.firePressed = false;
     this.smokePressed = false;
@@ -198,6 +227,10 @@ export class PlayerInput {
     return this.range;
   }
 
+  get isAimReadoutHeld(): boolean {
+    return this.aimReadoutHeld;
+  }
+
   get isAiming(): boolean {
     return this.aiming;
   }
@@ -238,6 +271,7 @@ export class PlayerInput {
   }
 
   reset(): void {
+    this.clearAimReadout();
     this.throttle = INITIAL_PLAYER_THROTTLE;
     this.range = 2_200;
     this.pressed.clear();

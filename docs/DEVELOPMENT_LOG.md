@@ -1,3 +1,25 @@
+## 2026-10-04 — Hold-to-show aiming readout
+
+The third-person green reticle, angle scale and bearing/range readout are now
+hidden by default. Hold the middle mouse button to reveal them; release it to
+hide them. R optical sights, wheel ranging, map zoom and ballistic guides retain
+their existing behavior. The control hint lives only in the Tab help panel and
+is translated into all seven supported languages.
+
+The hold clears on suppression, reset, blur, hidden document, pointer cancellation
+or pointer-lock loss. Pause, maps, developer UI and inactive battles also gate
+visibility. Mouse button events preserve chorded clicks; pointer-lock recenter
+movement can report zero buttons and must not be mistaken for an actual release.
+Added 14 input regressions and one localization regression. Fifteen production
+browser checks passed with no page errors, using an isolated server-side save.
+Browser evidence remains in `.qa/aim-readout/`; no screenshots or packages were
+downloaded to the owner machine for this change.
+
+The full run passed 1,016 tests with five existing skips; the unchanged balance
+batch alone hit its 30-second timeout. A serial rerun of that file and the five
+input/localization suites passed all 38 tests without relaxing any timeout or
+assertion.
+
 ## 2026-10-03 — Consistent dock installation, 0.7.9
 
 Continued development entirely on GPU-821560 and updated the working agreement to

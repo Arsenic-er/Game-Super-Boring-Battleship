@@ -583,6 +583,14 @@ function finishFrame(
     gameShell?.classList.remove("game-active");
     view.releasePointerLock();
   }
+  hud.setAimReadoutVisible(auxiliaryHudVisible(input.isAimReadoutHeld, {
+    started,
+    paused,
+    running: activeState.status === "running",
+    mapOpen: tacticalMap.isExpanded(),
+    menuOpen: menus.isOpen(),
+    developerOpen: Boolean(developerPanel?.isOpen()),
+  }));
   hud.setAimMode(input.isAiming);
   hud.update(activeState, input.aimRange, input.selectedWeapon, perceivedTarget, observerShipId);
   voyagePanel.setTutorial(voyageSession.tutorialActive ? profile.onboarding.currentStepId ?? "move" : null,

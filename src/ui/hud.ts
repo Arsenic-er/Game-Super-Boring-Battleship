@@ -348,7 +348,7 @@ export class Hud {
         </section>
         <section class="controls panel hud-tactical">
           <span><kbd>W</kbd><kbd>S</kbd> 车钟</span><span><kbd>A</kbd><kbd>D</kbd> 舵</span><span><kbd>移动鼠标</kbd> 视角</span>
-          <span><kbd>滚轮</kbd> 测距</span><span><kbd>R</kbd> 瞄准开关</span>
+          <span><kbd>滚轮</kbd> 测距</span><span><kbd>中键</kbd> 按住显示瞄准标识</span><span><kbd>R</kbd> 瞄准开关</span>
           <span><kbd>Q</kbd> HE / AP</span><span><kbd>Space</kbd> 齐射</span><span><kbd>E</kbd> 烟幕</span><span><kbd>F</kbd> 水听</span><span><kbd>4</kbd> 损管优先</span><span><kbd>H</kbd> 舰体抢修</span><span><kbd>M</kbd> 地图</span><span><kbd>F3</kbd> 调试</span><span><kbd>Tab</kbd> 按住查看战术信息与键位</span>
         </section>
         <section id="result" class="result-card" hidden>
@@ -468,6 +468,10 @@ export class Hud {
 
   setQuality(value: "low" | "medium"): void {
     this.qualityButton.textContent = `画质：${value === "low" ? "低" : "中"}`;
+  }
+
+  setAimReadoutVisible(visible: boolean): void {
+    this.gameShell.classList.toggle("aim-readout-held", visible);
   }
 
   setAimMode(active: boolean): void {
