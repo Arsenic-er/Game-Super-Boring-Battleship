@@ -53,6 +53,7 @@ import {
   MAIN_BATTERY_CRADLE_FORWARD,
   MAIN_BATTERY_MAX_ELEVATION,
   type MainBatteryMountDefinition,
+  type EffectiveMainBatteryDefinition,
   MAIN_BATTERY_TRAVERSE_LIMIT_RADIANS,
   mainBatteryMountRestHeading,
 } from "../ships/mainBatteries";
@@ -764,6 +765,7 @@ function moveShip(state: BattleState, ship: ShipState, command: ControlCommand, 
   ship.throttle = clamp(command.throttle, -0.25, 1);
   ship.rudderCommand = clamp(command.rudder, -1, 1);
   ship.aimPoint = copyVec(command.aimPoint);
+  const gunDefinition = effectiveMainBattery(ship);
 
   if (command.ammoType === ship.ammoType && ship.pendingAmmoType) {
     ship.pendingAmmoType = undefined;
@@ -773,7 +775,6 @@ function moveShip(state: BattleState, ship: ShipState, command: ControlCommand, 
     && command.ammoType !== ship.pendingAmmoType
   ) {
     ship.pendingAmmoType = command.ammoType;
-    const gunDefinition = effectiveMainBattery(ship);
     const gunRatio = Math.max(0.25, moduleRatio(ship, "gun"));
     const switchDuration = reloadDurationFor(
       ship, gunDefinition.reloadSeconds * ship.performance.reloadMultiplier / gunRatio,
@@ -832,7 +833,6 @@ function moveShip(state: BattleState, ship: ShipState, command: ControlCommand, 
   ship.position.z += moveZ;
   ship.distanceTravelled += Math.hypot(moveX, moveZ);
   const gunRatio = moduleRatio(ship, "gun");
-  const gunDefinition = effectiveMainBattery(ship);
   const traverseRate = gunRatio <= 0
     ? 0
     : gunDefinition.traverseDegreesPerSecond * Math.PI / 180 * (0.3 + gunRatio * 0.7);
@@ -954,7 +954,7 @@ export function gunMuzzleOrigin(ship: ShipState): Vec3 {
 
 export function gunMuzzleOrigins(ship: ShipState): Vec3[] {
   const battery = effectiveMainBattery(ship);
-  return battery.mounts.flatMap((_, mountIndex) => gunMuzzleOriginsForMount(ship, mountIndex));
+  return battery.mounts.flatMap((_, mountIndex) => gunMuzzleOriginsForMount(ship, mountIndex, battery));
 }
 
 /** The hull-normalized hardpoint is transformed once; weapon offsets below are metres. */
@@ -976,7 +976,15 @@ function gunMountWorldBase(ship: ShipState, mount: MainBatteryMountDefinition): 
 
 /** Shared render/physics elevation. Base-origin aiming avoids a recursive muzzle query. */
 export function gunMountElevation(ship: ShipState, mountIndex: number): number {
-  const battery = effectiveMainBattery(ship), mount = battery.mounts[mountIndex];
+  return gunMountElevationForBattery(ship, mountIndex, effectiveMainBattery(ship));
+}
+
+function gunMountElevationForBattery(
+  ship: ShipState,
+  mountIndex: number,
+  battery: EffectiveMainBatteryDefinition,
+): number {
+  const mount = battery.mounts[mountIndex];
   if (!mount) return 0;
   const heading = ship.mainBatteryMounts[mountIndex]?.heading ?? ship.turretHeading;
   const base = gunMountWorldBase(ship, mount);
@@ -989,13 +997,17 @@ export function gunMountElevation(ship: ShipState, mountIndex: number): number {
   return velocity ? clamp(Math.atan2(velocity.y, Math.hypot(velocity.x, velocity.z)), 0, MAIN_BATTERY_MAX_ELEVATION) : 0;
 }
 
-function gunMuzzleOriginsForMount(ship: ShipState, mountIndex: number): Vec3[] {
-  const battery = effectiveMainBattery(ship), mount = battery.mounts[mountIndex];
+function gunMuzzleOriginsForMount(
+  ship: ShipState,
+  mountIndex: number,
+  battery: EffectiveMainBatteryDefinition,
+): Vec3[] {
+  const mount = battery.mounts[mountIndex];
   if (!mount) return [];
   const base = gunMountWorldBase(ship, mount);
   const heading = ship.mainBatteryMounts[mountIndex]?.heading ?? ship.turretHeading;
   const visual = { ...(mount.visual ?? battery.visual), barrelCount: mount.barrelCount };
-  const elevation = gunMountElevation(ship, mountIndex);
+  const elevation = gunMountElevationForBattery(ship, mountIndex, battery);
   return Array.from({ length: mount.barrelCount }, (_, index) => {
     const offset = mainBatteryMuzzleOffset(visual, index, elevation);
     return {
@@ -1023,6 +1035,7 @@ function dispersedAimPoint(
   ship: ShipState,
   origin: Vec3,
   target: Vec3,
+  dispersionMultiplier: number,
 ): Vec3 {
   const dx = target.x - origin.x;
   const dz = target.z - origin.z;
@@ -1031,11 +1044,10 @@ function dispersedAimPoint(
   const forwardZ = dz / range;
   const rightX = forwardZ;
   const rightZ = -forwardX;
-  const gunDefinition = effectiveMainBattery(ship);
   const dispersion = dispersionAtRange(
     range,
     moduleRatio(ship, "gun"),
-    gunDefinition.dispersionMultiplier,
+    dispersionMultiplier,
   );
   const centeredNoise = (): number =>
     ((random(state) + random(state) + random(state)) - 1.5) / 1.5;
@@ -1071,7 +1083,7 @@ function fireGun(state: BattleState, ship: ShipState): void {
       mount.reloadRemaining > 0
       || !mainBatteryMountCanBear(ship, mount.mountIndex)
     ) continue;
-    const origins = gunMuzzleOriginsForMount(ship, mount.mountIndex);
+    const origins = gunMuzzleOriginsForMount(ship, mount.mountIndex, gunDefinition);
     const turretHeading = mount.heading;
     let mountFiredShells = 0;
     for (const origin of origins) {
@@ -1081,7 +1093,9 @@ function fireGun(state: BattleState, ship: ShipState): void {
         y: ship.aimPoint.y,
         z: origin.z + Math.cos(turretHeading) * range,
       };
-      const actualAimPoint = dispersedAimPoint(state, ship, origin, barrelAimPoint);
+      const actualAimPoint = dispersedAimPoint(
+        state, ship, origin, barrelAimPoint, gunDefinition.dispersionMultiplier,
+      );
       const velocity = ballisticVelocity(origin, actualAimPoint, gunDefinition.muzzleVelocity);
       if (!velocity) continue;
       if (salvoId === undefined) salvoId = state.nextEntityId++;

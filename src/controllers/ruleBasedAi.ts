@@ -414,6 +414,7 @@ export class RuleBasedAi implements Controller {
     observation: Observation,
     target: TrackEstimate,
     estimatedRange: number,
+    mainBatteryRange: number,
   ): void {
     const dt = clamp(observation.time - this.lastTime, 0, 0.2);
     this.lastTime = observation.time;
@@ -428,7 +429,6 @@ export class RuleBasedAi implements Controller {
     if (manoeuvre > 0.55) this.nextEstimateAt = Math.min(this.nextEstimateAt, observation.time + 1.5);
 
     if (observation.time >= this.nextEstimateAt) {
-      const mainBatteryRange = effectiveMainBattery(observation.self).maximumRangeMeters;
       const rangeErrorFraction = 0.13 + (1 - this.solutionQuality) * 0.2;
       const bearingErrorRadians = 0.03 + (1 - this.solutionQuality) * 0.09;
       this.estimatedRange = clamp(
@@ -457,9 +457,9 @@ export class RuleBasedAi implements Controller {
     observation: Observation,
     target: TrackEstimate,
     bearing: number,
+    muzzleVelocity: number,
   ): Vec3 {
     const estimatedBearing = bearing + this.bearingError;
-    const muzzleVelocity = effectiveMainBattery(observation.self).muzzleVelocity;
     const flightTime = this.estimatedRange / muzzleVelocity;
     const targetSpeed = shipSpeedMetersPerSecond(target.speedKnots);
     return {
@@ -476,7 +476,8 @@ export class RuleBasedAi implements Controller {
   }
 
   command(observation: Observation): ControlCommand {
-    const mainBatteryRange = effectiveMainBattery(observation.self).maximumRangeMeters;
+    const mainBattery = effectiveMainBattery(observation.self);
+    const mainBatteryRange = mainBattery.maximumRangeMeters;
     const perception = this.updatePerception(observation);
     const localTarget = perception.track;
     const localContact = perception.mode === "tracking" || perception.mode === "acquiring";
@@ -575,7 +576,7 @@ export class RuleBasedAi implements Controller {
     }
 
     if (perception.mode === "tracking" && target) {
-      this.updateFireControl(observation, target, range);
+      this.updateFireControl(observation, target, range, mainBatteryRange);
       if (observation.time >= this.nextAmmoDecisionAt) {
         this.selectedAmmo = recommendedAmmoForTarget(
           range,
@@ -780,7 +781,7 @@ export class RuleBasedAi implements Controller {
       || concealmentRetreat
       || Boolean(this.coverPlan);
     const mainGunAim = target
-      ? this.estimatedAimPoint(observation, target, bearingToTarget)
+      ? this.estimatedAimPoint(observation, target, bearingToTarget, mainBattery.muzzleVelocity)
       : fallbackAim;
     const mainGunBearingAllowed = observation.self.mainBatteryMounts.some((mount) =>
       mainBatteryMountCanBear(observation.self, mount.mountIndex, mainGunAim)

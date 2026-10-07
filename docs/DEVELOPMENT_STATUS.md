@@ -50,15 +50,23 @@ staging or download packages/source/logs without fresh explicit consent. See
   using hull-role/range suitability, progressive friendly-load costs and a
   ten-second normal hold. Human commands retain priority; radio does not grant
   firing authority. Six-ship initial/late-target split and stability are tested.
-- Latest verification: 1,236 regular tests passed (five existing opt-in skips),
-  build and eleven actual-main browser checks passed. Full 5v5/7v7 smoke passed;
-  7v7 ended on score at 17 min 31 s, while 5v5 reached the twenty-minute limit.
-  See acceptance/fleet-targets-2026-10-08.md.
-- Legacy slow balanceLab: seven passes and one 30-second timeout at 30.073 s.
-  The preceding checkpoint's 29.802-second pass did not resolve this timing risk.
-- Next: slow-batch profiling, contact-loss target churn, objective/late-game
-  calibration and broader paired-seed fleet balance. Real Surface/mobile FPS and
-  two-physical-PC LAN acceptance remain separate.
+- Published checkpoint: game cda6837 on codex/v072-historical-models and private
+  assets 4e4d587 on main. Asset receipt ASSET_MIRROR_2026-10-08.json verifies 257
+  mappings; material-B stays isolated and no binary art was added.
+- Performance continuation reuses main-battery derivations within each AI,
+  movement/firing and slot-resolution call, without cross-call caching. Four
+  fixed-seed full-battle telemetry/fingerprint/aggregate comparisons are equal;
+  one profiled pair improved from 32.94 s to 27.62 s (16.1%).
+- Latest verification: 1,258 regular tests plus eight separately run balance
+  tests passed, with five existing opt-in skips. The former slow batch passed
+  twice at 25.522 s and 26.584 s against the unchanged 30-second limit. Build and
+  eleven actual-main browser checks passed. See
+  acceptance/main-battery-performance-2026-10-08.md.
+- Earlier full 5v5/7v7 smoke passed: 7v7 ended on score at 17 min 31 s, while 5v5
+  reached the twenty-minute limit. See acceptance/fleet-targets-2026-10-08.md.
+- Next: contact-loss target churn, objective/late-game calibration and broader
+  paired-seed fleet balance. Real Surface/mobile FPS and two-physical-PC LAN
+  acceptance remain separate.
 
 ## Previous working changes — 2026-10-07
 

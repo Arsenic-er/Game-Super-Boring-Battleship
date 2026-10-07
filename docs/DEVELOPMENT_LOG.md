@@ -1,3 +1,25 @@
+## 2026-10-08 — Published checkpoints and main battery CPU reuse
+
+Pushed the verified gameplay/dock/isolated-material checkpoint as game cda6837,
+and refreshed the private asset source archive as 4e4d587. The latter validates
+257 mappings, preserves 20 historical evidence files, and adds no binary artwork.
+Existing GitHub credentials were used transiently over SSH; none were stored.
+
+CPU profiling then identified repeated main-battery derivation in AI, movement
+and firing. Reuse now stays within each synchronous call and installed-slot
+derivation, preserving live equipment changes without a global cache. Twenty-two
+regressions cover all fifteen hulls and mutable/sparse loadouts.
+
+Four fixed-seed battles have exactly matching telemetry, terminal fingerprints
+and aggregate results before/after. One profiled pair fell from 32.94 s to
+27.62 s (16.1%). All 1,266 tests passed across regular and separate slow suites,
+with five existing opt-in skips. The formerly timing-out batch passed twice,
+25.522 s and 26.584 s, against the unchanged 30 s limit. Build and eleven
+actual-main browser checks passed. This is server CPU evidence, not mobile FPS.
+
+See acceptance/main-battery-performance-2026-10-08.md. No local downloads,
+persistent preview, release tag or production material-preview integration.
+
 ## 2026-10-08 — Coordinated fleet target selection
 
 Both teams now distribute AI fire over each ship's own optical contacts. The

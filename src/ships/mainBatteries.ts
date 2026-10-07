@@ -351,11 +351,22 @@ export function installedMainBattery(
 ): EffectiveMainBatteryDefinition {
   const battery = getMainBattery(shipClassId, mainGunId, equippedMounts);
   if (!installed) return battery;
+  // Reuse only within this derivation. Loadouts and catalog entries remain mutable
+  // between calls, and each installed mount still gets its own derived visual.
+  let slotBatteries: Map<MainGunId, EffectiveMainBatteryDefinition> | undefined;
   const mounts = installed.flatMap((equipmentId, slotIndex): MainBatteryMountDefinition[] => {
     if (equipmentId === null) return [];
     const item = EQUIPMENT_BY_ID[equipmentId];
     const id = item?.category === "mainGun" ? item.mainGunId ?? "mk1-single" : "mk1-single";
-    const slotBattery = getMainBattery(shipClassId, id, installed.length);
+    let slotBattery: EffectiveMainBatteryDefinition;
+    if (id === mainGunId && installed.length === equippedMounts) {
+      slotBattery = battery;
+    } else {
+      slotBatteries ??= new Map();
+      const existing = slotBatteries.get(id);
+      slotBattery = existing ?? getMainBattery(shipClassId, id, installed.length);
+      if (!existing) slotBatteries.set(id, slotBattery);
+    }
     const hardpoint = slotBattery.mounts[slotIndex] ?? genericMounts(installed.length, slotBattery.visual.barrelCount)[slotIndex];
     if (!hardpoint) return [];
     return [{ ...hardpoint, slotIndex, visual: { ...slotBattery.visual, barrelCount: hardpoint.barrelCount } }];
