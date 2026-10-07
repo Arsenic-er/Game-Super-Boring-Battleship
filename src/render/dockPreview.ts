@@ -40,6 +40,8 @@ export class DockPreview {
   private readonly resizeObserver: ResizeObserver | undefined;
   private readonly shipModelCatalogReady = loadShipModelCatalog();
   private requestedPlan?: ResolvedLoadoutVisualPlan;
+  private loadoutGeneration = 0;
+  private loadoutReady = false;
   private readonly orbit = new DockOrbitMotion();
   private readonly cadence = new DockRenderCadence();
   private readonly hover = new DockHoverState();
@@ -192,17 +194,32 @@ export class DockPreview {
   }
 
   async setLoadout(plan: ResolvedLoadoutVisualPlan): Promise<LoadoutApplyResult> {
+    const generation = ++this.loadoutGeneration;
     this.requestedPlan = plan;
+    this.loadoutReady = false;
     this.handleCancel();
     this.cadence.request(performance.now());
     const previousClass = this.renderer.current?.plan.shipClassId;
     const result = await this.renderer.setLoadout(plan);
-    if (!this.disposed && (result.status === "applied" || result.status === "fallback-applied")) {
+    if (this.disposed || generation !== this.loadoutGeneration) return result;
+    this.loadoutReady = (result.status === "applied" || result.status === "fallback-applied")
+      && this.isRequestedPlanCurrent();
+    this.setHover();
+    if (this.loadoutReady) {
       this.updateFramingBounds();
       this.fitCamera(previousClass !== plan.shipClassId);
-      this.setHover(); this.cadence.request(performance.now());
     }
+    this.cadence.request(performance.now());
     return result;
+  }
+
+  private isRequestedPlanCurrent(): boolean {
+    const requested = this.requestedPlan, actual = this.renderer.current?.plan;
+    return Boolean(requested && actual && requested.shipClassId === actual.shipClassId
+      && requested.signature === actual.signature);
+  }
+  private canInteractWithLoadout(): boolean {
+    return !this.disposed && this.loadoutReady && this.isRequestedPlanCurrent();
   }
 
   previewEquipment(item?: EquipmentDefinition, slotIndex = 0): void {
@@ -246,12 +263,14 @@ export class DockPreview {
     this.camera.lowerRadiusLimit = framing.radius * .62;
     this.camera.upperRadiusLimit = framing.radius * 2.4;
   }
-  getComponentHover(): DockComponentHover | undefined { return this.hover.current; }
+  getComponentHover(): DockComponentHover | undefined {
+    return this.canInteractWithLoadout() ? this.hover.current : undefined;
+  }
   setComponentHoverCallback(callback?: (hover: DockComponentHover | undefined) => void): void {
     this.hover.subscribe(callback);
   }
   private setHover(value?: DockComponentHover, dragging = false): void {
-    this.hover.update(value, dragging);
+    this.hover.update(this.canInteractWithLoadout() ? value : undefined, dragging);
     const current = this.hover.current;
     if (this.highlight.update(this.renderer.current, current)) this.cadence.request(performance.now());
     // Read-only acceptance signals; gameplay and selection never read these values.
@@ -261,7 +280,7 @@ export class DockPreview {
   }
   private updateComponentHover(): void {
     const actual = this.renderer.current;
-    if (!actual || !this.pointer || this.drag || this.orbit.moving) { this.setHover(); return; }
+    if (!this.canInteractWithLoadout() || !actual || !this.pointer || this.drag || this.orbit.moving) { this.setHover(); return; }
     const rect = this.canvas.getBoundingClientRect();
     const x = this.pointer.clientX - rect.left, y = this.pointer.clientY - rect.top;
     if (x < 0 || y < 0 || x > rect.width || y > rect.height || rect.width <= 0 || rect.height <= 0) {
@@ -276,7 +295,7 @@ export class DockPreview {
   }
   /** Compatibility bridge: old label loops must actively hide every unhovered compartment. */
   getInternalModuleAnchors(): InternalModuleAnchor[] {
-    const current = this.hover.current;
+    const current = this.getComponentHover();
     return (this.renderer.current?.plan.internalModules ?? []).map((module) => {
       const visible = Boolean(current?.internal && current.category === module.category && current.slotIndex === module.slotIndex);
       return { category: module.category, slotIndex: module.slotIndex, equipmentId: module.equipmentId,

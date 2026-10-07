@@ -16,3 +16,15 @@ export function resolveAutomaticEquipmentSlot(
   const slotIndex = slots.includes(equipmentId) && emptyIndex >= 0 ? emptyIndex : 0;
   return { slotIndex, action: slots[slotIndex] === null ? "install" : "replace" };
 }
+
+/** An explicit hardpoint never falls back to slot zero. Invalid/stale selections
+ * must be rejected so the preview and transaction cannot silently diverge. */
+export function resolveEquipmentSlot(
+  slots: readonly (string | null)[],
+  equipmentId: string,
+  requestedSlotIndex?: number,
+): AutomaticEquipmentSlot | undefined {
+  if (requestedSlotIndex === undefined) return resolveAutomaticEquipmentSlot(slots, equipmentId);
+  if (!Number.isInteger(requestedSlotIndex) || requestedSlotIndex < 0 || requestedSlotIndex >= slots.length) return undefined;
+  return { slotIndex: requestedSlotIndex, action: slots[requestedSlotIndex] === null ? "install" : "replace" };
+}

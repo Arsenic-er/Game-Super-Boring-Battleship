@@ -24,7 +24,7 @@ import {
   createMinimumSeaReadySlotLoadout,
   optimizeOwnedSlotLoadout,
 } from "./loadoutPolicy";
-import { resolveAutomaticEquipmentSlot } from "./automaticEquipmentSlot";
+import { resolveEquipmentSlot } from "./automaticEquipmentSlot";
 
 export type SlotLoadout = Record<EquipmentCategory, (string | null)[]>;
 
@@ -495,7 +495,7 @@ export function awardBattleResult(
   return { profile: normalizeLocalProfile(profile), reward };
 }
 
-export function equipComponent(source: LocalProfile, itemId: string): LocalProfile {
+export function equipComponent(source: LocalProfile, itemId: string, slotIndex?: number): LocalProfile {
   const profile = normalizeLocalProfile(source);
   const item = EQUIPMENT_BY_ID[itemId];
   if (
@@ -505,7 +505,7 @@ export function equipComponent(source: LocalProfile, itemId: string): LocalProfi
   ) return profile;
   const slotLoadoutsByShipClass = structuredClone(profile.slotLoadoutsByShipClass);
   const slots = slotLoadoutsByShipClass[profile.shipClassId][item.category];
-  const target = resolveAutomaticEquipmentSlot(slots, itemId);
+  const target = resolveEquipmentSlot(slots, itemId, slotIndex);
   if (!target) return profile;
   if (slots[target.slotIndex] !== itemId && availableCopies(profile, itemId) <= 0) return profile;
   slots[target.slotIndex] = itemId;

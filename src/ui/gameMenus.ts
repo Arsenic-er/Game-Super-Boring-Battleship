@@ -342,7 +342,7 @@ export class GameMenus {
     this.portShell = new PortShell(this.startOverlay, {
       getLocale: () => this.settings.locale, getProfile: () => this.profile,
       navigate: (tab) => this.setStartTab(tab), preview: this.dockPreview,
-      selectComponent: (hover) => this.dockPanel.inspectEquipment(hover.category, hover.equipmentId),
+      selectComponent: (hover) => this.dockPanel.inspectEquipment(hover.category, hover.equipmentId, hover.slotIndex),
     });
     this.setStartTab("dock");
   }

@@ -1,7 +1,7 @@
 import { CATEGORY_META, EQUIPMENT_BY_ID, EQUIPMENT_CATALOG, SHIP_CLASS_SLOT_COUNTS, isEquipmentCompatible } from "../profile/equipmentCatalog";
 import type { EquipmentCategory } from "../profile/equipmentCatalog";
 import { autoEquipBestOwnedComponents, equipComponent, installedCopies, normalizeLocalProfile, selectShipClass, type LocalProfile, type SavedShipBuild } from "../profile/localProfile";
-import { resolveAutomaticEquipmentSlot } from "../profile/automaticEquipmentSlot";
+import { resolveEquipmentSlot } from "../profile/automaticEquipmentSlot";
 import { deleteShipBuild, overwriteShipBuild, saveCurrentShipBuild, savedBuildReadiness, selectBattleBuild } from "../profile/savedBuilds";
 import { SHIP_CLASSES, type ShipClassId } from "../ships/classes";
 import { getMainBattery } from "../ships/mainBatteries";
@@ -27,6 +27,8 @@ export function loadBuildIntoEditor(profile: LocalProfile, build: SavedShipBuild
 export class DockPanel {
   private category: EquipmentCategory | "all" = "all";
   private selectedItemId?: string;
+  private selectedSlotIndex?: number;
+  private selectedSlotCategory?: EquipmentCategory;
   private inspectionBuildId?: string;
   private editingShipClassId: ShipClassId;
   private planKey = "";
@@ -53,28 +55,32 @@ export class DockPanel {
       const button = (event.target as Element).closest<HTMLButtonElement>("button");
       if (!button || button.disabled) return;
       const data = button.dataset;
-      if (data.dockCategory) { this.category = data.dockCategory as typeof this.category; this.render(); }
-      if (data.item) { this.selectedItemId = data.item; this.render(); }
-      if (data.buildInspect) { this.inspectionBuildId = data.buildInspect; this.render(); }
-      if (data.dockAction === "edit") { this.inspectionBuildId = undefined; this.render(); }
+      if (data.dockCategory) { if (data.dockCategory !== this.category) this.clearSlotSelection(); this.category = data.dockCategory as typeof this.category; this.render(); }
+      if (data.item) {
+        if (EQUIPMENT_BY_ID[data.item]?.category !== this.selectedSlotCategory) this.clearSlotSelection();
+        this.selectedItemId = data.item; this.render();
+      }
+      if (data.dockSlot !== undefined) { this.selectSlot(data.dockSlot); return; }
+      if (data.buildInspect) { this.clearSlotSelection(); this.inspectionBuildId = data.buildInspect; this.render(); }
+      if (data.dockAction === "edit") { this.clearSlotSelection(); this.inspectionBuildId = undefined; this.render(); }
       if (data.shipClassId && data.shipClassId in SHIP_CLASSES) {
-        this.editingShipClassId = data.shipClassId as ShipClassId; this.inspectionBuildId = undefined;
+        this.clearSlotSelection(); this.editingShipClassId = data.shipClassId as ShipClassId; this.inspectionBuildId = undefined;
         if (!this.isLocked()) this.onChange(selectShipClass(this.getProfile(), this.editingShipClassId)); else this.render();
         return;
       }
       if (this.isLocked()) return;
       const profile = this.getProfile();
       const editorProfile = () => selectShipClass(profile, this.editingShipClassId);
-      if (data.buildSelect) this.onChange(selectBattleBuild(profile, data.buildSelect));
-      if (data.buildDelete) { if (this.inspectionBuildId === data.buildDelete) this.inspectionBuildId = undefined; this.onChange(deleteShipBuild(profile, data.buildDelete)); }
+      if (data.buildSelect) { this.clearSlotSelection(); this.onChange(selectBattleBuild(profile, data.buildSelect)); }
+      if (data.buildDelete) { if (this.inspectionBuildId === data.buildDelete) { this.inspectionBuildId = undefined; this.clearSlotSelection(); } this.onChange(deleteShipBuild(profile, data.buildDelete)); }
       if (data.buildOverwrite) this.onChange(overwriteShipBuild(editorProfile(), data.buildOverwrite));
       if (data.buildLoad) {
         const build = profile.savedShipBuilds.find(({ id }) => id === data.buildLoad);
-        if (build && savedBuildReadiness(profile, build).ready) { this.inspectionBuildId = undefined; this.editingShipClassId = build.shipClassId; this.onChange(loadBuildIntoEditor(profile, build)); }
+        if (build && savedBuildReadiness(profile, build).ready) { this.clearSlotSelection(); this.inspectionBuildId = undefined; this.editingShipClassId = build.shipClassId; this.onChange(loadBuildIntoEditor(profile, build)); }
       }
-      if (button.classList.contains("auto-equip-ship")) { this.inspectionBuildId = undefined; this.onChange(autoEquipBestOwnedComponents(editorProfile()).profile); }
+      if (button.classList.contains("auto-equip-ship")) { this.clearSlotSelection(); this.inspectionBuildId = undefined; this.onChange(autoEquipBestOwnedComponents(editorProfile()).profile); }
       if (button.classList.contains("save-ship-build")) this.save();
-      if (button.classList.contains("equip-selected") && this.selectedItemId && !this.inspectionBuildId) this.onChange(equipComponent(editorProfile(), this.selectedItemId));
+      if (button.classList.contains("equip-selected") && this.selectedItemId && !this.inspectionBuildId) this.onChange(equipComponent(editorProfile(), this.selectedItemId, this.requestedSlot(EQUIPMENT_BY_ID[this.selectedItemId].category)));
     });
   }
 
@@ -89,10 +95,54 @@ export class DockPanel {
     const y = Math.max(8, Math.min(hover.canvasY - this.hoverTooltip.offsetHeight - 14, canvas.clientHeight - this.hoverTooltip.offsetHeight - 8));
     this.hoverTooltip.style.left = `${x}px`; this.hoverTooltip.style.top = `${y}px`;
   }
-  inspectEquipment(category: EquipmentCategory, equipmentId: string): void {
+  inspectEquipment(category: EquipmentCategory, equipmentId: string, slotIndex?: number): void {
+    const item = EQUIPMENT_BY_ID[equipmentId];
+    if (slotIndex !== undefined) {
+      const { slots, shipClassId } = this.currentLoadout();
+      if (!item || item.category !== category || !isEquipmentCompatible(item, shipClassId)
+        || !(this.getProfile().inventory[equipmentId] > 0)
+        || !resolveEquipmentSlot(slots[category], equipmentId, slotIndex)) return;
+    }
+    this.clearSlotSelection();
     this.category = category;
     this.selectedItemId = this.getProfile().inventory[equipmentId] > 0 ? equipmentId : undefined;
+    if (this.selectedItemId && slotIndex !== undefined) {
+      this.selectedSlotCategory = category; this.selectedSlotIndex = slotIndex;
+    }
     this.render();
+  }
+  private clearSlotSelection(): void { this.selectedSlotIndex = undefined; this.selectedSlotCategory = undefined; }
+  private requestedSlot(category: EquipmentCategory): number | undefined {
+    return this.selectedSlotCategory === category ? this.selectedSlotIndex : undefined;
+  }
+  private currentLoadout() {
+    const profile = this.getProfile();
+    const build = profile.savedShipBuilds.find(({ id }) => id === this.inspectionBuildId);
+    const shipClassId = build?.shipClassId ?? this.editingShipClassId;
+    return { shipClassId, slots: build?.slots ?? profile.slotLoadoutsByShipClass[shipClassId] };
+  }
+  private selectSlot(value: string): void {
+    if (this.isLocked() || this.inspectionBuildId) return;
+    const item = this.selectedItemId ? EQUIPMENT_BY_ID[this.selectedItemId] : undefined;
+    if (!item) return;
+    const { slots, shipClassId } = this.currentLoadout();
+    if (!isEquipmentCompatible(item, shipClassId)) return;
+    if (value === "auto") this.clearSlotSelection();
+    else {
+      if (!/^\d+$/.test(value)) return;
+      const slotIndex = Number(value);
+      if (!resolveEquipmentSlot(slots[item.category], item.id, slotIndex)) return;
+      this.selectedSlotCategory = item.category; this.selectedSlotIndex = slotIndex;
+    }
+    this.render();
+    this.host.querySelector<HTMLButtonElement>(`[data-dock-slot="${value}"]`)?.focus?.({ preventScroll: true });
+  }
+  private updateCandidatePreview(): void {
+    const { slots, shipClassId } = this.currentLoadout();
+    const candidate = this.selectedItemId ? EQUIPMENT_BY_ID[this.selectedItemId] : undefined;
+    const target = candidate && isEquipmentCompatible(candidate, shipClassId)
+      ? resolveEquipmentSlot(slots[candidate.category], candidate.id, this.requestedSlot(candidate.category)) : undefined;
+    this.preview.previewEquipment(target ? candidate : undefined, target?.slotIndex ?? 0);
   }
 
   private t(source: string): string { return translateGameText(source, this.getLocale()); }
@@ -101,8 +151,9 @@ export class DockPanel {
     const suffix = build.id === "default-fletcher" || build.id.startsWith("standard-") ? "标准配置" : build.id === "legacy-current" ? "继承配置" : undefined;
     return suffix ? `${this.t(ship.name)} ${this.t(suffix)}` : build.name;
   }
-  inspect(buildId?: string): void { this.inspectionBuildId = buildId; this.render(); }
+  inspect(buildId?: string): void { this.clearSlotSelection(); this.inspectionBuildId = buildId; this.render(); }
   showLastBattle(shipClassId: ShipClassId, buildId?: string): void {
+    this.clearSlotSelection();
     const profile = this.getProfile();
     const build = profile.savedShipBuilds.find(({ id }) => id === buildId);
     this.editingShipClassId = shipClassId;
@@ -132,7 +183,7 @@ export class DockPanel {
     const profile = this.getProfile(); const locale = this.getLocale();
     this.renderNotice();
     const build = profile.savedShipBuilds.find(({ id }) => id === this.inspectionBuildId);
-    if (!build) this.inspectionBuildId = undefined;
+    if (!build && this.inspectionBuildId) { this.inspectionBuildId = undefined; this.clearSlotSelection(); }
     const shipClassId = build?.shipClassId ?? this.editingShipClassId;
     const slots = build?.slots ?? profile.slotLoadoutsByShipClass[shipClassId];
     const ship = SHIP_CLASSES[shipClassId];
@@ -169,15 +220,18 @@ export class DockPanel {
       return `<button class="inventory-item rarity-${item.rarity}${slots[item.category].includes(item.id) ? " installed" : ""}${this.selectedItemId === item.id ? " active" : ""}" data-item="${item.id}">${equipmentArtworkMarkup(item)}<span>${html(text.name)}</span><small>${html(text.origin)} · ×${profile.inventory[item.id]}</small></button>`;
     }).join("");
     const item = this.selectedItemId ? EQUIPMENT_BY_ID[this.selectedItemId] : undefined;
+    if (!item || (this.selectedSlotIndex !== undefined && (this.selectedSlotCategory !== item.category
+      || !resolveEquipmentSlot(slots[item.category], item.id, this.selectedSlotIndex)))) this.clearSlotSelection();
     const detail = this.host.querySelector<HTMLElement>(".component-detail")!;
     if (item) {
       const text = equipmentLocale(locale, item.id); const compatible = isEquipmentCompatible(item, shipClassId);
-      const target = compatible ? resolveAutomaticEquipmentSlot(slots[item.category], item.id) : undefined;
+      const target = compatible ? resolveEquipmentSlot(slots[item.category], item.id, this.requestedSlot(item.category)) : undefined;
       const enoughCopies = target && (slots[item.category][target.slotIndex] === item.id
         || profile.inventory[item.id] > installedCopies(profile, item.id));
       const actionText = !target ? "该舰级不可安装" : !enoughCopies ? "组件不足"
-        : target.action === "install" ? "安装到空槽" : "替换首个槽位";
-      detail.innerHTML = `<div class="detail-heading rarity-${item.rarity}">${equipmentArtworkMarkup(item, "detail")}<div><b>${html(text.name)}</b><small>${html(text.origin)}</small></div></div><p>${html(text.description)}</p><dl><div><dt>${html(this.t("核心增益"))}</dt><dd>+${Math.round(item.bonus * 100)}%</dd></div><div><dt>${html(this.t("槽位占用"))}</dt><dd>${slots[item.category].filter(Boolean).length}/${slots[item.category].length}</dd></div></dl><button class="equip-selected" ${locked || !target || !enoughCopies || build ? "disabled" : ""}>${html(this.t(actionText))}</button>`;
+        : target.action === "install" ? "安装到空槽" : this.selectedSlotIndex === undefined ? "替换首个槽位" : "替换所选槽位";
+      const slotPicker = compatible && slots[item.category].length > 0 ? `<fieldset class="dock-slot-picker"><legend>${html(this.t("装配位置"))}</legend><div class="dock-slot-options"><button type="button" data-dock-slot="auto" aria-pressed="${this.selectedSlotIndex === undefined}" ${locked || build ? "disabled" : ""}>${html(this.t("自动选择槽位"))}</button>${slots[item.category].map((installed, slotIndex) => `<button type="button" data-dock-slot="${slotIndex}" aria-pressed="${this.selectedSlotIndex === slotIndex}" ${locked || build ? "disabled" : ""}><b>${html(this.t("槽位"))} ${slotIndex + 1}</b><span>${html(installed ? equipmentLocale(locale, installed).name : this.t("空槽"))}</span></button>`).join("")}</div></fieldset>` : "";
+      detail.innerHTML = `<div class="detail-heading rarity-${item.rarity}">${equipmentArtworkMarkup(item, "detail")}<div><b>${html(text.name)}</b><small>${html(text.origin)}</small></div></div><p>${html(text.description)}</p><dl><div><dt>${html(this.t("核心增益"))}</dt><dd>+${Math.round(item.bonus * 100)}%</dd></div><div><dt>${html(this.t("槽位占用"))}</dt><dd>${slots[item.category].filter(Boolean).length}/${slots[item.category].length}</dd></div></dl>${slotPicker}<button class="equip-selected" ${locked || !target || !enoughCopies || build ? "disabled" : ""}>${html(this.t(actionText))}</button>`;
     } else detail.textContent = this.t("选择组件查看详情");
     const plan = resolveLoadoutVisualPlan(shipClassId, slots);
     const nextKey = JSON.stringify([shipClassId, slots]);
@@ -186,17 +240,16 @@ export class DockPanel {
       void this.preview.setLoadout(plan).then((result) => {
         if (generation !== this.previewGeneration) return;
         if (result.status === "failed") { this.planKey = ""; this.notice("", "buildUnavailable"); }
-        const candidate = this.selectedItemId ? EQUIPMENT_BY_ID[this.selectedItemId] : undefined;
-        const target = candidate && isEquipmentCompatible(candidate, shipClassId) ? resolveAutomaticEquipmentSlot(slots[candidate.category], candidate.id) : undefined;
-        this.preview.previewEquipment(target ? candidate : undefined, target?.slotIndex ?? 0);
+        this.updateCandidatePreview();
       });
     } else {
-      const target = item && isEquipmentCompatible(item, shipClassId) ? resolveAutomaticEquipmentSlot(slots[item.category], item.id) : undefined;
-      this.preview.previewEquipment(target ? item : undefined, target?.slotIndex ?? 0);
+      this.updateCandidatePreview();
     }
     this.showHover(this.preview.getComponentHover?.());
     const status = this.host.querySelector<HTMLElement>(".dock-preview-status");
-    if (status) status.textContent = item ? `${this.t(slots[item.category].includes(item.id) ? "当前已安装" : "候选装配预览")} · ${equipmentLocale(locale, item.id).name}` : "";
+    const previewTarget = item && isEquipmentCompatible(item, shipClassId)
+      ? resolveEquipmentSlot(slots[item.category], item.id, this.requestedSlot(item.category)) : undefined;
+    if (status) status.textContent = item && previewTarget ? `${this.t(slots[item.category][previewTarget.slotIndex] === item.id ? "当前已安装" : "候选装配预览")} · ${this.t("槽位")} ${previewTarget.slotIndex + 1} · ${equipmentLocale(locale, item.id).name}` : "";
     for (const button of this.host.querySelectorAll<HTMLButtonElement>(".auto-equip-ship,.save-ship-build")) button.disabled = locked || Boolean(build);
     localizeElement(this.host, locale);
     this.host.dispatchEvent?.(new CustomEvent("dock-preview-change"));

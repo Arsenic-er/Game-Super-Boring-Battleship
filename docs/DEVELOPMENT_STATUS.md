@@ -1,6 +1,6 @@
 # Condensed Development Status
 
-Last updated: 2026-10-03
+Last updated: 2026-10-08
 
 This is the current operational handoff. Product decisions are preserved in
 `CONVERSATION_SUMMARY.md`; milestone history is preserved in `DEVELOPMENT_LOG.md`.
@@ -28,6 +28,52 @@ The Windows workspace is a remote-control endpoint only. As of 2026-10-03, all
 development, builds, tests and artifacts stay on the server. Do not create local
 staging or download packages/source/logs without fresh explicit consent. See
 `../AGENTS.md`; this overrides the older automatic local-delivery workflow.
+
+## Latest working changes — 2026-10-08
+
+- Production AI now receives delayed, expiring friendly sighting reports for search
+  only. It still requires its own optical acquisition to fire. Both teams and
+  human-controlled scout sources use the same authority-side rules.
+- Target changes no longer inherit the previous ship's optical/firing lock.
+- Damaged ships can use nearby reachable island cover, with conservative sight
+  heights, draft/route checks and physical slowdown/holding. Planning is bounded
+  and cached, and does not query unobserved enemy positions.
+- Verification and limits: acceptance/fleet-ai-2026-10-08.md. This remains an
+  untagged 0.7.9 working checkout; all work and evidence stay on the server.
+- Local/host presentation now maintains independent contacts per enemy ID,
+  including acquisition, outlines, loss and expiry. All detected ships reach
+  GameView and both maps; the HUD keeps one stable primary target.
+- Projectile and muzzle/audio visibility use their own source contact. Near
+  hazards follow the current observing ship after the original ship sinks.
+  Radio-only reports and hidden true poses remain isolated.
+- Both teams now coordinate AI targets from each ship's own local contacts,
+  using hull-role/range suitability, progressive friendly-load costs and a
+  ten-second normal hold. Human commands retain priority; radio does not grant
+  firing authority. Six-ship initial/late-target split and stability are tested.
+- Latest verification: 1,236 regular tests passed (five existing opt-in skips),
+  build and eleven actual-main browser checks passed. Full 5v5/7v7 smoke passed;
+  7v7 ended on score at 17 min 31 s, while 5v5 reached the twenty-minute limit.
+  See acceptance/fleet-targets-2026-10-08.md.
+- Legacy slow balanceLab: seven passes and one 30-second timeout at 30.073 s.
+  The preceding checkpoint's 29.802-second pass did not resolve this timing risk.
+- Next: slow-batch profiling, contact-loss target churn, objective/late-game
+  calibration and broader paired-seed fleet balance. Real Surface/mobile FPS and
+  two-physical-PC LAN acceptance remain separate.
+
+## Previous working changes — 2026-10-07
+
+- Package version remains 0.7.9; active checkout contains the next dock-slot and
+  rendering-budget changes. These are not a published/tagged release.
+- Explicit equipment slots: real-model clicks preserve the physical mount index;
+  the drawer supports automatic/explicit placement, empty slots and seven languages.
+  Inventory, saved-build isolation and minimum departure checks remain enforced.
+- Low quality now uses a roughly 720p 3D pixel budget on large/high-DPI displays;
+  medium and native-size DOM HUD are unchanged. This is not a device-FPS result.
+- Material-B art and sailing wake are accepted as a provisional preview baseline,
+  still isolated in experiments/material-b and not wired into production battles.
+- Do not repeat the already completed 0.7.9 default-slot consistency fix. Follow
+  acceptance/dock-slots-2026-10-07.md for the current explicit-slot verification.
+- No local package/source download or asset-repository mutation this turn.
 
 ## Product direction
 

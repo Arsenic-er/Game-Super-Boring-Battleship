@@ -120,9 +120,9 @@ export class PortShell {
       const icon = document.createElement("i"); icon.className = `fa-solid ${choices[index] ?? "fa-anchor"}`;
       icon.setAttribute("aria-hidden", "true"); button.prepend(icon);
     });
-    this.dock.addEventListener("dock-preview-change", () => this.refresh());
-
     let press: { x: number; y: number; hover?: DockComponentHover } | undefined;
+    // A pressed component belongs to one loadout; never carry it across a refit/switch.
+    this.dock.addEventListener("dock-preview-change", () => { press = undefined; this.refresh(); });
     const canvas = this.scene.querySelector("canvas")!;
     canvas.addEventListener("pointerdown", (event) => {
       if (event.button === 0) press = { x: event.clientX, y: event.clientY, hover: options.preview.getComponentHover() };

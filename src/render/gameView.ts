@@ -53,6 +53,7 @@ import {
   WATER_RENDER,
 } from "./environmentMaterials";
 import { OceanWater } from "./oceanWater";
+import { renderResolutionFor } from "./renderResolution";
 import { createAtollTerrain, type AtollTerrainVisual } from "./atollTerrain";
 import { createPixelVfxMaterial } from "./vfxMaterials";
 import { normalizeWeatherId, weatherPreset, type WeatherId } from "../sim/weather";
@@ -213,14 +214,16 @@ export class GameView implements AimProvider {
   private underwaterView = false;
   private quality: "low" | "medium" = "low";
   private currentWeatherId: WeatherId = "clear";
+  private lastCanvasCssSize?: { width: number; height: number };
 
   constructor(private readonly canvas: HTMLCanvasElement) {
     this.engine = new Engine(canvas, false, {
       powerPreference: "low-power",
       preserveDrawingBuffer: false,
       stencil: false,
+      adaptToDeviceRatio: false,
     });
-    this.engine.setHardwareScalingLevel(1.35);
+    this.resize();
     this.scene = new Scene(this.engine);
     this.scene.clearColor = new Color4(0, 0, 0, 1);
     this.scene.fogMode = Scene.FOGMODE_LINEAR;
@@ -320,7 +323,7 @@ export class GameView implements AimProvider {
         );
       },
     });
-    window.addEventListener("resize", () => this.engine.resize());
+    window.addEventListener("resize", () => this.resize());
   }
 
   private material(name: string, diffuse: Color3, emissive = Color3.Black()): StandardMaterial {
@@ -690,8 +693,32 @@ export class GameView implements AimProvider {
 
   setQuality(quality: "low" | "medium"): void {
     this.quality = quality;
-    this.engine.setHardwareScalingLevel(quality === "low" ? 1.35 : 1);
+    this.resize();
     this.oceanWater.setQuality(quality);
+  }
+
+  /** Update the 3D framebuffer without changing the native-size DOM HUD. */
+  resize(): void {
+    const rect = this.canvas.getBoundingClientRect();
+    const width = this.canvas.clientWidth || rect.width;
+    const height = this.canvas.clientHeight || rect.height;
+    const hasLayout = Number.isFinite(width) && width > 0
+      && Number.isFinite(height) && height > 0;
+    if (hasLayout) this.lastCanvasCssSize = { width, height };
+    // Hidden/unmounted canvases may temporarily report zero. Never infer their
+    // CSS size from canvas.width/height: those are our scaled output and would
+    // feed the next resize back into itself. A later layout/resize can recover.
+    const size = this.lastCanvasCssSize ?? {
+      width: window.innerWidth,
+      height: window.innerHeight,
+    };
+    const resolution = renderResolutionFor(this.quality, size.width, size.height);
+    if (this.engine.getHardwareScalingLevel() !== resolution.hardwareScalingLevel) {
+      // Babylon internally calls resize here; setSize below also covers a
+      // zero-layout canvas, for which its intrinsic-size fallback is unsuitable.
+      this.engine.setHardwareScalingLevel(resolution.hardwareScalingLevel);
+    }
+    this.engine.setSize(resolution.width, resolution.height);
   }
 
   setAimSensitivity(value: number): void {
@@ -726,7 +753,7 @@ export class GameView implements AimProvider {
 
   private syncShips(
     state: BattleState,
-    perceivedTarget?: PlayerTargetView,
+    contactsById: ReadonlyMap<string, PlayerTargetView>,
     omniscient = false,
     cameraShipId = "player",
   ): void {
@@ -755,14 +782,15 @@ export class GameView implements AimProvider {
         visual = this.createShip(ship);
         this.ships.set(ship.id, visual);
       }
+      const contact = contactsById.get(ship.id);
       const presentation = developerMode
         ? ship.hull > 0 ? "full" : "hidden"
-        : shipPresentationMode(ship, state.mode, perceivedTarget);
+        : shipPresentationMode(ship, state.mode, contact);
       const visible = presentation !== "hidden";
       visual.root.setEnabled(visible);
       if (!visible) continue;
-      const targetPose = !omniscient && ship.team === "enemy" && perceivedTarget?.id === ship.id
-        ? perceivedTarget : undefined;
+      const targetPose = !developerMode && state.mode === "battle" && ship.team === "enemy"
+        ? contact : undefined;
       const renderPosition = targetPose?.position ?? ship.position;
       const renderHeading = targetPose?.heading ?? ship.heading;
       const silhouette = presentation === "contact" || presentation === "ghost";
@@ -956,11 +984,14 @@ export class GameView implements AimProvider {
   }
 
   private syncProjectiles(
-    state: BattleState, perceivedTarget?: PlayerTargetView, omniscient = false, serverFiltered = false,
+    state: BattleState, contactsById: ReadonlyMap<string, PlayerTargetView>, omniscient = false, serverFiltered = false,
+    observerShipId?: string,
   ): void {
-    const player = state.ships.find((ship) => ship.team === "player");
+    const player = state.ships.find((ship) => ship.id === observerShipId)
+      ?? state.ships.find((ship) => ship.team === "player" && ship.hull > 0)
+      ?? state.ships.find((ship) => ship.team === "player");
     const visibleProjectiles = omniscient || serverFiltered ? state.projectiles : state.projectiles.filter(
-      (projectile) => isProjectileVisibleToPlayer(projectile, player, perceivedTarget),
+      (projectile) => isProjectileVisibleToPlayer(projectile, player, contactsById.get(projectile.ownerId)),
     );
     const activeIds = new Set(visibleProjectiles.map((projectile) => projectile.id));
     for (const [id, visual] of this.projectileMeshes) {
@@ -1789,6 +1820,7 @@ export class GameView implements AimProvider {
     developerView?: Readonly<DeveloperViewOptions>,
     contactViews: readonly PlayerTargetView[] = perceivedTarget ? [perceivedTarget] : [],
     serverFilteredProjectiles = false,
+    observerShipId?: string,
   ): void {
     this.syncWeather(state.weatherId);
     this.oceanWater.update(state.time, this.camera.target);
@@ -1798,10 +1830,11 @@ export class GameView implements AimProvider {
     const cameraShip = focusShip ?? controlledShip
       ?? state.ships.find((ship) => ship.team === "player" && ship.hull > 0)
       ?? state.ships.find((ship) => ship.team === "player");
-    this.syncShips(state, perceivedTarget, developerView?.omniscient, cameraShip?.id);
+    const contactsById = new Map(contactViews.map(contact => [contact.id, contact]));
+    this.syncShips(state, contactsById, developerView?.omniscient, cameraShip?.id);
     this.syncContacts(contactViews, state.time);
     this.syncAirSquadrons(state, dt, developerView);
-    this.syncProjectiles(state, perceivedTarget, developerView?.omniscient, serverFilteredProjectiles);
+    this.syncProjectiles(state, contactsById, developerView?.omniscient, serverFilteredProjectiles, observerShipId ?? cameraShip?.id);
     this.syncUnderwaterEntities(state);
     this.syncSmokeClouds(state);
     this.objectiveRing.visibility = state.mode === "battle"

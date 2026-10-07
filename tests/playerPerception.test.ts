@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import { SENSOR } from "../src/sim/config";
 import {
   isProjectileVisibleToPlayer,
+  isShotVisibleToPlayer,
   isShipVisibleToPlayer,
   shipPresentationMode,
   PlayerPerceptionTracker,
@@ -132,6 +133,73 @@ describe("player optical perception", () => {
     expect(isProjectileVisibleToPlayer(shell, player, target)).toBe(false);
     shell.position.x = player.position.x + 900;
     expect(isProjectileVisibleToPlayer(shell, player, target)).toBe(true);
+  });
+
+  it("matches distant projectile and shot visibility to the exact observed owner", () => {
+    const battle = createInitialState(309);
+    const player = battle.ships.find(({ id }) => id === "player")!;
+    const target: PlayerTargetView = {
+      id: "enemy-a", team: "enemy", mode: "tracking", live: true, confidence: 1,
+      lastObservedAt: 0, position: { x: 3_000, y: 0, z: 0 }, heading: 0,
+      speedKnots: 0, rangeMeters: 3_000, estimatedHullRatio: 1,
+    };
+    const shell: ProjectileState = {
+      id: 1, ownerId: "enemy-b", team: "enemy", kind: "shell",
+      position: { x: player.position.x + 3_000, y: 10, z: player.position.z },
+      previousPosition: { x: player.position.x + 3_010, y: 10, z: player.position.z },
+      velocity: { x: -100, y: 0, z: 0 }, damage: 1, age: 1,
+    };
+    const shot = { id: 1, ownerId: shell.ownerId, team: shell.team, kind: shell.kind, position: shell.position };
+    expect(isProjectileVisibleToPlayer(shell, player, target)).toBe(false);
+    expect(isShotVisibleToPlayer(shot, player, target)).toBe(false);
+    target.id = shell.ownerId;
+    expect(isProjectileVisibleToPlayer(shell, player, target)).toBe(true);
+    expect(isShotVisibleToPlayer(shot, player, target)).toBe(true);
+    target.live = false;
+    target.mode = "lost";
+    expect(isProjectileVisibleToPlayer(shell, player, target)).toBe(false);
+    expect(isShotVisibleToPlayer(shot, player, target)).toBe(false);
+    // Nearby incoming hazards remain visible without exposing their distant owner.
+    shell.position.x = player.position.x + 900;
+    expect(isProjectileVisibleToPlayer(shell, player, target)).toBe(true);
+    expect(isShotVisibleToPlayer(shot, player, target)).toBe(false);
+  });
+
+  it("uses the observing team's friendship for projectiles and firing effects", () => {
+    const battle = createInitialState(310);
+    const observer = battle.ships.find(({ id }) => id === "enemy")!;
+    const shell: ProjectileState = {
+      id: 1, ownerId: "enemy-wingmate", team: "enemy", kind: "shell",
+      position: { x: observer.position.x + 5_000, y: 10, z: observer.position.z },
+      previousPosition: { x: observer.position.x + 5_010, y: 10, z: observer.position.z },
+      velocity: { x: -100, y: 0, z: 0 }, damage: 1, age: 1,
+    };
+    expect(isProjectileVisibleToPlayer(shell, observer)).toBe(true);
+    expect(isShotVisibleToPlayer(shell, observer)).toBe(true);
+    shell.team = "player";
+    expect(isProjectileVisibleToPlayer(shell, observer)).toBe(false);
+    expect(isShotVisibleToPlayer(shell, observer)).toBe(false);
+    expect(isProjectileVisibleToPlayer(shell, undefined)).toBe(true);
+    expect(isShotVisibleToPlayer(shell, undefined)).toBe(true);
+  });
+
+  it("does not make an undetected torpedo visible because its launching ship was spotted", () => {
+    const battle = createInitialState(311);
+    const player = battle.ships.find(({ id }) => id === "player")!;
+    const target: PlayerTargetView = {
+      id: "enemy", team: "enemy", mode: "tracking", live: true, confidence: 1,
+      lastObservedAt: 0, position: { x: 3_000, y: 0, z: 0 }, heading: 0,
+      speedKnots: 0, rangeMeters: 3_000, estimatedHullRatio: 1,
+    };
+    const torpedo: ProjectileState = {
+      id: 1, ownerId: "enemy", team: "enemy", kind: "torpedo",
+      position: { x: player.position.x + 600, y: 0, z: player.position.z },
+      previousPosition: { x: player.position.x + 601, y: 0, z: player.position.z },
+      velocity: { x: -27, y: 0, z: 0 }, damage: 152, age: 1, detectionRange: 360,
+    };
+    expect(isProjectileVisibleToPlayer(torpedo, player, target)).toBe(false);
+    torpedo.position.x = player.position.x + 200;
+    expect(isProjectileVisibleToPlayer(torpedo, player, target)).toBe(true);
   });
 
   it("uses each torpedo projectile's own wake detection distance", () => {

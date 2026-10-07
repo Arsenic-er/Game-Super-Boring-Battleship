@@ -60,6 +60,9 @@ interface ShipSmokeMetrics {
   travelMeters: number;
   maxSpeedKnots: number;
   shots: number;
+  coordinatedTargetChanges: number;
+  coordinatedSeconds: number;
+  lastCoordinatedTargetId?: string;
   firstShotSeconds?: number;
   firstTargetSeconds?: number;
   creditedHullDamage: number;
@@ -86,12 +89,14 @@ describe.skipIf(!enabled)("prototype long-running fixed-step battle smoke", () =
     const playerProxy = new RuleBasedAi(seed ^ 0x071a);
     const metrics = new Map<string, ShipSmokeMetrics>(state.ships.map((ship) => [ship.id, {
       id: ship.id, team: ship.team, shipClassId: ship.shipClassId, travelMeters: 0, maxSpeedKnots: 0,
-      shots: 0, creditedHullDamage: 0, groundedSeconds: 0, longestGroundedSeconds: 0,
+      shots: 0, coordinatedTargetChanges: 0, coordinatedSeconds: 0,
+      creditedHullDamage: 0, groundedSeconds: 0, longestGroundedSeconds: 0,
       currentGroundedSeconds: 0, lastPosition: { x: ship.position.x, z: ship.position.z },
     }]));
     const fleetGroundedRun: Record<Team, number> = { player: 0, enemy: 0 };
     const maxFleetGrounded: Record<Team, number> = { player: 0, enemy: 0 };
     const damage: Record<Team, number> = { player: 0, enemy: 0 };
+    const maximumConcurrentAssignedTargets: Record<Team, number> = { player: 0, enemy: 0 };
     let firstDamageSeconds: number | undefined;
     let steps = 0;
     const stepBudget = Math.ceil(BATTLE_DURATION_SECONDS / FIXED_STEP) + 2;
@@ -120,6 +125,13 @@ describe.skipIf(!enabled)("prototype long-running fixed-step battle smoke", () =
         metric.lastPosition = { x: ship.position.x, z: ship.position.z };
         metric.maxSpeedKnots = Math.max(metric.maxSpeedKnots, Math.abs(ship.speedKnots));
         if (ship.aiDecision?.targetId) metric.firstTargetSeconds ??= state.time;
+        if (ship.hull > 0 && ship.aiDecision?.coordinatedTarget && ship.aiDecision.targetId) {
+          const id = ship.aiDecision.targetId;
+          if (metric.lastCoordinatedTargetId && metric.lastCoordinatedTargetId !== id)
+            metric.coordinatedTargetChanges += 1;
+          metric.lastCoordinatedTargetId = id;
+          metric.coordinatedSeconds += FIXED_STEP;
+        }
         if (ship.hull > 0 && ship.navigationZone === "grounded") {
           metric.groundedSeconds += FIXED_STEP;
           metric.currentGroundedSeconds += FIXED_STEP;
@@ -128,6 +140,11 @@ describe.skipIf(!enabled)("prototype long-running fixed-step battle smoke", () =
       }
       for (const team of teams) {
         const alive = state.ships.filter((ship) => ship.team === team && ship.hull > 0);
+        const assignedIds = new Set(alive.filter((ship) => ship.aiDecision?.coordinatedTarget)
+          .map((ship) => ship.aiDecision?.targetId).filter(Boolean));
+        maximumConcurrentAssignedTargets[team] = Math.max(
+          maximumConcurrentAssignedTargets[team], assignedIds.size,
+        );
         const stalled = alive.length >= 2 && alive.every((ship) => ship.navigationZone === "grounded" && Math.abs(ship.speedKnots) < .25);
         fleetGroundedRun[team] = stalled ? fleetGroundedRun[team] + FIXED_STEP : 0;
         maxFleetGrounded[team] = Math.max(maxFleetGrounded[team], fleetGroundedRun[team]);
@@ -143,8 +160,10 @@ describe.skipIf(!enabled)("prototype long-running fixed-step battle smoke", () =
       wallSeconds: round((performance.now() - start) / 1_000), firstDamageSeconds: firstDamageSeconds === undefined ? null : round(firstDamageSeconds),
       opposingHullDamage: { player: round(damage.player), enemy: round(damage.enemy) },
       finalScores: state.objective.scores, maximumFleetAllGroundedSeconds: maxFleetGrounded,
+      maximumConcurrentAssignedTargets,
       ships: all.map((metric) => ({ id: metric.id, class: metric.shipClassId, team: metric.team,
         travelMeters: round(metric.travelMeters), maxSpeedKnots: round(metric.maxSpeedKnots), shots: metric.shots,
+        coordinatedTargetChanges: metric.coordinatedTargetChanges, coordinatedSeconds: round(metric.coordinatedSeconds),
         firstTargetSeconds: metric.firstTargetSeconds === undefined ? null : round(metric.firstTargetSeconds),
         firstShotSeconds: metric.firstShotSeconds === undefined ? null : round(metric.firstShotSeconds),
         creditedHullDamage: round(metric.creditedHullDamage), longestGroundedSeconds: round(metric.longestGroundedSeconds),

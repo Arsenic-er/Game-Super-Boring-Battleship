@@ -186,6 +186,12 @@ export interface SensorContact {
   estimatedHullRatio: number;
 }
 
+/** Delayed radio snapshot: search guidance only, never a local firing solution. */
+export interface FleetContactReport extends SensorContact {
+  sourceShipId: string;
+  receivedAt: number;
+}
+
 /** Exact friendly navigation data; enemy data must still come from SensorContact. */
 export interface FriendlyShipObservation {
   id: string;
@@ -197,6 +203,14 @@ export interface FriendlyShipObservation {
 }
 
 export type FleetAiRole = "screen" | "escort" | "line";
+
+/** Controller-owned advice; target must still exist in this ship's local contacts. */
+export interface FleetTargetAssignment {
+  targetId: string;
+  assignedAt: number;
+  role: FleetAiRole;
+  friendlyAssignedCount: number;
+}
 export type FleetAiPhase =
   | "forming" | "securing" | "engaging" | "evading" | "withdrawing" | "searching";
 
@@ -209,6 +223,12 @@ export interface AiDecisionTelemetry {
   throttle: number;
   fireIntent: boolean;
   avoidanceReason?: string;
+  contactSource?: "local" | "memory" | "radio";
+  reportSourceId?: string;
+  reportAgeSeconds?: number;
+  seekingCover?: boolean;
+  coordinatedTarget?: boolean;
+  friendlyTargetLoad?: number;
 }
 
 export interface SensorSnapshot {
@@ -555,6 +575,10 @@ export interface Observation {
   self: Readonly<ShipState>;
   mapId: BattleMapId;
   contacts: readonly Readonly<SensorContact>[];
+  /** Team radio reports stay separate from locally observed contacts. */
+  sharedContacts?: readonly Readonly<FleetContactReport>[];
+  /** Friendly target distribution cannot grant detection or a firing lock. */
+  fleetTarget?: Readonly<FleetTargetAssignment>;
   friendlies: readonly Readonly<FriendlyShipObservation>[];
   objective: Readonly<ObjectiveObservation>;
   incomingTorpedoes: readonly Readonly<TorpedoThreat>[];

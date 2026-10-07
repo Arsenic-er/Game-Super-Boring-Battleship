@@ -28,7 +28,8 @@ import { LocalBattleSession } from "./session/localBattleSession";
 import { FIXED_STEP } from "./sim/config";
 import { createInitialState, observe } from "./sim/simulation";
 import { deployFleetAirSupport } from "./sim/airOperations";
-import { PlayerPerceptionTracker } from "./sim/playerPerception";
+import { isShotVisibleToPlayer } from "./sim/playerPerception";
+import { PlayerFleetPerceptionTracker, selectPrimaryTarget } from "./sim/playerFleetPerception";
 import { seaTrialsContacts } from "./sim/seaTrialsContacts";
 import type { BattleState, ControlCommand, GameMode, PlayerTargetView } from "./sim/types";
 import type { GameLaunchRequest } from "./sim/battleSetup";
@@ -65,7 +66,8 @@ let menus: GameMenus;
 let developerPanel: DeveloperPanel | undefined;
 const session = new LocalBattleSession(state);
 let developerView: DeveloperViewSession = normalDeveloperView();
-const playerPerception = new PlayerPerceptionTracker();
+const playerPerception = new PlayerFleetPerceptionTracker();
+let primaryTargetId: string | undefined;
 const audio = new CombatAudio();
 const lanBridge = createLanBridgeClient();
 let started = false;
@@ -107,7 +109,7 @@ function enterActiveBattle(nextState: BattleState, scope = `lan:${crypto.randomU
     lanRuntime?.role !== "none" ? "返回联机大厅" : "返回主菜单",
   ));
   developerView = normalDeveloperView();
-  playerPerception.reset();
+  resetPlayerPerception();
   audio.unlock();
   started = true;
   paused = false;
@@ -211,7 +213,7 @@ function returnToMainMenu(leaveRoom = true): void {
   );
   session.reset(state);
   developerView = normalDeveloperView();
-  playerPerception.reset();
+  resetPlayerPerception();
   view.resetTransient();
   voyageSession.leave();
   voyagePanel?.clearBattle();
@@ -416,7 +418,7 @@ developerPanel = new DeveloperPanel(gameShell, () => state, {
     if (!next) return;
     developerView = next;
     input.reset();
-    playerPerception.reset();
+    resetPlayerPerception();
     view.setAiming(false);
   },
   onControlShip: (id) => {
@@ -425,13 +427,13 @@ developerPanel = new DeveloperPanel(gameShell, () => state, {
     voyageSession.invalidateRewards();
     developerView = next;
     input.reset();
-    playerPerception.reset();
+    resetPlayerPerception();
     view.setAiming(false);
   },
   onReleaseControl: () => {
     developerView = normalDeveloperView();
     input.reset();
-    playerPerception.reset();
+    resetPlayerPerception();
     view.setAiming(false);
   },
   getViewStatus: () => ({
@@ -538,16 +540,24 @@ function observerShipIdForState(activeState: BattleState): string {
     ?? "player";
 }
 
-function primaryContact(contacts: readonly PlayerTargetView[]): PlayerTargetView | undefined {
-  return contacts.find(({ live }) => live) ?? contacts[0];
+function resetPlayerPerception(): void {
+  playerPerception.reset();
+  primaryTargetId = undefined;
+}
+
+function primaryContact(contacts: readonly PlayerTargetView[], observerShipId: string): PlayerTargetView | undefined {
+  const observer = state.ships.find(({ id }) => id === observerShipId);
+  const target = selectPrimaryTarget(contacts, primaryTargetId, observer?.position);
+  primaryTargetId = target?.id;
+  return target;
 }
 
 function finishFrame(
   activeState: BattleState,
   frameSeconds: number,
   observerShipId: string,
-  perceivedTarget?: PlayerTargetView,
-  contactViews: readonly PlayerTargetView[] = perceivedTarget ? [perceivedTarget] : [],
+  perceivedTarget: PlayerTargetView | undefined,
+  contactViews: readonly PlayerTargetView[],
 ): void {
   const multiplayerActive = lanRuntime.role !== "none";
   const playerForAudio = activeState.ships.find((ship) => ship.id === observerShipId);
@@ -569,6 +579,7 @@ function finishFrame(
     } : undefined,
     contactViews,
     lanRuntime.role === "client",
+    observerShipId,
   );
   if (activeState.status !== "running") {
     gameShell?.classList.remove("hud-details-held");
@@ -621,9 +632,10 @@ function renderHostFrame(frameSeconds: number): void {
   state = hostSession.state;
   const hostShipId = hostSession.assignments.get(lanRuntime.localPeerId);
   const observerShipId = hostShipId ?? observerShipIdForState(state);
-  let perceivedTarget = started && state.mode === "battle"
+  let contactViews = started && state.mode === "battle"
     ? playerPerception.update(observe(state, observerShipId))
-    : undefined;
+    : [];
+  let perceivedTarget = primaryContact(contactViews, observerShipId);
 
   if (started && state.status === "running") {
     accumulator += frameSeconds;
@@ -636,11 +648,14 @@ function renderHostFrame(frameSeconds: number): void {
       if (airMissions.length > 0) playerCommand.airMissions = airMissions;
       const stepOutput = hostSession.step(playerCommand, FIXED_STEP);
       tacticalMap.handleAirEvents(stepOutput.airEvents);
-      perceivedTarget = state.mode === "battle"
+      contactViews = state.mode === "battle"
         ? playerPerception.update(observe(state, observerShipId))
-        : undefined;
+        : [];
+      perceivedTarget = primaryContact(contactViews, observerShipId);
+      const liveContactsById = new Map(contactViews.map(contact => [contact.id, contact]));
+      const observer = state.ships.find(ship => ship.id === observerShipId);
       const visibleShots = stepOutput.shots.filter((shot) =>
-        shot.team === "player" || Boolean(perceivedTarget?.live));
+        isShotVisibleToPlayer(shot, observer, liveContactsById.get(shot.ownerId)));
       view.consumeShots(visibleShots);
       view.consumeImpacts(stepOutput.impacts);
       audio.consumeShots(visibleShots);
@@ -653,7 +668,7 @@ function renderHostFrame(frameSeconds: number): void {
     accumulator = 0;
   }
 
-  finishFrame(state, frameSeconds, observerShipId, perceivedTarget);
+  finishFrame(state, frameSeconds, observerShipId, perceivedTarget, contactViews);
 }
 
 function renderClientFrame(frameSeconds: number): void {
@@ -664,7 +679,7 @@ function renderClientFrame(frameSeconds: number): void {
   state = replicated.state;
   const observerShipId = replicated.controlledShipId ?? observerShipIdForState(state);
   const contacts = replicated.contacts;
-  const perceivedTarget = primaryContact(contacts);
+  const perceivedTarget = primaryContact(contacts, observerShipId);
   const newShots = state.shots.filter((event) => !consumedClientEvents.has(`shot:${event.id}`));
   const newImpacts = state.impacts.filter((event) => !consumedClientEvents.has(`impact:${event.id}`));
   const newAirEvents = state.airEvents.filter((event) => !consumedClientEvents.has(`air:${event.id}`));
@@ -713,7 +728,7 @@ view.engine.runRenderLoop(() => {
   if (reconciledView !== developerView) {
     developerView = reconciledView;
     input.reset();
-    playerPerception.reset();
+    resetPlayerPerception();
   }
   const controlledShipId = activeControlledShipId(developerView);
   const focusedAir = developerView.focus?.kind === "airSquadron"
@@ -725,9 +740,10 @@ view.engine.runRenderLoop(() => {
   const observerShipId = liveControlledShipId
     ?? (developerView.focus?.kind === "ship" ? developerView.focus.id : focusedAir?.controllerId)
     ?? fallbackObserverShipId;
-  let perceivedTarget = started && state.mode === "battle"
+  let contactViews = started && state.mode === "battle"
     ? playerPerception.update(observe(state, observerShipId))
-    : undefined;
+    : [];
+  let perceivedTarget = primaryContact(contactViews, observerShipId);
   if (started && !paused && state.status === "running") {
     accumulator += frameSeconds;
     while (accumulator >= FIXED_STEP) {
@@ -744,11 +760,14 @@ view.engine.runRenderLoop(() => {
       });
       if (voyageSession.observe(stepOutput, input.isAiming)) syncVoyageProfile();
       tacticalMap.handleAirEvents(stepOutput.airEvents);
-      perceivedTarget = state.mode === "battle"
+      contactViews = state.mode === "battle"
         ? playerPerception.update(observe(state, observerShipId))
-        : undefined;
+        : [];
+      perceivedTarget = primaryContact(contactViews, observerShipId);
+      const liveContactsById = new Map(contactViews.map(contact => [contact.id, contact]));
+      const observer = state.ships.find(ship => ship.id === observerShipId);
       const visibleShots = stepOutput.shots.filter((shot) =>
-        developerView.active || shot.team === "player" || Boolean(perceivedTarget?.live));
+        developerView.active || isShotVisibleToPlayer(shot, observer, liveContactsById.get(shot.ownerId)));
       view.consumeShots(visibleShots);
       view.consumeImpacts(stepOutput.impacts);
       audio.consumeShots(visibleShots);
@@ -760,5 +779,5 @@ view.engine.runRenderLoop(() => {
     accumulator = 0;
   }
 
-  finishFrame(state, frameSeconds, observerShipId, perceivedTarget);
+  finishFrame(state, frameSeconds, observerShipId, perceivedTarget, contactViews);
 });

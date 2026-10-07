@@ -1,3 +1,124 @@
+## 2026-10-08 — Coordinated fleet target selection
+
+Both teams now distribute AI fire over each ship's own optical contacts. The
+allocator reuses hull roles and equipped main-battery range, preserves valid
+claims during a ten-second acquisition window, and permits self-defense and
+damaged-target focus. It cannot turn radio reports into visible/firing contacts.
+Human takeover, death/removal and battle reset release reservations.
+
+Progressive occupancy replaces a saturating penalty that could leave six ships
+permanently split 5:1. Initial and late-arriving equal targets now pass stable
+3:3 cases. Continuous range costs also avoid needless retargeting at the gun-range
+boundary. State is bounded and normal planning is sensor-interval cached.
+
+Validation: 1,236 regular tests passed (five existing opt-in skips), including
+24 allocator and nine integration regressions. Build and 11 actual-main browser
+checks passed. Full 5v5/7v7 production-session smoke passed: all ships fired,
+peak assigned targets were 4/4 and 6/6; 7v7 ended on score at 17 min 31 s and
+5v5 reached the twenty-minute limit. These are two seeds, not balance proof.
+
+The separate legacy balance suite had seven passes and one 30-second timeout
+(30.073 s). No limits or assertions were relaxed. Dynamic contact-loss target
+churn and slow-batch profiling remain follow-ups. Details:
+acceptance/fleet-targets-2026-10-08.md. All work remains on the server; no artwork
+changes, asset changes, Git push, local download or persistent preview.
+
+
+## 2026-10-08 — Independent enemy contacts and visibility
+
+Local and LAN-host frames now keep one optical tracker per enemy and supply all
+contacts to ship rendering and tactical maps. Contact acquisition, silhouettes,
+dead reckoning and expiry no longer depend on the current HUD target. HUD
+selection is stable, favors live confirmed targets and uses observer-relative
+distance hysteresis. Radio-only reports remain outside player optical contacts.
+
+Shells, muzzle effects and firing audio now match their own source ID. A visible
+enemy no longer exposes the distant shots of hidden enemies. Nearby hazards use
+the current observing ship, including a surviving ally after the original ship
+sinks. Sea trials, developer omniscience and guest server filtering are preserved.
+
+Validation: 1,203 regular tests plus eight separately run balance tests passed,
+with five existing opt-in skips. Eleven actual-main browser checks and the
+production build passed. The unchanged slow batch took 29.802 seconds against
+30 seconds, so previous timing failures remain a performance risk.
+
+Details and reproduction: acceptance/multi-contact-2026-10-08.md. All work and
+evidence remain on the server. No art changes, asset changes, Git push, local
+download, release tag or persistent preview. Next: AI target deconfliction and
+the narrow slow-batch performance margin.
+
+
+## 2026-10-08 — Fleet radio search and island withdrawal (working changes)
+
+Continued the production AI line without changing the provisionally accepted
+material-B preview or deploying it into normal battles.
+
+- Both teams now exchange local ship sightings through a controller-owned radio
+  network: three-second delivery delay, fifteen-second observation TTL, copied
+  snapshots, receiving-ship ranges, source cleanup and bounded deterministic queues.
+  Human-controlled scouts also contribute. Reports only guide AI search and do
+  not enter local sensor contacts, secondary fire control, air target authority
+  or LAN replication. Session reset clears the radio state.
+- A target identity change resets optical acquisition even within one scan and
+  with an identical observation timestamp. Both rule AI and player perception
+  must reacquire a different target; AI also discards its old torpedo samples and
+  fire-control solution.
+- Damaged AI can choose reachable island cover from its observed target position.
+  The planner evaluates at most 64 local candidates and is cached for two seconds.
+  It checks draft, complete straight route, stopping clearance and conservative
+  observer heights. Nearby arrival triggers slow approach; only verified cover
+  at the current position permits holding. Navigation recovery and immediate
+  torpedo/collision avoidance retain precedence.
+- Independent review caught and corrected low-eye-height false cover; integration
+  tests also prevent stopping before a hull actually crosses the protected edge.
+  Actual fixed-step movement tests cover turning toward cover and braking without
+  grounding. It is still a local single-threat planner, not all-threat or global
+  tactical routing.
+
+Validation: 1,137 regular tests passed (five existing opt-in skips), build passed,
+and full 5v5/7v7 twenty-minute simulation smoke tests passed. Slow balanceLab had
+seven passes and one repeated 30-second batch timeout; this is not an all-green
+full-suite result. Details are recorded in acceptance/fleet-ai-2026-10-08.md. Package version stays 0.7.9; no release tag,
+package download, Git push, asset replacement or persistent preview was made.
+
+Next observed UI defect: local/host main.ts still supplies a single target tracker
+to presentation, so multiple locally detected enemies can be omitted. Follow-up
+should keep independent per-ID acquisition/memory, without making radio reports
+live visible enemy models.
+
+## 2026-10-07 — Explicit dock slots and low-quality pixel budget (working changes)
+
+Resumed the production gameplay/UI line after the owner provisionally accepted
+material-B static and sailing previews. Those remain under experiments/material-b;
+the normal battle entry still uses its existing art. No additional local download,
+asset replacement or Git push is part of this work.
+
+Dock equipment can now target a physical mount instead of implicitly replacing
+slot zero. Clicking an actual installed component carries its slot index into the
+equipment drawer; the drawer also offers automatic placement and explicit slots,
+including empty hardpoints. The shared pure resolver drives both the candidate
+ghost and the inventory-checked transaction. Unchanged copies, saved blueprints,
+credits and other mounts stay untouched. Sparse drafts remain drafts and do not
+bypass the existing minimum departure requirements. Five new UI phrases have
+all seven translations.
+
+The production low-quality renderer now caps 3D pixel count near 1280x720 while
+retaining its old minimum 1.35 scale. Medium stays CSS-native; DOM/HUD sizing is
+unchanged. Construction, quality changes and window resizing share one policy;
+DPR does not multiply the budget and hidden canvases do not feed scaled dimensions
+back into the next resize. Actual server Chromium checks cover Surface-sized CSS
+viewports, DPR3 phone-sized viewports and repeated resizing, not real device FPS.
+
+Initial untouched full-suite baseline: 1,016 passed, five skipped, one 10-second
+balance-lab timeout. That same file passed 8/8 independently, and the individual
+case passed again in 9.06 seconds. No business assertion or timeout was weakened.
+Final checks: 1,083 regular tests plus eight isolated balance tests passed, with
+five existing skips. Fourteen dock and thirteen rendering-budget browser checks
+passed with no page errors. TypeScript/build and whitespace validation passed;
+all temporary QA services were closed. Full evidence and limitations are recorded
+in acceptance/dock-slots-2026-10-07.md.
+The package version remains 0.7.9 until a separately validated release is cut.
+
 ## 2026-10-04 — Hold-to-show aiming readout
 
 The third-person green reticle, angle scale and bearing/range readout are now

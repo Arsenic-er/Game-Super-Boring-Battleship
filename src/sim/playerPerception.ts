@@ -5,6 +5,7 @@ import type {
   PlayerTargetView,
   ProjectileState,
   SensorContact,
+  ShotEvent,
   ShipState,
   Vec3,
 } from "./types";
@@ -36,12 +37,22 @@ export function isShipVisibleToPlayer(
   return shipPresentationMode(ship, mode, target) === "full";
 }
 
+/** A spotted ship never grants visibility to another ship's muzzle flash/audio. */
+export function isShotVisibleToPlayer(
+  shot: Readonly<ShotEvent>,
+  player: Readonly<ShipState> | undefined,
+  target?: Readonly<PlayerTargetView>,
+): boolean {
+  return shot.team === (player?.team ?? "player")
+    || Boolean(target?.live && target.id === shot.ownerId);
+}
+
 export function isProjectileVisibleToPlayer(
   projectile: Readonly<ProjectileState>,
   player: Readonly<ShipState> | undefined,
   target?: Readonly<PlayerTargetView>,
 ): boolean {
-  if (projectile.team === "player") return true;
+  if (projectile.team === (player?.team ?? "player")) return true;
   if (!player) return false;
   const distance = Math.hypot(
     projectile.position.x - player.position.x,
@@ -50,7 +61,7 @@ export function isProjectileVisibleToPlayer(
   if (projectile.kind === "torpedo") {
     return distance <= effectiveTorpedoDetectionRange(player, projectile);
   }
-  return Boolean(target?.live) || distance <= 1_200;
+  return Boolean(target?.live && target.id === projectile.ownerId) || distance <= 1_200;
 }
 
 /**
@@ -109,6 +120,8 @@ export class PlayerPerceptionTracker {
 
   update(observation: Observation): PlayerTargetView | undefined {
     const contact = observation.contacts[0];
+    // A different target must acquire its own samples, even within one scan.
+    if (contact && this.lastContact && contact.id !== this.lastContact.id) this.reset();
     const sampleIndex = Math.floor(observation.time / SENSOR.observationIntervalSeconds);
     if (sampleIndex !== this.lastEvaluatedSample) {
       if (contact && contact.observedAt !== this.lastSample) {

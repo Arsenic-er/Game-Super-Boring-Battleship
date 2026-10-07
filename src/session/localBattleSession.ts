@@ -1,4 +1,6 @@
 import { RuleBasedAi } from "../controllers/ruleBasedAi";
+import { FleetTargetCoordinator } from "../controllers/fleetTargetCoordinator";
+import { FleetRadioNetwork } from "../sim/fleetRadio";
 import { FIXED_STEP } from "../sim/config";
 import { observe, stepSimulation, takeLocalShipDestroyedEvents, takeLocalHullDamageEvents } from "../sim/simulation";
 import type { BattleState, ControlCommand } from "../sim/types";
@@ -22,6 +24,8 @@ export class LocalBattleSession implements AuthoritativeBattleSession {
   private currentState: BattleState;
   private readonly defaultIncludeDeveloperAi: boolean;
   private shipAiById = new Map<string, RuleBasedAi>();
+  private readonly fleetRadio = new FleetRadioNetwork();
+  private readonly fleetTargets = new FleetTargetCoordinator();
 
   constructor(state: BattleState, options?: { includeDeveloperAi?: boolean }) {
     this.currentState = state;
@@ -48,13 +52,29 @@ export class LocalBattleSession implements AuthoritativeBattleSession {
     for (const id of this.shipAiById.keys()) {
       if (!activeAiIds.has(id)) this.shipAiById.delete(id);
     }
+    // Take a complete local-sensor batch before any controller runs. Human ships
+    // can report sightings too; reports never alter the local sensor cache.
+    const observations = new Map(this.currentState.ships
+      .filter((ship) => ship.hull > 0 && !ship.isTestTarget)
+      .map((ship) => [ship.id, observe(this.currentState, ship.id)] as const));
+    this.fleetRadio.update([...observations.values()], this.currentState.time);
+    // Only eligible AI participate. Human commands neither receive assignments
+    // nor leave reservations that can redirect other ships after takeover.
+    const assignments = this.fleetTargets.update(
+      aiShips.map((ship) => observations.get(ship.id)!), this.currentState.time,
+    );
     for (const aiShip of aiShips) {
       let controller = this.shipAiById.get(aiShip.id);
       if (!controller) {
         controller = new RuleBasedAi(this.currentState.randomSeed ^ actorSeed(aiShip.id));
         this.shipAiById.set(aiShip.id, controller);
       }
-      commands.set(aiShip.id, controller.command(observe(this.currentState, aiShip.id)));
+      const localObservation = observations.get(aiShip.id)!;
+      commands.set(aiShip.id, controller.command({
+        ...localObservation,
+        sharedContacts: this.fleetRadio.contactsFor(aiShip, this.currentState.time),
+        fleetTarget: assignments.get(aiShip.id),
+      }));
     }
     stepSimulation(this.currentState, commands, dt);
     return {
@@ -70,5 +90,7 @@ export class LocalBattleSession implements AuthoritativeBattleSession {
   reset(state: BattleState): void {
     this.currentState = state;
     this.shipAiById.clear();
+    this.fleetRadio.reset();
+    this.fleetTargets.reset();
   }
 }

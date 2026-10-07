@@ -9,6 +9,7 @@ import {
 } from "../sim/config";
 import { terrainSafeHeading } from "../maps/atollMap";
 import { AiNavigationRecovery } from "../sim/aiNavigation";
+import { planFleetCover, type FleetCoverPlan } from "../sim/fleetCover";
 import { getShipClass } from "../ships/classes";
 import { getTorpedo } from "../ships/torpedoes";
 import { effectiveMainBattery } from "../ships/mainBatteries";
@@ -259,6 +260,10 @@ export class RuleBasedAi implements Controller {
   private plannedTerrainHeading?: number;
   private nextTerrainPlanAt = 0;
   private readonly navigationRecovery = new AiNavigationRecovery();
+  private coverPlan?: FleetCoverPlan;
+  private nextCoverPlanAt = 0;
+  private coverTargetId?: string;
+  private radioTargetId?: string;
   private randomSeed: number;
   private selectedAmmo: AmmoType = "he";
   private nextAmmoDecisionAt = 0;
@@ -322,16 +327,32 @@ export class RuleBasedAi implements Controller {
   }
 
   private updatePerception(observation: Observation): PerceptionResult {
-    const contact = selectPriorityContact(observation.contacts, this.lastContact?.id);
+    // Coordination only selects among this observer's own contacts. It never
+    // imports another ship's sightings or bypasses optical acquisition below.
+    const assignment = observation.fleetTarget;
+    const assignedContact = assignment && Number.isFinite(assignment.assignedAt)
+      && assignment.assignedAt >= 0 && assignment.assignedAt <= observation.time
+      ? observation.contacts.find((contact) => contact.id === assignment.targetId
+        && contact.team !== observation.self.team)
+      : undefined;
+    const contact = assignedContact ?? selectPriorityContact(observation.contacts, this.lastContact?.id);
+    // Identity changes are not scan events: reset even when both contacts have
+    // the same timestamp, so a new ship cannot inherit a previous firing lock.
+    if (contact && contact.id !== this.lastContact?.id) {
+      this.lastContact = undefined;
+      this.previousContact = undefined;
+      this.acquisitionSamples = 0;
+      this.hadTrack = false;
+      this.lastContactSample = Number.NEGATIVE_INFINITY;
+      this.lastEvaluatedSensorSample = Number.NEGATIVE_INFINITY;
+      this.fireWindowUntil = 0;
+      this.solutionQuality = 0.04;
+      this.nextEstimateAt = observation.time;
+      this.lastTime = observation.time;
+    }
     const sampleIndex = Math.floor(observation.time / SENSOR.observationIntervalSeconds);
     if (sampleIndex !== this.lastEvaluatedSensorSample) {
       if (contact && contact.observedAt !== this.lastContactSample) {
-        if (this.lastContact && this.lastContact.id !== contact.id) {
-          this.acquisitionSamples = 0;
-          this.previousContact = undefined;
-          this.lastContactSample = Number.NEGATIVE_INFINITY;
-          this.hadTrack = false;
-        }
         this.acquisitionSamples += 1;
         this.previousContact = this.lastContact?.id === contact.id
           ? this.lastContact
@@ -457,7 +478,32 @@ export class RuleBasedAi implements Controller {
   command(observation: Observation): ControlCommand {
     const mainBatteryRange = effectiveMainBattery(observation.self).maximumRangeMeters;
     const perception = this.updatePerception(observation);
-    const target = perception.track;
+    const localTarget = perception.track;
+    const localContact = perception.mode === "tracking" || perception.mode === "acquiring";
+    const radioCandidate = !localContact
+      ? selectPriorityContact(observation.sharedContacts ?? [], this.radioTargetId)
+      : undefined;
+    const radioReport = radioCandidate
+      && (!localTarget || radioCandidate.observedAt > localTarget.observedAt)
+      ? observation.sharedContacts?.find((report) => report.id === radioCandidate.id)
+      : undefined;
+    // A radio report may update a search waypoint, never the optical director,
+    // acquisition counter or two-sample torpedo firing track.
+    const target = radioReport ? this.copyContact(radioReport) : localTarget;
+    const activeAssignment = localContact && observation.fleetTarget
+      && observation.fleetTarget.targetId === target?.id
+      && Number.isFinite(observation.fleetTarget.assignedAt)
+      && observation.fleetTarget.assignedAt >= 0
+      && observation.fleetTarget.assignedAt <= observation.time
+      ? observation.fleetTarget : undefined;
+    this.radioTargetId = radioReport?.id;
+    const searchingTarget = Boolean(target) && !localContact;
+    const telemetry = radioReport ? {
+      mode: "searching" as const,
+      confidence: radioReport.confidence,
+      lastObservedAt: radioReport.observedAt,
+      estimatedPosition: { ...radioReport.position },
+    } : perception.telemetry;
     const objective = observation.objective;
     const objectiveDx = objective.center.x - observation.self.position.x;
     const objectiveDz = objective.center.z - observation.self.position.z;
@@ -554,9 +600,11 @@ export class RuleBasedAi implements Controller {
       || !target
       || opposingScore - ownScore > 140
     );
-    let desiredHeading = tacticalObjectivePush || !target
-      ? objectiveBearing + this.manoeuvreOffset * 0.16
-      : bearingToTarget + this.manoeuvreOffset;
+    let desiredHeading = searchingTarget
+      ? bearingToTarget + (range < 350 ? Math.PI / 2 : 0)
+      : tacticalObjectivePush || !target
+        ? objectiveBearing + this.manoeuvreOffset * 0.16
+        : bearingToTarget + this.manoeuvreOffset;
     if (torpedoReady && target && !torpedoSolution?.allowed) {
       const portBroadside = bearingToTarget + Math.PI / 2;
       const starboardBroadside = bearingToTarget - Math.PI / 2;
@@ -565,12 +613,12 @@ export class RuleBasedAi implements Controller {
         ? portBroadside
         : starboardBroadside;
     }
-    if (target && range < engagementBand.minimumMeters) {
+    if (target && !searchingTarget && range < engagementBand.minimumMeters) {
       desiredHeading = bearingToTarget + Math.PI;
-    } else if (target && !tacticalObjectivePush && range < engagementBand.preferredMeters) {
+    } else if (target && !searchingTarget && !tacticalObjectivePush && range < engagementBand.preferredMeters) {
       const angle = role === "screen" && torpedoReady ? Math.PI * 0.52 : Math.PI * 0.7;
       desiredHeading = bearingToTarget + angle;
-    } else if (target && range > engagementBand.maximumMeters) {
+    } else if (target && !searchingTarget && range > engagementBand.maximumMeters) {
       desiredHeading = bearingToTarget;
     }
     const incomingTorpedo = observation.incomingTorpedoes[0];
@@ -621,7 +669,33 @@ export class RuleBasedAi implements Controller {
     const hullRatio = observation.self.hull / observation.self.maxHull;
     const withdrawThreshold = role === "screen" ? 0.36 : role === "escort" ? 0.31 : 0.27;
     const damaged = hullRatio < withdrawThreshold;
-    if (damaged && target) desiredHeading = bearingToTarget + Math.PI;
+    if (damaged && target && !evadingTorpedo) desiredHeading = bearingToTarget + Math.PI;
+    if (damaged && target && !evadingTorpedo) {
+      if (observation.time >= this.nextCoverPlanAt || this.coverTargetId !== target.id) {
+        this.coverPlan = planFleetCover(observation.mapId, observation.self, target.position);
+        this.coverTargetId = target.id;
+        this.nextCoverPlanAt = observation.time + 2;
+        this.nextTerrainPlanAt = 0;
+      }
+    } else {
+      this.coverPlan = undefined;
+      this.coverTargetId = undefined;
+      this.nextCoverPlanAt = 0;
+    }
+    const coverDistance = this.coverPlan
+      ? Math.hypot(this.coverPlan.point.x - observation.self.position.x,
+        this.coverPlan.point.z - observation.self.position.z)
+      : Number.POSITIVE_INFINITY;
+    // Only a zero-distance plan verifies cover at the current position. The
+    // arrival radius is a slowdown band, not proof the ship has crossed the ridge.
+    const holdingCover = this.coverPlan?.distanceMeters === 0
+      && coverDistance <= this.coverPlan.arrivalRadiusMeters;
+    if (this.coverPlan && !holdingCover) {
+      desiredHeading = Math.atan2(this.coverPlan.point.x - observation.self.position.x,
+        this.coverPlan.point.z - observation.self.position.z);
+    } else if (this.coverPlan) {
+      desiredHeading = observation.self.heading;
+    }
     if (observation.time >= this.nextTerrainPlanAt || this.plannedTerrainHeading === undefined) {
       this.plannedTerrainHeading = terrainSafeHeading(
         observation.mapId,
@@ -639,6 +713,7 @@ export class RuleBasedAi implements Controller {
     const headingError = wrapAngle(desiredHeading - observation.self.heading);
     let tacticalThrottle = evadingTorpedo
       ? 1
+      : searchingTarget ? (range > 500 ? 0.72 : 0.42)
       : target && range < engagementBand.minimumMeters
         ? 0.58
       : target && range < engagementBand.preferredMeters
@@ -649,6 +724,11 @@ export class RuleBasedAi implements Controller {
     if (role === "screen" && !damaged) tacticalThrottle = Math.min(1, tacticalThrottle + 0.1);
     if (role === "line" && target && !tacticalObjectivePush) {
       tacticalThrottle = Math.min(tacticalThrottle, 0.74);
+    }
+    if (this.coverPlan && !collisionRisk && !evadingTorpedo) {
+      tacticalThrottle = Math.min(tacticalThrottle,
+        holdingCover ? 0
+          : coverDistance < this.coverPlan.arrivalRadiusMeters * 2 ? 0.2 : 0.52);
     }
     if (collisionRisk) tacticalThrottle = Math.min(tacticalThrottle, 0.35);
     if (navigation.throttleLimit !== undefined) tacticalThrottle = Math.min(tacticalThrottle, navigation.throttleLimit);
@@ -697,7 +777,8 @@ export class RuleBasedAi implements Controller {
       && range > 1_300;
     const suppressMainGun = activateSmoke
       || observation.self.smokeDeploymentRemaining > 0
-      || concealmentRetreat;
+      || concealmentRetreat
+      || Boolean(this.coverPlan);
     const mainGunAim = target
       ? this.estimatedAimPoint(observation, target, bearingToTarget)
       : fallbackAim;
@@ -715,9 +796,9 @@ export class RuleBasedAi implements Controller {
     const phase: FleetAiPhase = evadingTorpedo || collisionRisk
       ? "evading"
       : damaged ? "withdrawing"
-        : target ? "engaging"
-          : tacticalObjectivePush ? "securing"
-            : perception.mode === "lost" || perception.mode === "searching" ? "searching" : "forming";
+        : searchingTarget ? "searching"
+          : target ? "engaging"
+            : tacticalObjectivePush ? "securing" : "forming";
 
     return {
       throttle: damaged ? Math.min(tacticalThrottle, 0.52) : tacticalThrottle,
@@ -730,7 +811,7 @@ export class RuleBasedAi implements Controller {
       ammoType: this.selectedAmmo,
       damageControlPriority: priority,
       repairHull,
-      perception: perception.telemetry,
+      perception: telemetry,
       activateSmoke,
       activateHydro,
       fire: fireIntent,
@@ -738,6 +819,12 @@ export class RuleBasedAi implements Controller {
         role,
         phase,
         targetId: target?.id,
+        contactSource: target ? radioReport ? "radio" : localContact ? "local" : "memory" : undefined,
+        reportSourceId: radioReport?.sourceShipId,
+        reportAgeSeconds: radioReport ? Math.max(0, observation.time - radioReport.observedAt) : undefined,
+        seekingCover: Boolean(this.coverPlan) && !collisionRisk && !evadingTorpedo,
+        coordinatedTarget: Boolean(activeAssignment),
+        friendlyTargetLoad: activeAssignment?.friendlyAssignedCount,
         desiredHeading,
         throttle: damaged ? Math.min(tacticalThrottle, 0.52) : tacticalThrottle,
         fireIntent,

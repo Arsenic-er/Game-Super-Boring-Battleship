@@ -1,0 +1,17 @@
+<!doctype html>
+<html lang="zh-CN">
+<head><meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1"><link rel="icon" href="data:,"><title>B · 独立材质试验场</title></head>
+<body>
+<canvas id="scene" aria-label="B 方案独立 3D 材质预览"></canvas>
+<header><strong>B <span>柔和自然</span></strong><p>实时 3D 材质试验场 <i>未接入正式游戏</i></p></header>
+<nav aria-label="预览控制">
+<button data-view="overview" class="active">全景</button><button data-view="shore">浅滩</button><button data-view="water">海面</button>
+<button data-view="ship">舰船近景</button><button data-view="wake">航迹</button>
+<button id="motion">暂停动画</button>
+<label>航行 <select id="sailing"><option value="stop">停车</option><option value="slow">低速 · 8 kn</option><option value="cruise">巡航 · 18 kn</option><option value="turn">转弯 · 12 kn</option></select></label><output id="speed">0.0 kn</output><button id="reset-sailing">重置舰船</button>
+<label>清晰度 <select id="resolution"><option value="budget">轻量 · 约 720p</option><option value="native">原生 · 仅供对照</option></select></label>
+</nav>
+<footer><span>拖动旋转 · 滚轮 / 双指缩放</span><output id="metrics">正在准备场景…</output></footer>
+<div id="failure" role="alert" hidden></div>
+<script type="module" src="./main.ts"></script>
+</body></html>
