@@ -242,8 +242,9 @@ interface PerceptionResult {
 
 /**
  * Fallible WWII optical director. It only sees sampled sensor contacts, needs
- * two observations to acquire a firing solution, predicts a lost contact for
- * search/navigation, and is never permitted to fire without a live track.
+ * four observations for a new firing solution (two for a recently tracked
+ * ship), predicts a lost contact for search/navigation, and never fires
+ * without a live track.
  */
 export class RuleBasedAi implements Controller {
   private solutionQuality = 0.04;
@@ -276,7 +277,9 @@ export class RuleBasedAi implements Controller {
   private lastContactSample = Number.NEGATIVE_INFINITY;
   private acquisitionSamples = 0;
   private lastEvaluatedSensorSample = Number.NEGATIVE_INFINITY;
-  private hadTrack = false;
+  private selectedContactId?: string;
+  private localContactVisible = false;
+  private readonly trackedContactHistory = new Map<string, number>();
 
   constructor(seed = 0xa11ce) {
     this.randomSeed = seed >>> 0;
@@ -326,70 +329,130 @@ export class RuleBasedAi implements Controller {
     };
   }
 
+  private resetOpticalTarget(id: string | undefined, time: number): void {
+    this.selectedContactId = id;
+    this.lastContact = undefined;
+    this.previousContact = undefined;
+    this.acquisitionSamples = 0;
+    this.localContactVisible = false;
+    // A remembered target still needs NEW samples, not its last pre-loss scan.
+    this.lastContactSample = id === undefined
+      ? Number.NEGATIVE_INFINITY
+      : this.trackedContactHistory.get(id) ?? Number.NEGATIVE_INFINITY;
+    this.lastEvaluatedSensorSample = Math.floor(
+      this.lastContactSample / SENSOR.observationIntervalSeconds,
+    );
+    this.fireWindowUntil = 0;
+    this.solutionQuality = 0.04;
+    this.nextEstimateAt = time;
+    this.lastTime = time;
+  }
+
+  private rememberTrackedContact(contact: Readonly<TrackEstimate>): void {
+    const previous = this.trackedContactHistory.get(contact.id);
+    if (previous !== undefined && previous >= contact.observedAt) return;
+    // Primitive timestamps retain no mutable contact objects or world state.
+    this.trackedContactHistory.delete(contact.id);
+    this.trackedContactHistory.set(contact.id, contact.observedAt);
+    while (this.trackedContactHistory.size > 64) {
+      const oldestId = this.trackedContactHistory.keys().next().value;
+      if (oldestId === undefined) break;
+      this.trackedContactHistory.delete(oldestId);
+    }
+  }
+
   private updatePerception(observation: Observation): PerceptionResult {
+    for (const [id, observedAt] of this.trackedContactHistory) {
+      if (observation.time - observedAt > SENSOR.memorySeconds || observedAt > observation.time) {
+        this.trackedContactHistory.delete(id);
+      }
+    }
+    // Expire before selection: a fresh same-ID return after a long time jump
+    // must not revive an old lock merely because no empty scan was processed.
+    if (this.lastContact && (
+      observation.time - this.lastContact.observedAt > SENSOR.memorySeconds
+      || this.lastContact.observedAt > observation.time
+    )) this.resetOpticalTarget(undefined, observation.time);
+    // Non-finite, stale or time-regressing samples are not live sightings.
+    // Repeated canonical sensor snapshots remain live within their interval,
+    // but cannot provide additional acquisition samples.
+    const localContacts = observation.contacts.filter((candidate) => {
+      const previousSample = candidate.id === this.selectedContactId
+        ? this.lastContactSample
+        : this.trackedContactHistory.get(candidate.id) ?? Number.NEGATIVE_INFINITY;
+      return candidate.team !== observation.self.team
+        && Number.isFinite(candidate.observedAt)
+        && candidate.observedAt >= 0
+        && candidate.observedAt <= observation.time
+        && observation.time - candidate.observedAt <= SENSOR.observationIntervalSeconds + 1e-6
+        && candidate.observedAt >= previousSample
+        && Number.isFinite(candidate.position.x)
+        && Number.isFinite(candidate.position.y)
+        && Number.isFinite(candidate.position.z)
+        && Number.isFinite(candidate.heading)
+        && Number.isFinite(candidate.speedKnots)
+        && Number.isFinite(candidate.rangeMeters)
+        && candidate.rangeMeters >= 0
+        && Number.isFinite(candidate.confidence)
+        && Number.isFinite(candidate.estimatedHullRatio);
+    });
     // Coordination only selects among this observer's own contacts. It never
     // imports another ship's sightings or bypasses optical acquisition below.
     const assignment = observation.fleetTarget;
     const assignedContact = assignment && Number.isFinite(assignment.assignedAt)
       && assignment.assignedAt >= 0 && assignment.assignedAt <= observation.time
-      ? observation.contacts.find((contact) => contact.id === assignment.targetId
-        && contact.team !== observation.self.team)
+      ? localContacts.find((contact) => contact.id === assignment.targetId)
       : undefined;
-    const contact = assignedContact ?? selectPriorityContact(observation.contacts, this.lastContact?.id);
-    // Identity changes are not scan events: reset even when both contacts have
-    // the same timestamp, so a new ship cannot inherit a previous firing lock.
-    if (contact && contact.id !== this.lastContact?.id) {
-      this.lastContact = undefined;
-      this.previousContact = undefined;
+    const contact = assignedContact ?? selectPriorityContact(localContacts, this.lastContact?.id);
+    // Identity changes are not scan events: even a same-timestamp switch
+    // starts an independent director and torpedo pair for the selected ship.
+    if (contact && contact.id !== this.selectedContactId) {
+      this.resetOpticalTarget(contact.id, observation.time);
+    }
+    if (!contact && this.localContactVisible) {
+      // Loss can occur inside one sensor interval (occlusion or target removal).
+      // Repeated calls or a cached contact returning in that interval cannot
+      // reactivate the pre-loss firing window or the old torpedo sample pair.
       this.acquisitionSamples = 0;
-      this.hadTrack = false;
-      this.lastContactSample = Number.NEGATIVE_INFINITY;
-      this.lastEvaluatedSensorSample = Number.NEGATIVE_INFINITY;
+      this.previousContact = undefined;
       this.fireWindowUntil = 0;
-      this.solutionQuality = 0.04;
-      this.nextEstimateAt = observation.time;
-      this.lastTime = observation.time;
     }
-    const sampleIndex = Math.floor(observation.time / SENSOR.observationIntervalSeconds);
-    if (sampleIndex !== this.lastEvaluatedSensorSample) {
-      if (contact && contact.observedAt !== this.lastContactSample) {
-        this.acquisitionSamples += 1;
-        this.previousContact = this.lastContact?.id === contact.id
-          ? this.lastContact
-          : undefined;
-        this.lastContact = this.copyContact(contact);
-        this.lastContactSample = contact.observedAt;
-      } else if (!contact) {
-        this.acquisitionSamples = this.hadTrack
-          ? 0 : Math.max(0, this.acquisitionSamples - 1);
-      }
-      this.lastEvaluatedSensorSample = sampleIndex;
-    }
+    this.localContactVisible = Boolean(contact);
 
     if (contact) {
-      const requiredSamples = this.hadTrack
+      const sampleIndex = Math.floor(contact.observedAt / SENSOR.observationIntervalSeconds);
+      if (
+        contact.observedAt > this.lastContactSample
+        && sampleIndex > this.lastEvaluatedSensorSample
+      ) {
+        this.previousContact = this.acquisitionSamples > 0
+          && this.lastContact?.id === contact.id ? this.lastContact : undefined;
+        this.acquisitionSamples += 1;
+        this.lastContact = this.copyContact(contact);
+        this.lastContactSample = contact.observedAt;
+        this.lastEvaluatedSensorSample = sampleIndex;
+      }
+      const requiredSamples = this.trackedContactHistory.has(contact.id)
         ? SENSOR.reacquisitionSamples : SENSOR.aiAcquisitionSamples;
       const acquired = this.acquisitionSamples >= requiredSamples;
-      if (acquired) this.hadTrack = true;
+      if (acquired && this.lastContact) this.rememberTrackedContact(this.lastContact);
+      const track = this.lastContact ?? this.copyContact(contact);
       const mode: PerceptionMode = acquired ? "tracking" : "acquiring";
       return {
         mode,
-        track: this.copyContact(contact),
+        track,
         telemetry: {
           mode,
-          confidence: acquired ? contact.confidence : contact.confidence * 0.42,
-          lastObservedAt: contact.observedAt,
-          estimatedPosition: { ...contact.position },
+          confidence: acquired ? track.confidence : track.confidence * 0.42,
+          lastObservedAt: track.observedAt,
+          estimatedPosition: { ...track.position },
         },
       };
     }
 
     const predicted = this.predictedTrack(observation.time);
     if (!predicted || observation.time - predicted.observedAt > SENSOR.memorySeconds) {
-      this.lastContact = undefined;
-      this.previousContact = undefined;
-      this.acquisitionSamples = 0;
-      this.hadTrack = false;
+      this.resetOpticalTarget(undefined, observation.time);
       return {
         mode: "unaware",
         telemetry: { mode: "unaware", confidence: 0 },

@@ -57,16 +57,25 @@ staging or download packages/source/logs without fresh explicit consent. See
   movement/firing and slot-resolution call, without cross-call caching. Four
   fixed-seed full-battle telemetry/fingerprint/aggregate comparisons are equal;
   one profiled pair improved from 32.94 s to 27.62 s (16.1%).
-- Latest verification: 1,258 regular tests plus eight separately run balance
-  tests passed, with five existing opt-in skips. The former slow batch passed
-  twice at 25.522 s and 26.584 s against the unchanged 30-second limit. Build and
-  eleven actual-main browser checks passed. See
-  acceptance/main-battery-performance-2026-10-08.md.
-- Earlier full 5v5/7v7 smoke passed: 7v7 ended on score at 17 min 31 s, while 5v5
-  reached the twenty-minute limit. See acceptance/fleet-targets-2026-10-08.md.
-- Next: contact-loss target churn, objective/late-game calibration and broader
-  paired-seed fleet balance. Real Surface/mobile FPS and two-physical-PC LAN
-  acceptance remain separate.
+- The CPU reuse checkpoint is published as ca2d4ed; its paired evidence remains
+  in acceptance/main-battery-performance-2026-10-08.md.
+- Optical loss now immediately invalidates firing authority, including same-scan
+  loss/return. A successfully tracked identity is remembered for 24 seconds and
+  needs two fresh observations to reacquire; new/expired targets need four.
+  Radio and repeated/stale samples cannot refresh recognition or grant a lock.
+  Torpedo sample pairs are cleared on loss/switch, and history is capped at 64.
+- Latest verification: 1,291 regular tests plus eight separately run balance
+  tests passed, with five existing opt-in skips. The slow batch passed at
+  22.463 s against the unchanged 30-second limit. Build and eleven actual-main
+  browser checks passed with zero page errors. Three new real-session regressions
+  fail against the exact ca2d4ed controller and pass on the current candidate.
+- Full 5v5/7v7 smoke passed: all ships fired, neither had sustained grounding,
+  and both reached the twenty-minute limit. Target-switch totals did not
+  uniformly decrease; the 7v7 candidate did not reproduce the prior 17:31 score
+  victory. See acceptance/ai-reacquisition-2026-10-08.md for limits and evidence.
+- Next: objective approach/late-game urgency and broader paired-seed fleet
+  calibration. General contact-loss churn reduction, real Surface/mobile FPS
+  and two-physical-PC LAN acceptance remain unproven.
 
 ## Previous working changes — 2026-10-07
 

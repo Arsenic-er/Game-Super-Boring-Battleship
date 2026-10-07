@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { RuleBasedAi } from "../src/controllers/ruleBasedAi";
+import { OpticalSmokeMetrics } from "./helpers/opticalSmokeMetrics";
 import { battleLoadoutFromSlots, createDefaultLocalProfile } from "../src/profile/localProfile";
 import { LocalBattleSession } from "../src/session/localBattleSession";
 import { BATTLE_DURATION_SECONDS, BATTLE_SPAWN, FIXED_STEP } from "../src/sim/config";
@@ -93,6 +94,10 @@ describe.skipIf(!enabled)("prototype long-running fixed-step battle smoke", () =
       creditedHullDamage: 0, groundedSeconds: 0, longestGroundedSeconds: 0,
       currentGroundedSeconds: 0, lastPosition: { x: ship.position.x, z: ship.position.z },
     }]));
+    const opticalMetrics = new Map(state.ships.map((ship) => [ship.id, new OpticalSmokeMetrics()]));
+    const objectiveOwnedSeconds: Record<Team, number> = { player: 0, enemy: 0 };
+    const firstCaptureSeconds: Partial<Record<Team, number>> = {};
+    const lastHostileDamageSeconds: Partial<Record<Team, number>> = {};
     const fleetGroundedRun: Record<Team, number> = { player: 0, enemy: 0 };
     const maxFleetGrounded: Record<Team, number> = { player: 0, enemy: 0 };
     const damage: Record<Team, number> = { player: 0, enemy: 0 };
@@ -103,8 +108,26 @@ describe.skipIf(!enabled)("prototype long-running fixed-step battle smoke", () =
     while (state.status === "running" && steps < stepBudget) {
       const player = state.ships.find(({ id }) => id === "player")!;
       const commands = new Map<string, ControlCommand>();
-      if (player.hull > 0) commands.set(player.id, playerProxy.command(observe(state, player.id)));
+      // Observe in production roster order before stepping. Sensor contacts are cached;
+      // the proxy consumes this exact observation and LocalBattleSession reuses the cache.
+      // Keep only this tick's own-contact references, never hidden opposing world positions.
+      const observations = new Map(state.ships.filter((ship) => ship.hull > 0 && !ship.isTestTarget)
+        .map((ship) => [ship.id, observe(state, ship.id)] as const));
+      if (player.hull > 0) commands.set(player.id, playerProxy.command(observations.get(player.id)!));
       const output = session.step(commands, FIXED_STEP);
+      for (const [id, observation] of observations) {
+        opticalMetrics.get(id)!.update({
+          time: observation.time, dt: FIXED_STEP, contacts: observation.contacts,
+          targetId: observation.self.aiDecision?.targetId,
+          mode: observation.self.perception?.mode,
+          contactSource: observation.self.aiDecision?.contactSource,
+        });
+      }
+      const owner = state.objective.owner;
+      if (owner) {
+        objectiveOwnedSeconds[owner] += FIXED_STEP;
+        firstCaptureSeconds[owner] ??= state.time;
+      }
       ++steps;
       for (const shot of output.shots) {
         const metric = metrics.get(shot.ownerId);
@@ -117,6 +140,7 @@ describe.skipIf(!enabled)("prototype long-running fixed-step battle smoke", () =
           source.creditedHullDamage += event.damage;
           damage[source.team] += event.damage;
           firstDamageSeconds ??= state.time;
+          lastHostileDamageSeconds[source.team] = state.time;
         }
       }
       for (const ship of state.ships) {
@@ -161,6 +185,11 @@ describe.skipIf(!enabled)("prototype long-running fixed-step battle smoke", () =
       opposingHullDamage: { player: round(damage.player), enemy: round(damage.enemy) },
       finalScores: state.objective.scores, maximumFleetAllGroundedSeconds: maxFleetGrounded,
       maximumConcurrentAssignedTargets,
+      objectiveOwnedSeconds: { player: round(objectiveOwnedSeconds.player), enemy: round(objectiveOwnedSeconds.enemy) },
+      firstCaptureSeconds: Object.fromEntries(teams.map((team) => [team,
+        firstCaptureSeconds[team] === undefined ? null : round(firstCaptureSeconds[team])])),
+      lastHostileDamageSeconds: Object.fromEntries(teams.map((team) => [team,
+        lastHostileDamageSeconds[team] === undefined ? null : round(lastHostileDamageSeconds[team])])),
       ships: all.map((metric) => ({ id: metric.id, class: metric.shipClassId, team: metric.team,
         travelMeters: round(metric.travelMeters), maxSpeedKnots: round(metric.maxSpeedKnots), shots: metric.shots,
         coordinatedTargetChanges: metric.coordinatedTargetChanges, coordinatedSeconds: round(metric.coordinatedSeconds),
@@ -168,6 +197,7 @@ describe.skipIf(!enabled)("prototype long-running fixed-step battle smoke", () =
         firstShotSeconds: metric.firstShotSeconds === undefined ? null : round(metric.firstShotSeconds),
         creditedHullDamage: round(metric.creditedHullDamage), longestGroundedSeconds: round(metric.longestGroundedSeconds),
         remainingHull: round(state.ships.find(({ id }) => id === metric.id)!.hull),
+        optical: opticalMetrics.get(metric.id)!.report(),
       })),
     };
     console.log(`PROTOTYPE_BATTLE_REPORT ${JSON.stringify(report)}`);

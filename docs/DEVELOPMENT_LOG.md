@@ -1,3 +1,28 @@
+## 2026-10-08 — Optical contact loss and identity-specific reacquisition
+
+Fixed a same-scan loss/return path that could restore the old firing lock.
+Loss now immediately clears acquisition and torpedo sample pairs. Known targets
+retain only 24-second identity recognition: two fresh observations reacquire a
+previously tracked ship; a new or expired identity needs four. Radio, cached
+snapshots and hidden true positions cannot grant or prolong firing authority.
+The history is bounded to 64 IDs and resets with the battle.
+
+Added 22 controller, five real-sensor/session and six diagnostic regressions.
+Three session regressions fail against the exact ca2d4ed baseline and pass with
+the fix. All 1,299 regular/slow tests passed with five existing opt-in skips;
+the slow batch passed in 22.463 s without a relaxed limit. Build and eleven
+actual-main browser checks passed with zero page errors.
+
+Both full 5v5/7v7 cases passed, every ship fired and neither had sustained
+grounding. Both candidate battles reached the twenty-minute limit; 7v7 no longer
+ended at the baseline's 17:31 score win. Target-switch totals did not uniformly
+decrease, so objective/late-game behavior and broader paired-seed calibration
+remain next. These two seeds are not a general balance acceptance.
+
+Details: acceptance/ai-reacquisition-2026-10-08.md. All work and evidence stay on
+the server; no artwork changes, asset mutation, local download, Windows package,
+release tag or persistent preview.
+
 ## 2026-10-08 — Published checkpoints and main battery CPU reuse
 
 Pushed the verified gameplay/dock/isolated-material checkpoint as game cda6837,
