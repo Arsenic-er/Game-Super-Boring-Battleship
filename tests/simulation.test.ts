@@ -490,7 +490,7 @@ describe("deterministic battle simulation", () => {
     expect(healthy.ships[0]!.turretHeading).toBeGreaterThan(damaged.ships[0]!.turretHeading);
   });
 
-  it("makes the rule AI bracket the target instead of hitting every salvo", () => {
+  it("makes the rule AI main gun bracket the target instead of hitting every salvo", () => {
     const state = createInitialState(77);
     const ai = new RuleBasedAi(77);
     const player = state.ships.find((ship) => ship.id === "player")!;
@@ -511,9 +511,13 @@ describe("deterministic battle simulation", () => {
         ["enemy", aiCommand],
       ]);
       stepSimulation(state, commands, FIXED_STEP);
-      hits += state.impacts.filter((impact) =>
-        impact.kind === "hit" && impact.projectileKind === "shell").length;
-      splashes += state.impacts.filter((impact) => impact.kind === "splash").length;
+      // The stationary player's automatic secondary battery is not the AI's
+      // optical director. Attribute both hits and misses to the tested weapon.
+      const aiMainGunImpacts = state.impacts.filter((impact) =>
+        impact.sourceId === enemy.id && impact.weaponSource === "mainGun"
+        && impact.projectileKind === "shell");
+      hits += aiMainGunImpacts.filter((impact) => impact.kind === "hit").length;
+      splashes += aiMainGunImpacts.filter((impact) => impact.kind === "splash").length;
     }
     expect(hits + splashes).toBeGreaterThanOrEqual(4);
     expect(splashes).toBeGreaterThan(0);

@@ -2,11 +2,13 @@ import {
   AI_TORPEDO,
   GUN,
   HYDRO,
+  NAVIGATION_PACE,
   SENSOR,
   SMOKE,
   TORPEDO,
   shipSpeedMetersPerSecond,
 } from "../sim/config";
+import { objectiveIsUrgent } from "./fleetObjectiveCoordinator";
 import { terrainSafeHeading } from "../maps/atollMap";
 import { AiNavigationRecovery } from "../sim/aiNavigation";
 import { planFleetCover, type FleetCoverPlan } from "../sim/fleetCover";
@@ -573,18 +575,21 @@ export class RuleBasedAi implements Controller {
     const objectiveDz = objective.center.z - observation.self.position.z;
     const objectiveDistance = Math.hypot(objectiveDx, objectiveDz);
     const objectiveBearing = Math.atan2(objectiveDx, objectiveDz);
-    const ownScore = objective.scores[observation.self.team];
     const opposingTeam = observation.self.team === "player" ? "enemy" : "player";
-    const opposingScore = objective.scores[opposingTeam];
-    const opponentInZone = objective.contested
-      || objective.capturingTeam === opposingTeam
-      || objective.owner === opposingTeam;
-    const shouldSecureObjective = objectiveDistance > objective.radius * 0.68
-      && (
-        objective.owner !== observation.self.team
-        || opponentInZone
-        || ownScore - opposingScore < 300
-      );
+    const objectiveNeedsCapture = objective.owner !== observation.self.team
+      || objective.contested || objective.capturingTeam === opposingTeam;
+    const advice = observation.fleetObjective;
+    const validAdvice = advice && Number.isFinite(advice.assignedAt)
+      && advice.assignedAt <= observation.time && observation.time - advice.assignedAt <= 2;
+    // Session assignments exclude human-controlled ships. A standalone lone AI
+    // can plan for itself, but must not guess whether a friendly is human or AI.
+    const objectiveOrder = observation.gameMode === "battle"
+      ? validAdvice ? advice
+        : observation.friendlies.length === 0
+          ? { duty: objectiveNeedsCapture ? "capture" as const : "support" as const,
+            urgent: objectiveIsUrgent(observation), assignedAt: observation.time, stationIndex: 0 as const }
+          : undefined
+      : undefined;
 
     if (observation.time >= this.nextManoeuvreAt) {
       this.manoeuvreOffset = (this.random() - 0.5) * 0.7;
@@ -659,17 +664,33 @@ export class RuleBasedAi implements Controller {
     const friendlies = observation.friendlies ?? [];
     const capitalAnchor = friendlies.find((friendly) =>
       getShipClass(friendly.shipClassId).hullId === "battleship");
-    const tacticalObjectivePush = shouldSecureObjective && (
-      role !== "line"
-      || !target
-      || opposingScore - ownScore > 140
-    );
-    let desiredHeading = searchingTarget
-      ? bearingToTarget + (range < 350 ? Math.PI / 2 : 0)
-      : tacticalObjectivePush || !target
-        ? objectiveBearing + this.manoeuvreOffset * 0.16
-        : bearingToTarget + this.manoeuvreOffset;
-    if (torpedoReady && target && !torpedoSolution?.allowed) {
+    const hullRatio = observation.self.hull / observation.self.maxHull;
+    const withdrawThreshold = role === "screen" ? 0.36 : role === "escort" ? 0.31 : 0.27;
+    const damaged = hullRatio < withdrawThreshold;
+    const tacticalObjectivePush = !damaged && objectiveOrder?.duty === "capture" && objectiveNeedsCapture;
+    const supportRadius = Math.max(objective.radius + 400,
+      Math.min(engagementBand.preferredMeters * 0.65, mainBatteryRange * 0.55));
+    const supportReposition = !damaged && objectiveOrder?.duty === "support"
+      && (!localContact || objectiveDistance > supportRadius + 500);
+    const objectiveNavigating = tacticalObjectivePush || supportReposition;
+    const stationBearing = objectiveDistance > 1
+      ? objectiveBearing + Math.PI : observation.self.heading + Math.PI;
+    const objectivePoint = tacticalObjectivePush
+      ? { x: objective.center.x + (objectiveOrder?.stationIndex === 1 ? 1 : -1) * objective.radius * 0.3,
+        z: objective.center.z }
+      : { x: objective.center.x + Math.sin(stationBearing) * supportRadius,
+        z: objective.center.z + Math.cos(stationBearing) * supportRadius };
+    const stationDx = objectivePoint.x - observation.self.position.x;
+    const stationDz = objectivePoint.z - observation.self.position.z;
+    const stationDistance = Math.hypot(stationDx, stationDz);
+    const stationHeading = stationDistance < 1 ? observation.self.heading : Math.atan2(stationDx, stationDz);
+    let desiredHeading = objectiveNavigating
+      ? stationHeading
+      : searchingTarget
+        ? bearingToTarget + (range < 350 ? Math.PI / 2 : 0)
+        : !target ? objectiveBearing + this.manoeuvreOffset * 0.16
+          : bearingToTarget + this.manoeuvreOffset;
+    if (!objectiveNavigating && torpedoReady && target && !torpedoSolution?.allowed) {
       const portBroadside = bearingToTarget + Math.PI / 2;
       const starboardBroadside = bearingToTarget - Math.PI / 2;
       desiredHeading = Math.abs(wrapAngle(portBroadside - observation.self.heading))
@@ -677,12 +698,18 @@ export class RuleBasedAi implements Controller {
         ? portBroadside
         : starboardBroadside;
     }
-    if (target && !searchingTarget && range < engagementBand.minimumMeters) {
+    // Role spacing is tactical, not an absolute prohibition on contesting a cap.
+    // Keep a short physical close-quarters retreat even for assigned cappers.
+    const minimumSafeRange = tacticalObjectivePush
+      ? Math.min(engagementBand.minimumMeters, Math.max(220, getShipClass(observation.self.shipClassId).length * 1.2))
+      : engagementBand.minimumMeters;
+    const closeQuartersRetreat = Boolean(target && !searchingTarget && range < minimumSafeRange);
+    if (closeQuartersRetreat) {
       desiredHeading = bearingToTarget + Math.PI;
-    } else if (target && !searchingTarget && !tacticalObjectivePush && range < engagementBand.preferredMeters) {
+    } else if (target && !searchingTarget && !objectiveNavigating && range < engagementBand.preferredMeters) {
       const angle = role === "screen" && torpedoReady ? Math.PI * 0.52 : Math.PI * 0.7;
       desiredHeading = bearingToTarget + angle;
-    } else if (target && !searchingTarget && range > engagementBand.maximumMeters) {
+    } else if (target && !searchingTarget && !objectiveNavigating && range > engagementBand.maximumMeters) {
       desiredHeading = bearingToTarget;
     }
     const incomingTorpedo = observation.incomingTorpedoes[0];
@@ -710,7 +737,7 @@ export class RuleBasedAi implements Controller {
         ? pathBearing
         : reverseBearing;
     }
-    if (role === "screen" && capitalAnchor && !target) {
+    if (!objectiveNavigating && !evadingTorpedo && role === "screen" && capitalAnchor && !target) {
       const screenX = capitalAnchor.position.x + Math.sin(capitalAnchor.heading) * 850;
       const screenZ = capitalAnchor.position.z + Math.cos(capitalAnchor.heading) * 850;
       const screenDx = screenX - observation.self.position.x;
@@ -718,7 +745,7 @@ export class RuleBasedAi implements Controller {
       if (Math.hypot(screenDx, screenDz) > 320) {
         desiredHeading = Math.atan2(screenDx, screenDz);
       }
-    } else if (role === "escort" && capitalAnchor && !target) {
+    } else if (!objectiveNavigating && !evadingTorpedo && role === "escort" && capitalAnchor && !target) {
       const anchorDx = capitalAnchor.position.x - observation.self.position.x;
       const anchorDz = capitalAnchor.position.z - observation.self.position.z;
       const anchorDistance = Math.hypot(anchorDx, anchorDz);
@@ -730,9 +757,6 @@ export class RuleBasedAi implements Controller {
         desiredHeading = capitalAnchor.heading;
       }
     }
-    const hullRatio = observation.self.hull / observation.self.maxHull;
-    const withdrawThreshold = role === "screen" ? 0.36 : role === "escort" ? 0.31 : 0.27;
-    const damaged = hullRatio < withdrawThreshold;
     if (damaged && target && !evadingTorpedo) desiredHeading = bearingToTarget + Math.PI;
     if (damaged && target && !evadingTorpedo) {
       if (observation.time >= this.nextCoverPlanAt || this.coverTargetId !== target.id) {
@@ -775,18 +799,26 @@ export class RuleBasedAi implements Controller {
     const navigation = this.navigationRecovery.command(observation.mapId, observation.self, desiredHeading, observation.time);
     desiredHeading = navigation.desiredHeading;
     const headingError = wrapAngle(desiredHeading - observation.self.heading);
-    let tacticalThrottle = evadingTorpedo
-      ? 1
+    const hull = getShipClass(observation.self.shipClassId);
+    const forwardSpeed = Math.max(0, observation.self.speedKnots);
+    const stoppingDistance = shipSpeedMetersPerSecond(forwardSpeed) * forwardSpeed
+      / Math.max(0.1, hull.brakingKnotsPerSecond * NAVIGATION_PACE.propulsionResponseScale) * 0.5;
+    const stationArrivalRadius = tacticalObjectivePush ? 95 : 220;
+    // Brake before the waypoint, then approach slowly. Ownership persists when
+    // unopposed, so a secured cap releases its capturer back to the support ring.
+    const objectiveThrottle = stationDistance <= stationArrivalRadius ? 0
+      : stationDistance <= stoppingDistance + stationArrivalRadius + 45 ? 0
+        : stationDistance < stationArrivalRadius + 190 ? 0.24
+          : objectiveOrder?.urgent ? 1 : 0.88;
+    let tacticalThrottle = evadingTorpedo ? 1
+      : closeQuartersRetreat ? 0.58
+      : objectiveNavigating ? objectiveThrottle
       : searchingTarget ? (range > 500 ? 0.72 : 0.42)
-      : target && range < engagementBand.minimumMeters
-        ? 0.58
-      : target && range < engagementBand.preferredMeters
-        ? 0.68
-      : tacticalObjectivePush || !target
-        ? 0.88
+      : target && range < engagementBand.preferredMeters ? 0.68
+      : !target ? 0.88
       : range > engagementBand.maximumMeters ? 0.9 : 0.62;
-    if (role === "screen" && !damaged) tacticalThrottle = Math.min(1, tacticalThrottle + 0.1);
-    if (role === "line" && target && !tacticalObjectivePush) {
+    if (role === "screen" && !damaged && !objectiveNavigating) tacticalThrottle = Math.min(1, tacticalThrottle + 0.1);
+    if (role === "line" && target && !objectiveNavigating) {
       tacticalThrottle = Math.min(tacticalThrottle, 0.74);
     }
     if (this.coverPlan && !collisionRisk && !evadingTorpedo) {
@@ -794,7 +826,15 @@ export class RuleBasedAi implements Controller {
         holdingCover ? 0
           : coverDistance < this.coverPlan.arrivalRadiusMeters * 2 ? 0.2 : 0.52);
     }
-    if (collisionRisk) tacticalThrottle = Math.min(tacticalThrottle, 0.35);
+    if (collisionRisk) {
+      // A stopped station-holder must be able to separate from a stationary
+      // overlap. Keep braking for predicted incoming crossings; terrain recovery
+      // still applies its final throttle limit (including astern) below.
+      const separationThrottle = objectiveNavigating
+        && Math.abs(observation.self.speedKnots) < 1
+        && collisionRisk.timeToClosestApproach === 0 ? 0.25 : 0;
+      tacticalThrottle = Math.min(Math.max(tacticalThrottle, separationThrottle), 0.35);
+    }
     if (navigation.throttleLimit !== undefined) tacticalThrottle = Math.min(tacticalThrottle, navigation.throttleLimit);
     const priority = damageControlPriority(observation);
     const recoverableDamage = observation.self.recoverableHull - observation.self.hull;
@@ -860,9 +900,9 @@ export class RuleBasedAi implements Controller {
     const phase: FleetAiPhase = evadingTorpedo || collisionRisk
       ? "evading"
       : damaged ? "withdrawing"
-        : searchingTarget ? "searching"
-          : target ? "engaging"
-            : tacticalObjectivePush ? "securing" : "forming";
+        : tacticalObjectivePush && !closeQuartersRetreat ? "securing"
+          : searchingTarget ? "searching"
+            : target ? "engaging" : "forming";
 
     return {
       throttle: damaged ? Math.min(tacticalThrottle, 0.52) : tacticalThrottle,
@@ -889,6 +929,8 @@ export class RuleBasedAi implements Controller {
         seekingCover: Boolean(this.coverPlan) && !collisionRisk && !evadingTorpedo,
         coordinatedTarget: Boolean(activeAssignment),
         friendlyTargetLoad: activeAssignment?.friendlyAssignedCount,
+        objectiveDuty: objectiveOrder?.duty,
+        objectiveUrgent: objectiveOrder?.urgent,
         desiredHeading,
         throttle: damaged ? Math.min(tacticalThrottle, 0.52) : tacticalThrottle,
         fireIntent,

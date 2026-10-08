@@ -2998,6 +2998,7 @@ export function observe(state: BattleState, shipId: string) {
     return {
       self,
       mapId: state.mapId,
+      gameMode: state.mode,
       contacts: cached.contacts,
       friendlies,
       objective,
@@ -3138,6 +3139,7 @@ export function observe(state: BattleState, shipId: string) {
   return {
     self,
     mapId: state.mapId,
+    gameMode: state.mode,
     contacts,
     friendlies,
     objective,

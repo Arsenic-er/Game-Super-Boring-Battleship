@@ -211,6 +211,14 @@ export interface FleetTargetAssignment {
   role: FleetAiRole;
   friendlyAssignedCount: number;
 }
+/** Public-objective navigation advice; never grants target visibility. */
+export interface FleetObjectiveAssignment {
+  duty: "capture" | "support";
+  urgent: boolean;
+  /** Issue time, refreshed independently of the coordinator\'s private duty hold. */
+  assignedAt: number;
+  stationIndex?: 0 | 1;
+}
 export type FleetAiPhase =
   | "forming" | "securing" | "engaging" | "evading" | "withdrawing" | "searching";
 
@@ -229,6 +237,8 @@ export interface AiDecisionTelemetry {
   seekingCover?: boolean;
   coordinatedTarget?: boolean;
   friendlyTargetLoad?: number;
+  objectiveDuty?: "capture" | "support";
+  objectiveUrgent?: boolean;
 }
 
 export interface SensorSnapshot {
@@ -572,6 +582,8 @@ export interface ControlCommand {
 }
 
 export interface Observation {
+  /** Public match mode; sea trials have no scoring objective. */
+  gameMode?: GameMode;
   self: Readonly<ShipState>;
   mapId: BattleMapId;
   contacts: readonly Readonly<SensorContact>[];
@@ -579,6 +591,7 @@ export interface Observation {
   sharedContacts?: readonly Readonly<FleetContactReport>[];
   /** Friendly target distribution cannot grant detection or a firing lock. */
   fleetTarget?: Readonly<FleetTargetAssignment>;
+  fleetObjective?: Readonly<FleetObjectiveAssignment>;
   friendlies: readonly Readonly<FriendlyShipObservation>[];
   objective: Readonly<ObjectiveObservation>;
   incomingTorpedoes: readonly Readonly<TorpedoThreat>[];

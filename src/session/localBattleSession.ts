@@ -1,4 +1,5 @@
 import { RuleBasedAi } from "../controllers/ruleBasedAi";
+import { FleetObjectiveCoordinator } from "../controllers/fleetObjectiveCoordinator";
 import { FleetTargetCoordinator } from "../controllers/fleetTargetCoordinator";
 import { FleetRadioNetwork } from "../sim/fleetRadio";
 import { FIXED_STEP } from "../sim/config";
@@ -26,6 +27,7 @@ export class LocalBattleSession implements AuthoritativeBattleSession {
   private shipAiById = new Map<string, RuleBasedAi>();
   private readonly fleetRadio = new FleetRadioNetwork();
   private readonly fleetTargets = new FleetTargetCoordinator();
+  private readonly fleetObjectives = new FleetObjectiveCoordinator();
 
   constructor(state: BattleState, options?: { includeDeveloperAi?: boolean }) {
     this.currentState = state;
@@ -63,6 +65,10 @@ export class LocalBattleSession implements AuthoritativeBattleSession {
     const assignments = this.fleetTargets.update(
       aiShips.map((ship) => observations.get(ship.id)!), this.currentState.time,
     );
+    const objectiveAssignments = this.currentState.mode === "battle"
+      ? this.fleetObjectives.update(aiShips.map((ship) => observations.get(ship.id)!), this.currentState.time)
+      : undefined;
+    if (!objectiveAssignments) this.fleetObjectives.reset();
     for (const aiShip of aiShips) {
       let controller = this.shipAiById.get(aiShip.id);
       if (!controller) {
@@ -74,6 +80,7 @@ export class LocalBattleSession implements AuthoritativeBattleSession {
         ...localObservation,
         sharedContacts: this.fleetRadio.contactsFor(aiShip, this.currentState.time),
         fleetTarget: assignments.get(aiShip.id),
+        fleetObjective: objectiveAssignments?.get(aiShip.id),
       }));
     }
     stepSimulation(this.currentState, commands, dt);
@@ -92,5 +99,6 @@ export class LocalBattleSession implements AuthoritativeBattleSession {
     this.shipAiById.clear();
     this.fleetRadio.reset();
     this.fleetTargets.reset();
+    this.fleetObjectives.reset();
   }
 }

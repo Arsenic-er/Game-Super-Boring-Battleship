@@ -13,7 +13,8 @@ function fixture(): Observation {
   const state = createInitialState(810);
   state.mapId = "open-sea-range";
   state.ships[0]!.position = { x: 0, y: 0, z: 0 };
-  return { ...observe(state, "player"), contacts: [], friendlies: [], time: 0 };
+  // Isolate radio search from battle-objective duties; firing restrictions are unchanged.
+  return { ...observe(state, "player"), gameMode: "sea-trials", contacts: [], friendlies: [], time: 0 };
 }
 function contact(id: string, time: number, x = 0, z = 1800): SensorContact {
   return { id, team: "enemy", observedAt: time, position: { x, y: 0, z },

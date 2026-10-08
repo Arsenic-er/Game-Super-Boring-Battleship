@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { RuleBasedAi } from "../src/controllers/ruleBasedAi";
 import { OpticalSmokeMetrics } from "./helpers/opticalSmokeMetrics";
+import { ObjectiveSmokeMetrics, prototypeSeedOffset } from "./helpers/objectiveSmokeMetrics";
 import { battleLoadoutFromSlots, createDefaultLocalProfile } from "../src/profile/localProfile";
 import { LocalBattleSession } from "../src/session/localBattleSession";
 import { BATTLE_DURATION_SECONDS, BATTLE_SPAWN, FIXED_STEP } from "../src/sim/config";
@@ -8,7 +9,8 @@ import { createInitialState, observe, stepSimulation } from "../src/sim/simulati
 import type { BattleState, ControlCommand, ShipState, Team } from "../src/sim/types";
 
 const enabled = process.env.PROTOTYPE_BATTLE_SMOKE === "1";
-const cases = [{ teamSize: 5, seed: 0x71501 }, { teamSize: 7, seed: 0x71701 }] as const;
+const seedOffset = prototypeSeedOffset(process.env.PROTOTYPE_SEED_OFFSET);
+const cases = [{ teamSize: 5, seed: 0x71501 + seedOffset }, { teamSize: 7, seed: 0x71701 + seedOffset }] as const;
 const teams = ["player", "enemy"] as const;
 const round = (value: number): number => Math.round(value * 100) / 100;
 
@@ -95,6 +97,7 @@ describe.skipIf(!enabled)("prototype long-running fixed-step battle smoke", () =
       currentGroundedSeconds: 0, lastPosition: { x: ship.position.x, z: ship.position.z },
     }]));
     const opticalMetrics = new Map(state.ships.map((ship) => [ship.id, new OpticalSmokeMetrics()]));
+    const objectiveMetrics = new ObjectiveSmokeMetrics(state);
     const objectiveOwnedSeconds: Record<Team, number> = { player: 0, enemy: 0 };
     const firstCaptureSeconds: Partial<Record<Team, number>> = {};
     const lastHostileDamageSeconds: Partial<Record<Team, number>> = {};
@@ -123,6 +126,7 @@ describe.skipIf(!enabled)("prototype long-running fixed-step battle smoke", () =
           contactSource: observation.self.aiDecision?.contactSource,
         });
       }
+      objectiveMetrics.update(state);
       const owner = state.objective.owner;
       if (owner) {
         objectiveOwnedSeconds[owner] += FIXED_STEP;
@@ -177,8 +181,9 @@ describe.skipIf(!enabled)("prototype long-running fixed-step battle smoke", () =
     }
     const all = [...metrics.values()];
     const allies = all.filter((metric) => metric.team === "player" && metric.id !== "player");
+    const measuredObjective = objectiveMetrics.report();
     const report = {
-      kind: "representative-ai-battle", teamSize, seed, weather: state.weatherId,
+      kind: "representative-ai-battle", teamSize, seed, seedOffset, weather: state.weatherId,
       defaultBuild: "default-fletcher", fixedStep: FIXED_STEP, minimumSeparationMeters,
       status: state.status, endReason: state.endReason, durationSeconds: round(state.time), steps,
       wallSeconds: round((performance.now() - start) / 1_000), firstDamageSeconds: firstDamageSeconds === undefined ? null : round(firstDamageSeconds),
@@ -186,6 +191,12 @@ describe.skipIf(!enabled)("prototype long-running fixed-step battle smoke", () =
       finalScores: state.objective.scores, maximumFleetAllGroundedSeconds: maxFleetGrounded,
       maximumConcurrentAssignedTargets,
       objectiveOwnedSeconds: { player: round(objectiveOwnedSeconds.player), enemy: round(objectiveOwnedSeconds.enemy) },
+      objectiveInZoneShipSeconds: { player: round(measuredObjective.inZoneShipSeconds.player),
+        enemy: round(measuredObjective.inZoneShipSeconds.enemy) },
+      objectiveContestedSeconds: round(measuredObjective.contestedSeconds),
+      lateScoreStartSeconds: measuredObjective.lateScoreStartSeconds,
+      lateScoreGain: { player: round(measuredObjective.lateScoreGain.player),
+        enemy: round(measuredObjective.lateScoreGain.enemy) },
       firstCaptureSeconds: Object.fromEntries(teams.map((team) => [team,
         firstCaptureSeconds[team] === undefined ? null : round(firstCaptureSeconds[team])])),
       lastHostileDamageSeconds: Object.fromEntries(teams.map((team) => [team,

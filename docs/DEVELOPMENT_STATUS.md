@@ -64,7 +64,7 @@ staging or download packages/source/logs without fresh explicit consent. See
   needs two fresh observations to reacquire; new/expired targets need four.
   Radio and repeated/stale samples cannot refresh recognition or grant a lock.
   Torpedo sample pairs are cleared on loss/switch, and history is capped at 64.
-- Latest verification: 1,291 regular tests plus eight separately run balance
+- Optical checkpoint verification: 1,291 regular tests plus eight separately run balance
   tests passed, with five existing opt-in skips. The slow batch passed at
   22.463 s against the unchanged 30-second limit. Build and eleven actual-main
   browser checks passed with zero page errors. Three new real-session regressions
@@ -73,9 +73,21 @@ staging or download packages/source/logs without fresh explicit consent. See
   and both reached the twenty-minute limit. Target-switch totals did not
   uniformly decrease; the 7v7 candidate did not reproduce the prior 17:31 score
   victory. See acceptance/ai-reacquisition-2026-10-08.md for limits and evidence.
-- Next: objective approach/late-game urgency and broader paired-seed fleet
-  calibration. General contact-loss churn reduction, real Surface/mobile FPS
-  and two-physical-PC LAN acceptance remain unproven.
+- Fleet capture coordination now normally reserves one healthy AI, at most two
+  under contest/deadline pressure, and keeps other ships at support distances.
+  Capture duties override old search/chase/formation headings and brake inside
+  the zone. Twelve-second duty retention is separate from command freshness.
+- Deadline logic uses public score/clock/capture state, including a current lead
+  that enemy scoring would erase. Human takeover, death, heavy damage and
+  destroyed off-zone propulsion release duties; sea trials are excluded.
+- Latest verification: 1,349 regular plus eight balance tests passed (five
+  existing opt-in skips), production build and eleven actual-main browser checks
+  passed. Four paired 5v5/7v7 cases all fired and avoided sustained grounding.
+  Physical contesting increased in these seeds, but all still ended at twenty
+  minutes. See acceptance/fleet-objectives-2026-10-08.md.
+- Next: broader seed/hull-role/spawn-side fleet calibration and late-game pacing.
+  General win-rate balance, real Surface/mobile FPS and two-physical-PC LAN
+  acceptance remain unproven.
 
 ## Previous working changes — 2026-10-07
 

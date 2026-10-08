@@ -1,3 +1,30 @@
+## 2026-10-08 — Bounded fleet capture duties and late battle decisions
+
+Added public-information objective coordination to the local/host session.
+Normally one healthy AI captures, with at most two assigned during contest or
+deadline pressure; others approach role-specific support positions. Human
+takeover, death, severe damage and off-zone destroyed propulsion release duties.
+Twelve-second task retention is separate from fresh per-update issue timestamps.
+
+Assigned cappers now override stale search, distant chase and formation
+following, slow inside the zone, and return to support after safe capture.
+Torpedo/collision/terrain safety and damaged withdrawal remain higher priority.
+Urgency uses travel, full neutralization/capture time, current scores and a
+projected late defeat even when currently leading. Sea trials are excluded.
+
+All 1,357 regular/slow tests passed with five existing opt-in skips; 23
+coordinator, 18 navigation/session and 17 metric checks were added. Four paired
+5v5/7v7 battles passed: every ship fired, no sustained grounding, and physical
+contesting increased in these seeds. All still reached the twenty-minute cap,
+so general balance and match pacing are not certified. Build and eleven
+actual-main browser checks passed with zero page errors.
+
+Corrected the old gun-bracketing test's attribution: its apparent accuracy
+regression came from player automatic secondaries, not the enemy main gun.
+Original sample-size and hit-rate limits remain unchanged. Details and paired
+results: acceptance/fleet-objectives-2026-10-08.md. No art/asset mutation, local
+download, package version/release tag or persistent preview.
+
 ## 2026-10-08 — Optical contact loss and identity-specific reacquisition
 
 Fixed a same-scan loss/return path that could restore the old firing lock.
