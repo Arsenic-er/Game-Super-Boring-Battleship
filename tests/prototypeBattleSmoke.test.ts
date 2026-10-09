@@ -2,7 +2,10 @@ import { describe, expect, it } from "vitest";
 import { RuleBasedAi } from "../src/controllers/ruleBasedAi";
 import { OpticalSmokeMetrics } from "./helpers/opticalSmokeMetrics";
 import { ObjectiveSmokeMetrics, prototypeSeedOffset } from "./helpers/objectiveSmokeMetrics";
-import { createFleetSmokeBattle, FLEET_SMOKE_SIDE_SWAP, prototypeSpawnSide } from "./helpers/fleetSmokeScenario";
+import {
+  createFleetSmokeBattle, FLEET_SMOKE_SIDE_SWAP, fleetSmokePlayerBuildReport,
+  prototypePlayerBuild, prototypeSpawnSide,
+} from "./helpers/fleetSmokeScenario";
 import { LocalBattleSession } from "../src/session/localBattleSession";
 import { BATTLE_DURATION_SECONDS, BATTLE_SPAWN, FIXED_STEP } from "../src/sim/config";
 import { observe, stepSimulation } from "../src/sim/simulation";
@@ -11,12 +14,13 @@ import type { BattleState, ControlCommand, ShipState, Team } from "../src/sim/ty
 const enabled = process.env.PROTOTYPE_BATTLE_SMOKE === "1";
 const seedOffset = prototypeSeedOffset(process.env.PROTOTYPE_SEED_OFFSET);
 const spawnSide = prototypeSpawnSide(process.env.PROTOTYPE_SPAWN_SIDE);
+const playerBuild = prototypePlayerBuild(process.env.PROTOTYPE_PLAYER_BUILD);
 const cases = [{ teamSize: 5, seed: 0x71501 + seedOffset }, { teamSize: 7, seed: 0x71701 + seedOffset }] as const;
 const teams = ["player", "enemy"] as const;
 const round = (value: number): number => Math.round(value * 100) / 100;
 
 function freshBattle(teamSize: 5 | 7, seed: number): BattleState {
-  return createFleetSmokeBattle(teamSize, seed, spawnSide);
+  return createFleetSmokeBattle(teamSize, seed, spawnSide, playerBuild);
 }
 
 function initialChecks(state: BattleState, teamSize: 5 | 7): number {
@@ -38,7 +42,7 @@ function initialChecks(state: BattleState, teamSize: 5 | 7): number {
 }
 
 describe("prototype battle launch invariants", () => {
-  for (const { teamSize, seed } of cases) it(`${teamSize}v${teamSize} starts the real default saved build stationary, at least 5 km apart`, () => {
+  for (const { teamSize, seed } of cases) it(`${teamSize}v${teamSize} starts the real ${playerBuild} saved build stationary, at least 5 km apart`, () => {
     initialChecks(freshBattle(teamSize, seed), teamSize);
   });
   it("clamps the floating-point boundary to exactly twenty minutes on the final scheduled tick", () => {
@@ -84,6 +88,7 @@ describe.skipIf(!enabled)("prototype long-running fixed-step battle smoke", () =
     const start = performance.now();
     const state = freshBattle(teamSize, seed);
     const minimumSeparationMeters = initialChecks(state, teamSize);
+    const playerBuildReport = fleetSmokePlayerBuildReport(state, playerBuild);
     const session = new LocalBattleSession(state);
     // Substitute a normal controller for keyboard input only. Allied/enemy AI is the production session path.
     const playerProxy = new RuleBasedAi(seed ^ 0x071a);
@@ -182,7 +187,8 @@ describe.skipIf(!enabled)("prototype long-running fixed-step battle smoke", () =
     const report = {
       kind: "representative-ai-battle", teamSize, seed, seedOffset, spawnSide,
       spawnTransform: spawnSide === "mirrored" ? FLEET_SMOKE_SIDE_SWAP : null, weather: state.weatherId,
-      defaultBuild: "default-fletcher", fixedStep: FIXED_STEP, minimumSeparationMeters,
+      defaultBuild: playerBuild === "default-fletcher" ? "default-fletcher" : null,
+      ...playerBuildReport, fixedStep: FIXED_STEP, minimumSeparationMeters,
       status: state.status, endReason: state.endReason, durationSeconds: round(state.time), steps,
       wallSeconds: round((performance.now() - start) / 1_000), firstDamageSeconds: firstDamageSeconds === undefined ? null : round(firstDamageSeconds),
       opposingHullDamage: { player: round(damage.player), enemy: round(damage.enemy) },
@@ -236,6 +242,7 @@ describe.skipIf(!enabled)("prototype long-running fixed-step battle smoke", () =
     const start = performance.now();
     const state = freshBattle(5, 0x71fff);
     initialChecks(state, 5);
+    const playerBuildReport = fleetSmokePlayerBuildReport(state, playerBuild);
     const session = new LocalBattleSession(state);
     const stationary = (ship: ShipState): ControlCommand => ({ throttle: 0, rudder: 0, aimPoint: { ...ship.aimPoint }, fire: false });
     // Explicit commands suppress automatic controllers, preserving a combat-free clock-control case.
@@ -245,7 +252,7 @@ describe.skipIf(!enabled)("prototype long-running fixed-step battle smoke", () =
     while (state.status === "running" && steps < budget) { session.step(commands, FIXED_STEP); ++steps; }
     console.log(`PROTOTYPE_BATTLE_REPORT ${JSON.stringify({ kind: "full-clock-control", teamSize: 5, seed: 0x71fff, spawnSide,
       spawnTransform: spawnSide === "mirrored" ? FLEET_SMOKE_SIDE_SWAP : null,
-      steps, durationSeconds: round(state.time), status: state.status, endReason: state.endReason,
+      ...playerBuildReport, steps, durationSeconds: round(state.time), status: state.status, endReason: state.endReason,
       wallSeconds: round((performance.now() - start) / 1_000) })}`);
     expect(steps).toBe(72_000);
     expect(state.time).toBe(1_200);

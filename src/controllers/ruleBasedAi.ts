@@ -1,5 +1,6 @@
 import {
   AI_TORPEDO,
+  FIXED_STEP,
   GUN,
   HYDRO,
   NAVIGATION_PACE,
@@ -9,6 +10,7 @@ import {
   shipSpeedMetersPerSecond,
 } from "../sim/config";
 import { objectiveIsUrgent } from "./fleetObjectiveCoordinator";
+import { ObjectiveSupportNavigator } from "./objectiveSupportNavigation";
 import { terrainSafeHeading } from "../maps/atollMap";
 import { AiNavigationRecovery } from "../sim/aiNavigation";
 import { planFleetCover, type FleetCoverPlan } from "../sim/fleetCover";
@@ -18,7 +20,6 @@ import { effectiveMainBattery } from "../ships/mainBatteries";
 import {
   mainBatteryMountCanBear,
   torpedoInterceptPoint,
-  torpedoLauncherAlignmentError,
   torpedoLaunchSolution,
 } from "../sim/simulation";
 import type {
@@ -263,6 +264,7 @@ export class RuleBasedAi implements Controller {
   private plannedTerrainHeading?: number;
   private nextTerrainPlanAt = 0;
   private readonly navigationRecovery = new AiNavigationRecovery();
+  private readonly supportNavigator = new ObjectiveSupportNavigator();
   private coverPlan?: FleetCoverPlan;
   private nextCoverPlanAt = 0;
   private coverTargetId?: string;
@@ -523,11 +525,12 @@ export class RuleBasedAi implements Controller {
     target: TrackEstimate,
     bearing: number,
     muzzleVelocity: number,
+    maximumRangeMeters: number,
   ): Vec3 {
     const estimatedBearing = bearing + this.bearingError;
     const flightTime = this.estimatedRange / muzzleVelocity;
     const targetSpeed = shipSpeedMetersPerSecond(target.speedKnots);
-    return {
+    const point = {
       x: observation.self.position.x
         + Math.sin(estimatedBearing) * this.estimatedRange
         + Math.sin(target.heading) * targetSpeed * flightTime * this.leadScale
@@ -537,6 +540,24 @@ export class RuleBasedAi implements Controller {
         + Math.cos(estimatedBearing) * this.estimatedRange
         + Math.cos(target.heading) * targetSpeed * flightTime * this.leadScale
         - Math.sin(estimatedBearing) * this.directorWander,
+    };
+    const self = observation.self;
+    const equippedSpeed = getShipClass(self.shipClassId).maxSpeedKnots
+      * self.performance.maxSpeedMultiplier
+      * (self.developer?.enabled ? clamp(self.developer.speedMultiplier, .1, 6) : 1);
+    // Simulation moves the hull before evaluating the shot. Reserve one fixed
+    // movement step, then bound the complete noisy solution (including lead),
+    // rather than only its pre-lead distance. This changes no weapon range.
+    const movementMargin = shipSpeedMetersPerSecond(Math.max(Math.abs(self.speedKnots), equippedSpeed))
+      * FIXED_STEP + 1e-3;
+    const dx = point.x - self.position.x, dz = point.z - self.position.z;
+    const finalRange = Math.hypot(dx, dz);
+    const boundedRange = clamp(finalRange, GUN.minAimRange + movementMargin, maximumRangeMeters - movementMargin);
+    const scale = finalRange > 1e-6 ? boundedRange / finalRange : 0;
+    return {
+      x: self.position.x + (scale ? dx * scale : Math.sin(estimatedBearing) * boundedRange),
+      y: point.y,
+      z: self.position.z + (scale ? dz * scale : Math.cos(estimatedBearing) * boundedRange),
     };
   }
 
@@ -634,11 +655,14 @@ export class RuleBasedAi implements Controller {
       && observation.self.modules.torpedoTubes.health > 0
       && observation.time >= this.nextTorpedoAt,
     );
-    const launcherAligned = Math.abs(torpedoLauncherAlignmentError(observation.self))
-      <= TORPEDO.launcherFireToleranceRadians;
-    const launchTorpedoes = Boolean(
-      torpedoReady && torpedoSolution?.allowed && launcherAligned,
-    );
+    const preparingTorpedoes = Boolean(torpedoReady && torpedoSolution?.allowed);
+    const launcherRelative = Math.abs(wrapAngle(observation.self.torpedoLauncherHeading - observation.self.heading));
+    const launcherAligned = Boolean(torpedoSolution
+      && Math.abs(wrapAngle(torpedoSolution.bearing - observation.self.torpedoLauncherHeading))
+        <= TORPEDO.launcherFireToleranceRadians
+      && launcherRelative >= TORPEDO.minimumLaunchAngleRadians
+      && launcherRelative <= TORPEDO.maximumLaunchAngleRadians);
+    const launchTorpedoes = preparingTorpedoes && launcherAligned;
     if (launchTorpedoes) {
       this.nextTorpedoAt = observation.time + 120 + this.random() * 80;
     }
@@ -672,14 +696,16 @@ export class RuleBasedAi implements Controller {
       Math.min(engagementBand.preferredMeters * 0.65, mainBatteryRange * 0.55));
     const supportReposition = !damaged && objectiveOrder?.duty === "support"
       && (!localContact || objectiveDistance > supportRadius + 500);
-    const objectiveNavigating = tacticalObjectivePush || supportReposition;
-    const stationBearing = objectiveDistance > 1
-      ? objectiveBearing + Math.PI : observation.self.heading + Math.PI;
+    const supportPlan = supportReposition
+      ? this.supportNavigator.plan(observation.mapId, observation.self, objective, supportRadius, observation.time)
+      : undefined;
+    // A recovery result deliberately has no destination: leave shoreline escape
+    // to physical navigation rather than braking toward an unreachable station.
+    const objectiveNavigating = tacticalObjectivePush || Boolean(supportPlan?.point);
     const objectivePoint = tacticalObjectivePush
       ? { x: objective.center.x + (objectiveOrder?.stationIndex === 1 ? 1 : -1) * objective.radius * 0.3,
         z: objective.center.z }
-      : { x: objective.center.x + Math.sin(stationBearing) * supportRadius,
-        z: objective.center.z + Math.cos(stationBearing) * supportRadius };
+      : supportPlan?.point ?? observation.self.position;
     const stationDx = objectivePoint.x - observation.self.position.x;
     const stationDz = objectivePoint.z - observation.self.position.z;
     const stationDistance = Math.hypot(stationDx, stationDz);
@@ -803,11 +829,14 @@ export class RuleBasedAi implements Controller {
     const forwardSpeed = Math.max(0, observation.self.speedKnots);
     const stoppingDistance = shipSpeedMetersPerSecond(forwardSpeed) * forwardSpeed
       / Math.max(0.1, hull.brakingKnotsPerSecond * NAVIGATION_PACE.propulsionResponseScale) * 0.5;
-    const stationArrivalRadius = tacticalObjectivePush ? 95 : 220;
-    // Brake before the waypoint, then approach slowly. Ownership persists when
-    // unopposed, so a secured cap releases its capturer back to the support ring.
+    const stationArrivalRadius = tacticalObjectivePush ? 95 : supportPlan?.arrivalRadiusMeters ?? 220;
+    // Support stations must remain reachable from rest: a fixed braking buffer
+    // outside the arrival band would keep a stopped ship permanently idle.
+    // Preserve the existing capture approach while braking support ships using
+    // their current physical stopping distance.
+    const stationBrakingBuffer = tacticalObjectivePush ? 45 : 0;
     const objectiveThrottle = stationDistance <= stationArrivalRadius ? 0
-      : stationDistance <= stoppingDistance + stationArrivalRadius + 45 ? 0
+      : stationDistance <= stoppingDistance + stationArrivalRadius + stationBrakingBuffer ? 0
         : stationDistance < stationArrivalRadius + 190 ? 0.24
           : objectiveOrder?.urgent ? 1 : 0.88;
     let tacticalThrottle = evadingTorpedo ? 1
@@ -884,12 +913,12 @@ export class RuleBasedAi implements Controller {
       || concealmentRetreat
       || Boolean(this.coverPlan);
     const mainGunAim = target
-      ? this.estimatedAimPoint(observation, target, bearingToTarget, mainBattery.muzzleVelocity)
+      ? this.estimatedAimPoint(observation, target, bearingToTarget, mainBattery.muzzleVelocity, mainBatteryRange)
       : fallbackAim;
     const mainGunBearingAllowed = observation.self.mainBatteryMounts.some((mount) =>
       mainBatteryMountCanBear(observation.self, mount.mountIndex, mainGunAim)
     );
-    const fireIntent = launchTorpedoes || (
+    const fireIntent = preparingTorpedoes ? launchTorpedoes : (
       !suppressMainGun
         && perception.mode === "tracking"
         && observation.time <= this.fireWindowUntil
@@ -907,10 +936,12 @@ export class RuleBasedAi implements Controller {
     return {
       throttle: damaged ? Math.min(tacticalThrottle, 0.52) : tacticalThrottle,
       rudder: clamp(headingError * 1.25, -0.82, 0.82),
-      aimPoint: torpedoReady && torpedoAim
+      // A preparing launcher owns the shared aim point, but cannot fire until
+      // aligned. A selected main gun always uses its own bounded gun solution.
+      aimPoint: preparingTorpedoes && torpedoAim
         ? torpedoAim
         : mainGunAim,
-      weaponSlot: launchTorpedoes ? "torpedo" : "mainGun",
+      weaponSlot: preparingTorpedoes ? "torpedo" : "mainGun",
       torpedoSpread,
       ammoType: this.selectedAmmo,
       damageControlPriority: priority,

@@ -31,6 +31,34 @@ staging or download packages/source/logs without fresh explicit consent. See
 
 ## Latest working changes — 2026-10-10
 
+- AI torpedo preparation now selects the torpedo slot and waits for actual
+  launcher alignment. Main guns no longer receive torpedo intercept points.
+  Final noisy main-gun lead stays inside the equipped firing interval, including
+  one fixed movement step. Optical authority, noise and weapon stats are unchanged.
+- Supporting ships now choose reachable water stations with draft, approach and
+  full arrival-band clearance. Searches are bounded and cached for two seconds;
+  stale unsafe routes fall back to physical navigation. Distant ships cannot
+  claim an unreachable support station as completed.
+- Fixed a real Yamato stationary braking dead zone outside its support arrival
+  band. The regression requires actual arrival and five seconds safely stopped;
+  the existing full-battle movement threshold remains unchanged.
+- Added opt-in real saved-build coverage for starter Cleveland and upgraded
+  North Carolina. Research, purchase, equipment and save APIs are used without
+  injected resources; the player's default ship and normal factory are unchanged.
+- Eight full 5v5/7v7 configuration/side cases passed. Every ship fired; maximum
+  individual grounding was 0.05 s. Seven ended at twenty minutes, one at 19:03
+  on score. This limited matrix is not a general win-rate or pacing acceptance.
+- All 1,430 regular plus eight balance tests passed (five existing opt-in skips),
+  as did the production build and eleven actual-main browser checks. The
+  temporary server closed. Evidence: acceptance/ai-weapon-support-2026-10-10.md.
+- No new art, asset mutation, local download, Windows package or release tag.
+  The checkout remains 0.7.9; material-B stays isolated.
+- Next: capture routes around island barriers and hull maneuvering for stopped
+  ships with forward-only guns; then broader seeds/weather/aircraft calibration.
+  Real Surface/mobile FPS and physical two-PC LAN acceptance remain outstanding.
+
+## Previous checkpoint — 2026-10-10: steering handoff
+
 - Destroyed off-zone steering now releases an AI capture duty immediately, just
   like destroyed propulsion. Already-in-zone disabled ships still contribute;
   restored ships rejoin without preempting a valid held duty.

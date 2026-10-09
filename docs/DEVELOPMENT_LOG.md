@@ -1,3 +1,32 @@
+## 2026-10-10 — Weapon intent, navigable support and saved-build coverage
+
+AI main guns now use their own range-bounded noisy aim solution rather than a
+torpedo intercept. A preparing launcher selects the torpedo slot and waits for
+real alignment. The complete main-gun solution reserves the movement step before
+firing; weapon statistics and optical authority are unchanged. Nineteen of the
+twenty-one new weapon checks fail against the old controller; all now pass.
+
+Support stations now check static terrain, draft, route and the complete arrival
+band, using a bounded two-second planner. A failed intermediate full battle
+revealed a separate stationary braking dead zone: Yamato stopped 264.77 m from
+a reachable station outside its 220 m arrival band. Removing the fixed support
+braking allowance lets it reach the band and hold safely. Capture behavior and
+the original movement-test threshold were preserved.
+
+Real saved Cleveland and North Carolina magazine-refit fixtures exercise normal
+profile, research, purchase, equipment and save APIs without free resources.
+Eight final full battles across configurations and spawn sides passed; every
+ship fired, and the longest grounding episode was 0.05 s. Seven reached twenty
+minutes; one ended on score at 19:03. Outcomes do not establish general balance.
+
+All 1,438 regular/slow tests passed with five existing opt-in skips; production
+build and eleven actual-main browser checks passed with zero page errors.
+The temporary test server closed. Details and remaining capture-routing and
+forward-gun maneuvering limits: acceptance/ai-weapon-support-2026-10-10.md.
+
+No art/asset change, local download, Windows package, version bump or release
+tag. All development and evidence remain on GPU-821560.
+
 ## 2026-10-10 — Steering failure handoff and spawn calibration
 
 An off-zone AI with destroyed steering now releases its capture reservation

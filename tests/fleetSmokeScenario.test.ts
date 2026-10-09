@@ -2,11 +2,14 @@ import { describe, expect, it } from "vitest";
 import { battleMapDefinition, shipDraftMeters, terrainNavigationAt } from "../src/maps/atollMap";
 import { battleLoadoutFromSlots, createDefaultLocalProfile } from "../src/profile/localProfile";
 import { getShipClass } from "../src/ships/classes";
-import { BATTLE_SPAWN } from "../src/sim/config";
-import { createInitialState, observe } from "../src/sim/simulation";
+import { effectiveMainBattery } from "../src/ships/mainBatteries";
+import { savedBuildReadiness } from "../src/profile/savedBuilds";
+import { BATTLE_SPAWN, FIXED_STEP } from "../src/sim/config";
+import { createInitialState, observe, stepSimulation } from "../src/sim/simulation";
 import type { ShipState } from "../src/sim/types";
 import {
   applyFleetSmokeSpawnSide, createFleetSmokeBattle, FLEET_SMOKE_SIDE_SWAP, prototypeSpawnSide,
+  fleetSmokePlayerBuildReport, prepareFleetSmokeBuild, prototypePlayerBuild, PROTOTYPE_PLAYER_BUILDS,
 } from "./helpers/fleetSmokeScenario";
 
 const cases = [{ teamSize: 5, seed: 0x71501 }, { teamSize: 7, seed: 0x71701 }] as const;
@@ -46,6 +49,7 @@ describe("full-fleet smoke spawn sides", () => {
       const legacy = originalBattle(teamSize, seed);
       expect(createFleetSmokeBattle(teamSize, seed)).toEqual(legacy);
       expect(createFleetSmokeBattle(teamSize, seed, "default")).toEqual(legacy);
+      expect(createFleetSmokeBattle(teamSize, seed, "default", "default-fletcher")).toEqual(legacy);
       expect(applyFleetSmokeSpawnSide(legacy, "default")).toBe(legacy);
     });
 
@@ -140,4 +144,142 @@ describe("full-fleet smoke spawn sides", () => {
     expect(() => applyFleetSmokeSpawnSide(observed, "mirrored")).toThrow(/fresh, unobserved/);
     expect(observed).toEqual(observedCopy);
   });
+});
+
+describe("full-fleet smoke saved player builds", () => {
+  it("accepts only explicit supported fixture names", () => {
+    expect(prototypePlayerBuild(undefined)).toBe("default-fletcher");
+    for (const fixture of PROTOTYPE_PLAYER_BUILDS) expect(prototypePlayerBuild(fixture)).toBe(fixture);
+    for (const invalid of ["", "fletcher", "cleveland", "north-carolina", "default-fletcher ", "DEFAULT-FLETCHER"]) {
+      expect(() => prototypePlayerBuild(invalid)).toThrow(/PROTOTYPE_PLAYER_BUILD/);
+    }
+  });
+
+  it("builds a sea-ready Cleveland starter through its actual saved profile without spending resources", () => {
+    const original = createDefaultLocalProfile();
+    const { profile, build, loadout } = prepareFleetSmokeBuild("cleveland-starter");
+    expect(profile.selectedBattleBuildId).toBe("smoke-cleveland-starter");
+    expect(build.id).toBe(profile.selectedBattleBuildId);
+    expect(build.shipClassId).toBe("cleveland");
+    expect(savedBuildReadiness(profile, build)).toEqual({ ready: true, missing: [], missingSlots: [] });
+    expect(build.slots).toEqual(profile.slotLoadoutsByShipClass.cleveland);
+    expect(profile.credits).toBe(original.credits);
+    expect(profile.researchPoints).toBe(original.researchPoints);
+    expect(profile.materials).toEqual(original.materials);
+    expect(profile.inventory).toEqual(original.inventory);
+    expect(loadout).toMatchObject({ shipClassId: "cleveland", hullId: "lightCruiser",
+      mainGunMounts: 4, torpedoLauncherMounts: 0, antiAirMounts: 2, depthChargeMounts: 0 });
+    expect(loadout.secondaryGunIds).toHaveLength(6);
+    expect(loadout.installedEquipment).toEqual(build.slots);
+  });
+
+  it("researches, buys, fits and saves one North Carolina magazine without granting resources", () => {
+    const original = createDefaultLocalProfile();
+    const { profile, build, loadout } = prepareFleetSmokeBuild("north-carolina-magazine-refit");
+    expect(profile.selectedBattleBuildId).toBe("smoke-north-carolina-magazine-refit");
+    expect(build.id).toBe(profile.selectedBattleBuildId);
+    expect(savedBuildReadiness(profile, build)).toEqual({ ready: true, missing: [], missingSlots: [] });
+    expect(profile.researchPoints).toBe(100);
+    expect(profile.credits).toBe(8_200);
+    expect(profile.materials).toEqual({ steel: 240, parts: 60 });
+    expect(profile.unlockedEquipment["magazine-purple"]).toBe(true);
+    expect(profile.inventory).toEqual({ ...original.inventory, "magazine-purple": 1 });
+    expect(build.slots.magazine).toEqual(["magazine-purple"]);
+    expect(profile.savedShipBuilds.find(({ id }) => id === "standard-north-carolina")!.slots.magazine)
+      .toEqual(["magazine-common"]);
+    expect(build.slots).toEqual(profile.slotLoadoutsByShipClass["north-carolina"]);
+    expect(loadout).toMatchObject({ shipClassId: "north-carolina", hullId: "battleship",
+      mainGunMounts: 3, torpedoLauncherMounts: 0, antiAirMounts: 2, depthChargeMounts: 0 });
+    expect(loadout.secondaryGunIds).toHaveLength(10);
+    expect(loadout.installedEquipment).toEqual(build.slots);
+    expect(loadout.reloadMultiplier).toBeCloseTo(1 - .06 * .72, 12);
+    expect(loadout.magazineRiskMultiplier).toBeCloseTo(1 + .06 * .24, 12);
+    expect(loadout.maxSpeedMultiplier).toBeCloseTo(1.03, 12);
+  });
+
+  it("applies the purchased magazine to real battle-state reload after firing, not just metadata", () => {
+    const state = createFleetSmokeBattle(5, 0x71501, "default", "north-carolina-magazine-refit");
+    const player = state.ships.find(({ id }) => id === "player")!;
+    expect(player.installedEquipment.magazine).toEqual(["magazine-purple"]);
+    const battery = effectiveMainBattery(player);
+    expect(battery.caliberMm).toBe(406);
+    expect(battery.mounts.map(({ barrelCount }) => barrelCount)).toEqual([3, 3, 3]);
+    stepSimulation(state, new Map([[player.id, {
+      throttle: 0, rudder: 0, fire: true,
+      aimPoint: { x: player.position.x + 2_000, y: 0, z: player.position.z },
+    }]]), FIXED_STEP);
+    expect(state.shots.filter(({ ownerId }) => ownerId === player.id)).toHaveLength(9);
+    const expectedReload = battery.reloadSeconds * (1 - .06 * .72);
+    expect(player.reloadRemaining).toBeCloseTo(expectedReload, 9);
+    for (const mount of player.mainBatteryMounts) expect(mount.reloadRemaining).toBeCloseTo(expectedReload, 9);
+    expect(expectedReload).toBeLessThan(battery.reloadSeconds * (1 - .03 * .72));
+  });
+
+  it("keeps old default report fields untouched and snapshots actual non-default equipment", () => {
+    const defaultState = createFleetSmokeBattle(5, 0x71501);
+    expect(fleetSmokePlayerBuildReport(defaultState, "default-fletcher")).toEqual({});
+    const state = createFleetSmokeBattle(5, 0x71501, "default", "north-carolina-magazine-refit");
+    const report = fleetSmokePlayerBuildReport(state, "north-carolina-magazine-refit");
+    expect(report.playerBuild).toBe("north-carolina-magazine-refit");
+    expect(report.playerBuildLoadout).toMatchObject({ shipClassId: "north-carolina",
+      hullId: "battleship", mainGunMounts: 3, secondaryMounts: 10,
+      installedEquipment: { magazine: ["magazine-purple"] },
+      performance: { reloadMultiplier: 1 - .06 * .72 } });
+    state.ships[0]!.installedEquipment.magazine[0] = "magazine-common";
+    state.ships[0]!.performance.reloadMultiplier = 1;
+    expect(report.playerBuildLoadout!.installedEquipment.magazine).toEqual(["magazine-purple"]);
+    expect(report.playerBuildLoadout!.performance.reloadMultiplier).toBeCloseTo(1 - .06 * .72, 12);
+  });
+
+  for (const fixture of ["cleveland-starter", "north-carolina-magazine-refit"] as const) {
+    for (const { teamSize, seed } of cases) {
+      it(`${fixture} ${teamSize}v${teamSize} retains fleet identities, equipment and spacing across both spawn sides`, () => {
+        const original = createFleetSmokeBattle(teamSize, seed, "default", fixture);
+        const mirrored = createFleetSmokeBattle(teamSize, seed, "mirrored", fixture);
+        expect(mirrored.randomSeed).toBe(original.randomSeed);
+        expect(mirrored.objective).toEqual(original.objective);
+        for (let index = 0; index < original.ships.length; ++index) {
+          const before = original.ships[index]!, after = mirrored.ships[index]!;
+          expect(nonPlacement(after)).toEqual(nonPlacement(before));
+          for (const field of ["position", "previousPosition", "aimPoint"] as const) {
+            expect(after[field]).toEqual({ x: 180 - before[field].x, y: before[field].y, z: 350 - before[field].z });
+          }
+          const oldHeadings = headings(before);
+          headings(after).forEach((value, angleIndex) => {
+            expect(Math.sin(value)).toBeCloseTo(-Math.sin(oldHeadings[angleIndex]!), 12);
+            expect(Math.cos(value)).toBeCloseTo(-Math.cos(oldHeadings[angleIndex]!), 12);
+          });
+          for (let other = index + 1; other < original.ships.length; ++other) {
+            expect(distance(after, mirrored.ships[other]!)).toBeCloseTo(distance(before, original.ships[other]!), 9);
+          }
+        }
+        for (const state of [original, mirrored]) {
+          const allied = state.ships.filter(({ team }) => team === "player");
+          const enemy = state.ships.filter(({ team }) => team === "enemy");
+          expect(allied).toHaveLength(teamSize);
+          expect(enemy).toHaveLength(teamSize);
+          expect(Math.min(...allied.flatMap((a) => enemy.map((b) => distance(a, b)))))
+            .toBeGreaterThanOrEqual(5_000);
+          for (const ship of state.ships) {
+            expect(ship.speedKnots).toBe(0);
+            expect(ship.throttle).toBe(0);
+            expect(ship.navigationZone).toBe("deep");
+            const dimensions = getShipClass(ship.shipClassId);
+            for (const along of [-.5, -.25, 0, .25, .5]) for (const across of [-.5, 0, .5]) {
+              const forward = along * dimensions.length, lateral = across * dimensions.beam;
+              const x = ship.position.x + Math.sin(ship.heading) * forward + Math.cos(ship.heading) * lateral;
+              const z = ship.position.z + Math.cos(ship.heading) * forward - Math.sin(ship.heading) * lateral;
+              expect([x, z, ship.position.y, ...headings(ship)].every(Number.isFinite)).toBe(true);
+              expect(terrainNavigationAt(state.mapId, x, z, shipDraftMeters(ship.shipClassId)).kind).toBe("deep");
+            }
+          }
+        }
+        applyFleetSmokeSpawnSide(mirrored, "mirrored");
+        for (let index = 0; index < original.ships.length; ++index) {
+          expect(mirrored.ships[index]!.position).toEqual(original.ships[index]!.position);
+          expect(nonPlacement(mirrored.ships[index]!)).toEqual(nonPlacement(original.ships[index]!));
+        }
+      });
+    }
+  }
 });
