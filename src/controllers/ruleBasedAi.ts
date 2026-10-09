@@ -11,12 +11,13 @@ import {
 } from "../sim/config";
 import { objectiveIsUrgent } from "./fleetObjectiveCoordinator";
 import { ObjectiveSupportNavigator } from "./objectiveSupportNavigation";
+import { ObjectiveCaptureNavigator } from "./objectiveCaptureNavigation";
 import { terrainSafeHeading } from "../maps/atollMap";
 import { AiNavigationRecovery } from "../sim/aiNavigation";
 import { planFleetCover, type FleetCoverPlan } from "../sim/fleetCover";
 import { getShipClass } from "../ships/classes";
 import { getTorpedo } from "../ships/torpedoes";
-import { effectiveMainBattery } from "../ships/mainBatteries";
+import { effectiveMainBattery, MAIN_BATTERY_TRAVERSE_LIMIT_RADIANS } from "../ships/mainBatteries";
 import {
   mainBatteryMountCanBear,
   torpedoInterceptPoint,
@@ -265,6 +266,8 @@ export class RuleBasedAi implements Controller {
   private nextTerrainPlanAt = 0;
   private readonly navigationRecovery = new AiNavigationRecovery();
   private readonly supportNavigator = new ObjectiveSupportNavigator();
+  private readonly captureNavigator = new ObjectiveCaptureNavigator();
+  private firingStation?: { targetId: string; heading: number };
   private coverPlan?: FleetCoverPlan;
   private nextCoverPlanAt = 0;
   private coverTargetId?: string;
@@ -702,20 +705,69 @@ export class RuleBasedAi implements Controller {
     // A recovery result deliberately has no destination: leave shoreline escape
     // to physical navigation rather than braking toward an unreachable station.
     const objectiveNavigating = tacticalObjectivePush || Boolean(supportPlan?.point);
+    const capturePlan = tacticalObjectivePush
+      ? this.captureNavigator.plan(observation.mapId, observation.self, objective,
+        objectiveOrder?.stationIndex ?? 0, observation.time)
+      : undefined;
+    const captureTransit = capturePlan?.mode === "waypoint";
+    const captureRecovering = capturePlan?.mode === "recovery";
+    // Do not substitute the blocked final destination when a cached route loses
+    // permission. Keep the duty, but let local terrain recovery choose an exit.
     const objectivePoint = tacticalObjectivePush
-      ? { x: objective.center.x + (objectiveOrder?.stationIndex === 1 ? 1 : -1) * objective.radius * 0.3,
-        z: objective.center.z }
+      ? capturePlan?.point ?? observation.self.position
       : supportPlan?.point ?? observation.self.position;
     const stationDx = objectivePoint.x - observation.self.position.x;
     const stationDz = objectivePoint.z - observation.self.position.z;
     const stationDistance = Math.hypot(stationDx, stationDz);
     const stationHeading = stationDistance < 1 ? observation.self.heading : Math.atan2(stationDx, stationDz);
-    let desiredHeading = objectiveNavigating
+    const trackedGunAim = target
+      ? this.estimatedAimPoint(observation, target, bearingToTarget, mainBattery.muzzleVelocity, mainBatteryRange)
+      : undefined;
+    const availableGunMounts = observation.self.mainBatteryMounts.filter(mount => mount.health > 0);
+    const gunAimBearing = trackedGunAim
+      ? Math.atan2(trackedGunAim.x - observation.self.position.x, trackedGunAim.z - observation.self.position.z)
+      : observation.self.heading;
+    const canBearAtHeading = (heading: number, margin = 0): boolean => availableGunMounts.some(mount =>
+      Math.abs(wrapAngle(gunAimBearing - heading - mount.restHeadingOffset))
+        <= MAIN_BATTERY_TRAVERSE_LIMIT_RADIANS - margin);
+    const mainGunBearingAllowed = Boolean(trackedGunAim && observation.self.mainBatteryMounts.some(mount =>
+      mainBatteryMountCanBear(observation.self, mount.mountIndex, trackedGunAim)));
+    // A stationary capper can otherwise leave every forward mount blocked by
+    // its own hull forever. Keep the maneuver local to a safely reached station,
+    // and retain its firing heading rather than turning back after opening the arc.
+    const safeStationInterior = objective.radius - Math.max(100, getShipClass(observation.self.shipClassId).length * .5);
+    const canAdjustFiringStation = tacticalObjectivePush && !captureRecovering && target && perception.mode === "tracking"
+      && !preparingTorpedoes && availableGunMounts.length > 0
+      && observation.self.modules.gun.health > 0
+      && observation.self.modules.engine.health > 0 && observation.self.modules.steering.health > 0
+      && range >= GUN.minAimRange && range <= mainBatteryRange
+      && objectiveDistance <= safeStationInterior
+      && (stationDistance <= 140 || this.firingStation?.targetId === target.id);
+    if (!canAdjustFiringStation) {
+      this.firingStation = undefined;
+    } else if (!mainGunBearingAllowed
+      && (this.firingStation?.targetId !== target.id || !canBearAtHeading(this.firingStation.heading, .05))) {
+      const safeArc = MAIN_BATTERY_TRAVERSE_LIMIT_RADIANS - 12 * Math.PI / 180;
+      const headings = availableGunMounts.flatMap(mount =>
+        [-safeArc, safeArc].map(offset => wrapAngle(gunAimBearing - mount.restHeadingOffset + offset)));
+      // Refine an ongoing turn around its chosen heading, not the current bow:
+      // noisy stern bearings must not alternate port/starboard every new sample.
+      const referenceHeading = this.firingStation?.targetId === target.id
+        ? this.firingStation.heading : observation.self.heading;
+      headings.sort((a, b) => Math.abs(wrapAngle(a - referenceHeading))
+        - Math.abs(wrapAngle(b - referenceHeading)));
+      this.firingStation = { targetId: target.id, heading: headings[0]! };
+      this.nextTerrainPlanAt = 0;
+    } else if (this.firingStation?.targetId !== target.id) {
+      this.firingStation = undefined;
+    }
+    const firingStationManeuver = Boolean(this.firingStation && !mainGunBearingAllowed);
+    let desiredHeading = this.firingStation?.heading ?? (objectiveNavigating
       ? stationHeading
       : searchingTarget
         ? bearingToTarget + (range < 350 ? Math.PI / 2 : 0)
         : !target ? objectiveBearing + this.manoeuvreOffset * 0.16
-          : bearingToTarget + this.manoeuvreOffset;
+          : bearingToTarget + this.manoeuvreOffset);
     if (!objectiveNavigating && torpedoReady && target && !torpedoSolution?.allowed) {
       const portBroadside = bearingToTarget + Math.PI / 2;
       const starboardBroadside = bearingToTarget - Math.PI / 2;
@@ -825,22 +877,34 @@ export class RuleBasedAi implements Controller {
     const navigation = this.navigationRecovery.command(observation.mapId, observation.self, desiredHeading, observation.time);
     desiredHeading = navigation.desiredHeading;
     const headingError = wrapAngle(desiredHeading - observation.self.heading);
+    // Slow battleships need sustained helm until a blocked arc actually opens;
+    // proportional fine alignment alone decays before the useful firing angle.
+    const stationTurn = firingStationManeuver && !evadingTorpedo && !closeQuartersRetreat
+      && !collisionRisk && !navigation.recovering && Math.abs(headingError) > .05;
+    const rudder = stationTurn ? Math.sign(headingError) * .82 : clamp(headingError * 1.25, -.82, .82);
     const hull = getShipClass(observation.self.shipClassId);
     const forwardSpeed = Math.max(0, observation.self.speedKnots);
     const stoppingDistance = shipSpeedMetersPerSecond(forwardSpeed) * forwardSpeed
       / Math.max(0.1, hull.brakingKnotsPerSecond * NAVIGATION_PACE.propulsionResponseScale) * 0.5;
-    const stationArrivalRadius = tacticalObjectivePush ? 95 : supportPlan?.arrivalRadiusMeters ?? 220;
+    const stationArrivalRadius = tacticalObjectivePush
+      ? capturePlan?.arrivalRadiusMeters ?? 95 : supportPlan?.arrivalRadiusMeters ?? 220;
     // Support stations must remain reachable from rest: a fixed braking buffer
     // outside the arrival band would keep a stopped ship permanently idle.
     // Preserve the existing capture approach while braking support ships using
     // their current physical stopping distance.
     const stationBrakingBuffer = tacticalObjectivePush ? 45 : 0;
-    const objectiveThrottle = stationDistance <= stationArrivalRadius ? 0
+    // Intermediate island-route nodes are pass-through points, not parking
+    // stations. Slow for a corner; stop only at the actual capture destination.
+    const transitThrottle = Math.abs(headingError) > Math.PI / 3 ? .18
+      : stationDistance < 400 ? .36 : .72;
+    const objectiveThrottle = captureRecovering ? .12
+      : captureTransit ? transitThrottle : stationDistance <= stationArrivalRadius ? 0
       : stationDistance <= stoppingDistance + stationArrivalRadius + stationBrakingBuffer ? 0
         : stationDistance < stationArrivalRadius + 190 ? 0.24
           : objectiveOrder?.urgent ? 1 : 0.88;
     let tacticalThrottle = evadingTorpedo ? 1
       : closeQuartersRetreat ? 0.58
+      : this.firingStation ? (firingStationManeuver ? 0.1 : 0)
       : objectiveNavigating ? objectiveThrottle
       : searchingTarget ? (range > 500 ? 0.72 : 0.42)
       : target && range < engagementBand.preferredMeters ? 0.68
@@ -912,12 +976,7 @@ export class RuleBasedAi implements Controller {
       || observation.self.smokeDeploymentRemaining > 0
       || concealmentRetreat
       || Boolean(this.coverPlan);
-    const mainGunAim = target
-      ? this.estimatedAimPoint(observation, target, bearingToTarget, mainBattery.muzzleVelocity, mainBatteryRange)
-      : fallbackAim;
-    const mainGunBearingAllowed = observation.self.mainBatteryMounts.some((mount) =>
-      mainBatteryMountCanBear(observation.self, mount.mountIndex, mainGunAim)
-    );
+    const mainGunAim = trackedGunAim ?? fallbackAim;
     const fireIntent = preparingTorpedoes ? launchTorpedoes : (
       !suppressMainGun
         && perception.mode === "tracking"
@@ -935,7 +994,7 @@ export class RuleBasedAi implements Controller {
 
     return {
       throttle: damaged ? Math.min(tacticalThrottle, 0.52) : tacticalThrottle,
-      rudder: clamp(headingError * 1.25, -0.82, 0.82),
+      rudder,
       // A preparing launcher owns the shared aim point, but cannot fire until
       // aligned. A selected main gun always uses its own bounded gun solution.
       aimPoint: preparingTorpedoes && torpedoAim

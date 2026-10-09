@@ -1,3 +1,31 @@
+## 2026-10-10 — Capture routes and station firing maneuvers
+
+Capture ships use bounded, cached terrain routes with hull/draft clearance.
+Intermediate waypoints remain transit targets; invalid cached corridors hand
+control to cautious terrain recovery until the two-second replan deadline.
+Four real-motion island-barrier tests complete capture, and two more exercise
+corridor departure and recovery handoff.
+
+Near-coast reverse recovery now brakes, checks forward clearance and retains
+a safe exit heading before resuming travel. A test reconstructed from a rounded
+stall-log pose removes the old repeated reverse/forward loop. It is not a replay
+of the original full battle. Boundary and heavy-ship turn regressions also pass.
+
+Stationary cappers with forward-only guns can make a low-power turn to open a
+firing arc while staying inside the objective. Aim noise, gun statistics,
+perception and higher-priority safety rules are preserved. Richelieu tests
+produce real shots at about 157.38 seconds.
+
+All 1,491 regular/balance tests passed with five existing opt-in skips, plus
+production build and eleven actual-main browser checks. Eight full fleet cases
+passed runtime assertions; every ship fired and maximum grounding was 0.05 s.
+Enemy wins nevertheless changed from three to seven of eight. Symmetric-control,
+equivalent-loadout calibration is next; general balance is not certified.
+
+Evidence and limitations: acceptance/ai-capture-maneuver-2026-10-10.md.
+The temporary browser server closed. No art/assets, local downloads, Windows
+package, version bump or release tag. All work remains on GPU-821560.
+
 ## 2026-10-10 — Weapon intent, navigable support and saved-build coverage
 
 AI main guns now use their own range-bounded noisy aim solution rather than a

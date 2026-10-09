@@ -31,6 +31,34 @@ staging or download packages/source/logs without fresh explicit consent. See
 
 ## Latest working changes — 2026-10-10
 
+- Capture ships now route around island barriers with hull/draft clearance,
+  bounded graph caching and a hard two-second replan cadence. Unsafe cached
+  corridors hand off to cautious physical recovery, not an unchecked cap heading.
+- Reverse recovery brakes before forward travel and checks a hull-scaled exit
+  corridor. Slow steerage turns the bow clear; boundary recovery retains its
+  inward heading until safely clear. A reconstructed coast-stall test reaches
+  the objective without repeating the old reverse/forward loop.
+- Stopped capture ships with forward-only guns can turn within the safe capture
+  interior to engage a tracked stern target. Noisy aim remains; safety and damage
+  responses retain priority. Real Richelieu fixtures fire without leaving the zone.
+- 1,483 regular plus eight balance tests passed (five existing opt-in skips),
+  along with production build and eleven actual-main browser checks. The
+  temporary server closed. Fifty-three new regressions were added.
+- Eight full 5v5/7v7 cases passed runtime checks: every ship fired, both sides
+  dealt damage, and maximum individual grounding was 0.05 s. Seven ended at
+  twenty minutes; one ended by destruction at 18:33.85.
+- Enemy wins changed from three to seven of eight cases. This is not accepted
+  overall balance. The existing human-slot AI proxy lacks the other ships'
+  fleet coordination; equipment and seeds also limit the comparison.
+  Next: equivalent-loadout, symmetric-control fleet calibration, then broader
+  seed/weather/aircraft cases and separate human-player assessment.
+- Evidence: acceptance/ai-capture-maneuver-2026-10-10.md. No new art, asset
+  mutation, local download, Windows package or release tag. Package stays 0.7.9;
+  material-B stays isolated. Surface/mobile FPS and physical two-PC LAN
+  acceptance remain outstanding.
+
+## Previous checkpoint — 2026-10-10: weapon intent and support stations
+
 - AI torpedo preparation now selects the torpedo slot and waits for actual
   launcher alignment. Main guns no longer receive torpedo intercept points.
   Final noisy main-gun lead stays inside the equipped firing interval, including
