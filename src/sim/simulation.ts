@@ -3616,13 +3616,18 @@ function automatedAirMissionsFor(
   ship: Readonly<ShipState>,
 ): AirMissionCommand[] {
   if (ship.team !== "enemy") return [];
-  const surfaceTargetIds = observe(state, ship.id).contacts.map(({ id }) => id);
-  return state.airSquadrons
-    .filter((squadron) =>
-      squadron.controllerId === ship.id
+  const readySquadrons = state.airSquadrons.filter((squadron) =>
+    squadron.controllerId === ship.id
       && squadron.team === ship.team
       && squadron.phase === "ready"
-      && !squadron.order)
+      && !squadron.order);
+  if (readySquadrons.length === 0) return [];
+  // Sampling is stateful. An empty air fleet must not refresh only the enemy's
+  // optical cache during movement, ahead of the next common session sensor batch.
+  // Fighters defending their controller do not need a surface contact either.
+  const surfaceTargetIds = readySquadrons.some(squadron => squadron.role !== "fighter")
+    ? observe(state, ship.id).contacts.map(({ id }) => id) : [];
+  return readySquadrons
     .flatMap((squadron): AirMissionCommand[] => {
       if (squadron.role === "fighter") {
         return [{ squadronId: squadron.id, kind: "defendShip", targetIds: [ship.id] }];

@@ -1,3 +1,33 @@
+## 2026-10-10 — Symmetric fleet calibration and sensor timing
+
+A team-label crossover exposed a real enemy-only sensor side effect:
+automated aviation called observe before checking for ready squadrons, even
+with no aircraft. It refreshed optical samples during the movement step rather
+than the common pre-step session batch. Actual aiming points diverged after
+about seventy seconds when only team labels changed.
+
+The fix filters eligible squadrons before sampling and skips unnecessary
+surface queries for fighter guard orders. Ready strike aircraft keep their
+automatic sensed-target orders. Six focused checks fail against 122d8af;
+all eight pass after the fix. Detection, accuracy and damage constants are unchanged.
+
+Added a separate full-session surface benchmark with independent identical
+equipment/state pairs, opposite formations and no human-command proxy.
+Thirty-one fixture/hash checks verify equipment, safe starts, coordination,
+determinism and unrounded state evidence. The original prototype remains separate.
+
+Fourteen final full runs passed, including two label-reversed twenty-minute
+controls with matching exact normalized final-state hashes. Every ship fired;
+maximum grounding was 0.05 s. Enemy fleet B won nine of twelve primary cases.
+This is not general balance acceptance; identity/update-order crossovers and
+broader seeds are next, followed by weather, aviation and human difficulty.
+
+All 1,530 regular/balance tests, six original prototype checks, production
+build and eleven actual-main browser checks passed. The temporary service closed.
+Details: acceptance/ai-symmetric-calibration-2026-10-10.md.
+No art/assets, local downloads, Windows package, version bump or release tag.
+Development and evidence remain on GPU-821560.
+
 ## 2026-10-10 — Capture routes and station firing maneuvers
 
 Capture ships use bounded, cached terrain routes with hull/draft clearance.

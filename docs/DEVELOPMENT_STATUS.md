@@ -27,9 +27,36 @@ credentials, caches or generated builds in the repositories.
 The Windows workspace is a remote-control endpoint only. As of 2026-10-03, all
 development, builds, tests and artifacts stay on the server. Do not create local
 staging or download packages/source/logs without fresh explicit consent. See
-`../AGENTS.md`; this overrides the older automatic local-delivery workflow.
+`AGENTS.md`; this overrides the older automatic local-delivery workflow.
 
 ## Latest working changes — 2026-10-10
+
+- Removed enemy-only optical resampling from unused aviation updates. Empty/
+  unavailable squadrons and fighter guard orders no longer advance a surface
+  sensor cache unnecessarily; actual ready strike aircraft retain automatic
+  sensed-target orders. No detection ranges, damage or aiming noise changed.
+- Added a separate equal-equipment surface-fleet benchmark. Both fleets use
+  the complete production session AI path with no human proxy, neutral IDs,
+  independent cloned ship state and rigidly opposed formations. Equipment
+  manifests and exact final-state hashes make the comparison reproducible.
+- Fourteen full runs passed: twelve configuration/seed/spawn-side cases and
+  two label-reversal controls. Each control ran 72,000 steps; normalized
+  unrounded final states matched exactly. All ships fired; maximum grounding
+  was 0.05 s. Eleven primary cases reached twenty minutes; one ended at 1199.32 s.
+- Enemy-labelled fleet B won nine of twelve primary cases; the original
+  southern spawn won seven. This is not a 50% win-rate or human-difficulty
+  acceptance. Next: cross over fleet identities and update order across more
+  seeds, then weather/aviation and separate human-player calibration.
+- 1,522 regular plus eight balance tests passed (seven opt-in skips in the
+  regular invocation), plus all six original prototype smoke tests, production
+  build and eleven actual-main browser checks. The temporary server closed.
+  Exact old-source sensor regressions: six fail/two pass; fixed source: eight pass.
+- Evidence: acceptance/ai-symmetric-calibration-2026-10-10.md. No art/assets,
+  local downloads, Windows package, version bump or release tag. Package stays
+  0.7.9 and material-B remains isolated. Physical Surface/mobile FPS and two-PC
+  LAN acceptance remain outstanding.
+
+## Previous checkpoint — 2026-10-10: capture routes and firing stations
 
 - Capture ships now route around island barriers with hull/draft clearance,
   bounded graph caching and a hard two-second replan cadence. Unsafe cached
