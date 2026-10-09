@@ -1,6 +1,6 @@
 # Condensed Development Status
 
-Last updated: 2026-10-08
+Last updated: 2026-10-10
 
 This is the current operational handoff. Product decisions are preserved in
 `CONVERSATION_SUMMARY.md`; milestone history is preserved in `DEVELOPMENT_LOG.md`.
@@ -29,7 +29,29 @@ development, builds, tests and artifacts stay on the server. Do not create local
 staging or download packages/source/logs without fresh explicit consent. See
 `../AGENTS.md`; this overrides the older automatic local-delivery workflow.
 
-## Latest working changes — 2026-10-08
+## Latest working changes — 2026-10-10
+
+- Destroyed off-zone steering now releases an AI capture duty immediately, just
+  like destroyed propulsion. Already-in-zone disabled ships still contribute;
+  restored ships rejoin without preempting a valid held duty.
+- Both-team real-session regressions prove healthy ships take over on the next
+  simulation step and complete capture; the old coordinator fails both cases.
+- Opt-in test-only spawn-side rotation preserves identities, equipment, RNG and
+  formation spacing while keeping terrain fixed. Normal player spawns are unchanged.
+- Eight 5v5/7v7 cases across two seeds per size and two sides passed. All ships
+  fired, every side dealt damage, longest grounding was 0.05 s, and all ended
+  at twenty minutes. Reported simulation telemetry matches the previous
+  checkpoint in all eight paired cases; general win-rate balance is unproven.
+- 1,366 regular plus eight balance tests passed, with five existing opt-in skips.
+  Build and eleven actual-main browser checks passed; the temporary server closed.
+  Evidence: acceptance/fleet-calibration-2026-10-10.md.
+- No new art, asset mutation, local download, Windows package or release tag.
+  The checkout remains 0.7.9; material-B stays isolated.
+- Next: broaden hull/loadout and seed coverage, then assess late-game capture
+  and scoring changes from measured evidence. Surface/mobile FPS and physical
+  two-PC LAN acceptance remain outstanding.
+
+## Previous working changes — 2026-10-08
 
 - Production AI now receives delayed, expiring friendly sighting reports for search
   only. It still requires its own optical acquisition to fire. Both teams and

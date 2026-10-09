@@ -2,24 +2,21 @@ import { describe, expect, it } from "vitest";
 import { RuleBasedAi } from "../src/controllers/ruleBasedAi";
 import { OpticalSmokeMetrics } from "./helpers/opticalSmokeMetrics";
 import { ObjectiveSmokeMetrics, prototypeSeedOffset } from "./helpers/objectiveSmokeMetrics";
-import { battleLoadoutFromSlots, createDefaultLocalProfile } from "../src/profile/localProfile";
+import { createFleetSmokeBattle, FLEET_SMOKE_SIDE_SWAP, prototypeSpawnSide } from "./helpers/fleetSmokeScenario";
 import { LocalBattleSession } from "../src/session/localBattleSession";
 import { BATTLE_DURATION_SECONDS, BATTLE_SPAWN, FIXED_STEP } from "../src/sim/config";
-import { createInitialState, observe, stepSimulation } from "../src/sim/simulation";
+import { observe, stepSimulation } from "../src/sim/simulation";
 import type { BattleState, ControlCommand, ShipState, Team } from "../src/sim/types";
 
 const enabled = process.env.PROTOTYPE_BATTLE_SMOKE === "1";
 const seedOffset = prototypeSeedOffset(process.env.PROTOTYPE_SEED_OFFSET);
+const spawnSide = prototypeSpawnSide(process.env.PROTOTYPE_SPAWN_SIDE);
 const cases = [{ teamSize: 5, seed: 0x71501 + seedOffset }, { teamSize: 7, seed: 0x71701 + seedOffset }] as const;
 const teams = ["player", "enemy"] as const;
 const round = (value: number): number => Math.round(value * 100) / 100;
 
 function freshBattle(teamSize: 5 | 7, seed: number): BattleState {
-  const profile = createDefaultLocalProfile();
-  const build = profile.savedShipBuilds.find(({ id }) => id === profile.selectedBattleBuildId)!;
-  const loadout = battleLoadoutFromSlots(build.shipClassId, build.slots);
-  return createInitialState(seed, "battle", loadout.mainGunId, loadout, loadout.torpedoId,
-    loadout.shipClassId, { teamSize, weatherId: "clear" });
+  return createFleetSmokeBattle(teamSize, seed, spawnSide);
 }
 
 function initialChecks(state: BattleState, teamSize: 5 | 7): number {
@@ -183,7 +180,8 @@ describe.skipIf(!enabled)("prototype long-running fixed-step battle smoke", () =
     const allies = all.filter((metric) => metric.team === "player" && metric.id !== "player");
     const measuredObjective = objectiveMetrics.report();
     const report = {
-      kind: "representative-ai-battle", teamSize, seed, seedOffset, weather: state.weatherId,
+      kind: "representative-ai-battle", teamSize, seed, seedOffset, spawnSide,
+      spawnTransform: spawnSide === "mirrored" ? FLEET_SMOKE_SIDE_SWAP : null, weather: state.weatherId,
       defaultBuild: "default-fletcher", fixedStep: FIXED_STEP, minimumSeparationMeters,
       status: state.status, endReason: state.endReason, durationSeconds: round(state.time), steps,
       wallSeconds: round((performance.now() - start) / 1_000), firstDamageSeconds: firstDamageSeconds === undefined ? null : round(firstDamageSeconds),
@@ -245,7 +243,8 @@ describe.skipIf(!enabled)("prototype long-running fixed-step battle smoke", () =
     let steps = 0;
     const budget = Math.ceil(BATTLE_DURATION_SECONDS / FIXED_STEP) + 2;
     while (state.status === "running" && steps < budget) { session.step(commands, FIXED_STEP); ++steps; }
-    console.log(`PROTOTYPE_BATTLE_REPORT ${JSON.stringify({ kind: "full-clock-control", teamSize: 5, seed: 0x71fff,
+    console.log(`PROTOTYPE_BATTLE_REPORT ${JSON.stringify({ kind: "full-clock-control", teamSize: 5, seed: 0x71fff, spawnSide,
+      spawnTransform: spawnSide === "mirrored" ? FLEET_SMOKE_SIDE_SWAP : null,
       steps, durationSeconds: round(state.time), status: state.status, endReason: state.endReason,
       wallSeconds: round((performance.now() - start) / 1_000) })}`);
     expect(steps).toBe(72_000);

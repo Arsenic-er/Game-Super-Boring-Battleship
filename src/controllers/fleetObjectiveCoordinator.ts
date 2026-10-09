@@ -19,10 +19,11 @@ const distance = (observation: Readonly<Observation>): number => Math.hypot(
   observation.self.position.x - observation.objective.center.x,
   observation.self.position.z - observation.objective.center.z,
 );
-// A destroyed engine cannot bring an otherwise healthy hull into the zone.
+// Reaching the zone requires both propulsion and steering.
 // An immobile hull already inside remains a legitimate capture participant.
 const captureEligible = (observation: Readonly<Observation>): boolean => healthy(observation)
-  && (distance(observation) <= observation.objective.radius || observation.self.modules.engine.health > 0);
+  && (distance(observation) <= observation.objective.radius
+    || (observation.self.modules.engine.health > 0 && observation.self.modules.steering.health > 0));
 const safelyOwned = (observation: Readonly<Observation>): boolean =>
   observation.objective.owner === observation.self.team && !observation.objective.contested
   && observation.objective.capturingTeam !== otherTeam(observation.self.team);

@@ -170,27 +170,58 @@ describe("bounded friendly cap assignments", () => {
     }
   });
 
-  it("immediately reassigns an off-zone capper when its engine is destroyed", () => {
-    const coordinator = new FleetObjectiveCoordinator();
-    const a = observation("a", 900), b = observation("b", 1_200);
-    expect(caps(coordinator.update([a, b], 0))).toEqual(["a"]);
-    const disabled = { ...a, time: .1, self: { ...a.self, modules: { ...a.self.modules,
-      engine: { ...a.self.modules.engine, health: 0 },
-    } } };
-    const result = coordinator.update([disabled, { ...b, time: .1 }], .1);
-    expect(caps(result)).toEqual(["b"]);
-    expect(result.get("a")?.duty).toBe("support");
-    expect(caps(new FleetObjectiveCoordinator().update([disabled], .1))).toEqual([]);
-  });
+  for (const module of ["engine", "steering"] as const) {
+    it(`immediately reassigns an off-zone capper when its ${module} is destroyed`, () => {
+      const coordinator = new FleetObjectiveCoordinator();
+      const a = observation("a", 900), b = observation("b", 1_200);
+      expect(caps(coordinator.update([a, b], 0))).toEqual(["a"]);
+      const disabled = { ...a, time: .1, self: { ...a.self, modules: { ...a.self.modules,
+        [module]: { ...a.self.modules[module], health: 0 },
+      } } };
+      // Neither the one-second update cadence nor the twelve-second reservation delays handoff.
+      const result = coordinator.update([disabled, { ...b, time: .1 }], .1);
+      expect(caps(result)).toEqual(["b"]);
+      expect(result.get("a")?.duty).toBe("support");
+      expect(caps(new FleetObjectiveCoordinator().update([disabled], .1))).toEqual([]);
+    });
 
-  it("keeps healthy immobile ships eligible once already inside the capture zone", () => {
-    const a = observation("a", 200);
-    a.self = { ...a.self, modules: { ...a.self.modules, engine: { ...a.self.modules.engine, health: 0 } } };
-    const b = observation("b", 900);
-    const coordinator = new FleetObjectiveCoordinator();
-    expect(caps(coordinator.update([a, b], 0))).toEqual(["a"]);
-    const outside = { ...a, time: .1, self: { ...a.self, position: point(500) } };
-    expect(caps(coordinator.update([outside, { ...b, time: .1 }], .1))).toEqual(["b"]);
+    it(`keeps an in-zone ship with destroyed ${module} until it drifts outside`, () => {
+      const a = observation("a", 450);
+      a.self = { ...a.self, modules: { ...a.self.modules,
+        [module]: { ...a.self.modules[module], health: 0 },
+      } };
+      const b = observation("b", 900);
+      const coordinator = new FleetObjectiveCoordinator();
+      expect(caps(coordinator.update([a, b], 0))).toEqual(["a"]);
+      const outside = { ...a, time: .1, self: { ...a.self, position: point(450.01) } };
+      expect(caps(coordinator.update([outside, { ...b, time: .1 }], .1))).toEqual(["b"]);
+    });
+
+    it(`allows a repaired ${module} back into the capture pool without preempting a valid duty`, () => {
+      const a = observation("a", 900), b = observation("b", 1_200);
+      const disabled = { ...a, self: { ...a.self, modules: { ...a.self.modules,
+        [module]: { ...a.self.modules[module], health: 0 },
+      } } };
+      const coordinator = new FleetObjectiveCoordinator();
+      expect(caps(coordinator.update([disabled, b], 0))).toEqual(["b"]);
+      const repaired = { ...a, time: .1 };
+      expect(caps(coordinator.update([repaired, { ...b, time: .1 }], .1))).toEqual(["b"]);
+      expect(caps(coordinator.update(advance([repaired, b], 12), 12))).toEqual(["a"]);
+      // With no alternative capper, recovery becomes usable immediately.
+      const solo = new FleetObjectiveCoordinator();
+      expect(caps(solo.update([disabled], 0))).toEqual([]);
+      expect(caps(solo.update([repaired], .1))).toEqual(["a"]);
+    });
+  }
+
+  it("preserves team symmetry for disabled capture candidates", () => {
+    const a = observation("a", 900);
+    a.self = { ...a.self, modules: { ...a.self.modules,
+      steering: { ...a.self.modules.steering, health: 0 },
+    } };
+    const b = observation("b", 1_200);
+    expect(caps(new FleetObjectiveCoordinator().update([a, b], 0))).toEqual(["b"]);
+    expect(caps(new FleetObjectiveCoordinator().update([a, b].map(mirrored), 0))).toEqual(["b"]);
   });
 
   it("holds valid duties for twelve seconds and then reconsiders distance changes", () => {

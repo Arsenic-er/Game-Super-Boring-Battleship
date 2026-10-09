@@ -1,3 +1,22 @@
+## 2026-10-10 — Steering failure handoff and spawn calibration
+
+An off-zone AI with destroyed steering now releases its capture reservation
+immediately. In-zone disabled ships still count, and restored ships rejoin
+without stealing valid held duties. Both-team real-session tests reproduce
+the old failure and verify that a healthy replacement physically completes
+capture while the disabled ship cannot turn.
+
+Added an opt-in test-only 180-degree spawn-side swap that preserves team,
+equipment, RNG and internal formations without moving terrain. Eight paired
+5v5/7v7 cases passed with every ship firing, no sustained grounding and identical
+reported simulation telemetry before/after the steering fix. All reached the
+twenty-minute limit; broader balance and match-pacing acceptance remain open.
+
+All 1,374 regular/slow tests passed with five existing opt-in skips, plus
+production build and eleven actual-main browser checks with zero page errors.
+The temporary test server closed. Details: acceptance/fleet-calibration-2026-10-10.md.
+No art/assets, local downloads, Windows package, version bump or release tag.
+
 ## 2026-10-08 — Bounded fleet capture duties and late battle decisions
 
 Added public-information objective coordination to the local/host session.

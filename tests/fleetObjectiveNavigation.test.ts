@@ -289,6 +289,56 @@ describe("production cap assignment and movement", () => {
     expect(next.human.aiDecision?.objectiveDuty).toBeUndefined();
   });
 
+  for (const team of ["player", "enemy"] as const) {
+    it(`a ${team} fleet replaces a steering-disabled capper and captures through the real session`, () => {
+      const { state, self: healthy, target } = fixture(team);
+      healthy.position = { x: -state.objective.radius * .3, y: 0, z: -1400 };
+      healthy.previousPosition = { ...healthy.position };
+      const disabled = createDeveloperShipState({
+        id: "nearer-capper", team, shipClassId: "fletcher",
+        position: { x: 350, y: 0, z: -800 }, heading: Math.PI / 2, aiControlled: true,
+        torpedoLauncherMounts: 0, secondaryGunIds: [],
+      });
+      state.ships.push(disabled);
+      const session = new LocalBattleSession(state);
+      const advance = () => session.step(new Map([[target.id, idle(target)]]), FIXED_STEP);
+
+      advance();
+      expect(disabled.aiDecision?.objectiveDuty).toBe("capture");
+      expect(healthy.aiDecision?.objectiveDuty).toBe("support");
+      // Destroy the rudder after assignment; no navigation or outcome is forced.
+      disabled.modules.steering.health = 0;
+      const disabledHeading = disabled.heading;
+      const failedAt = state.time;
+      advance();
+      expect(state.time - failedAt).toBeLessThan(.1);
+      expect(disabled.aiDecision?.objectiveDuty).toBe("support");
+      expect(healthy.aiDecision?.objectiveDuty).toBe("capture");
+
+      let enteredAt: number | undefined, ownedAt: number | undefined;
+      let changedHeading = false, revivedSteering = false, disabledEntered = false;
+      for (let step = 0; step < 180 / FIXED_STEP; step++) {
+        advance();
+        changedHeading ||= Math.abs(disabled.heading - disabledHeading) > 1e-12;
+        revivedSteering ||= disabled.modules.steering.health !== 0;
+        disabledEntered ||= Math.hypot(disabled.position.x, disabled.position.z) <= state.objective.radius;
+        if (Math.hypot(healthy.position.x, healthy.position.z) <= state.objective.radius) {
+          enteredAt ??= state.time;
+        }
+        if (state.objective.owner === team) { ownedAt = state.time; break; }
+      }
+      expect(changedHeading).toBe(false);
+      expect(revivedSteering).toBe(false);
+      expect(disabledEntered).toBe(false);
+      expect(enteredAt).toBeDefined();
+      expect(ownedAt).toBeDefined();
+      expect(ownedAt! - failedAt).toBeLessThanOrEqual(180);
+      expect(ownedAt! - enteredAt!).toBeGreaterThanOrEqual(OBJECTIVE.captureSeconds - FIXED_STEP * 2);
+      expect(state.objective.owner).toBe(team);
+      expect(state.objective.captureProgress).toBe(team === "player" ? 1 : -1);
+    }, 15_000);
+  }
+
   it("travels from 500m outside, slows down and stays in the circle through capture before releasing to support", () => {
     const { state, self, target } = fixture();
     self.position = { x: -state.objective.radius * .3, y: 0, z: -950 };
