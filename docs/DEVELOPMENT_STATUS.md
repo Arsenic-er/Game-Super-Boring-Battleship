@@ -1,6 +1,6 @@
 # Condensed Development Status
 
-Last updated: 2026-10-10
+Last updated: 2026-10-13
 
 This is the current operational handoff. Product decisions are preserved in
 `CONVERSATION_SUMMARY.md`; milestone history is preserved in `DEVELOPMENT_LOG.md`.
@@ -29,7 +29,35 @@ development, builds, tests and artifacts stay on the server. Do not create local
 staging or download packages/source/logs without fresh explicit consent. See
 `AGENTS.md`; this overrides the older automatic local-delivery workflow.
 
-## Latest working changes — 2026-10-10
+## Latest working changes — 2026-10-13
+
+- Friendly formation now chooses the nearest living valid battleship rather
+  than the first observation. Exact ties use stable IDs. Collision-risk ties
+  prefer the earlier closest approach, then ID; tactical safety priorities,
+  weapon statistics and random streams are unchanged.
+- Added independent paired-identity and roster-order calibration controls.
+  Complete-state tests verify that IDs/order do not accidentally change
+  placement, teams, equipment or seeds. A/B remain the original spatial cohorts.
+- All 32 full clear-weather surface cases passed across two seeds per size,
+  5v5/7v7, both spawn sides, identity assignments and A/B update orders.
+  Every ship fired, maximum grounding was 0.05 s, and all ended at twenty minutes.
+  Two further label-reversal controls matched exact normalized final-state
+  hashes after 72,000 steps each.
+- Player/enemy-labelled fleets won 17/15, but northern/southern spawns won
+  23/9. These correlated variants do not establish general balance. Next:
+  broaden geographic-side route/objective calibration, then weather/aviation
+  and human difficulty. Shared simulation RNG and some physics ties remain
+  order-sensitive; nearest-anchor hysteresis is also not yet implemented.
+- 1,584 regular plus eight balance tests passed, with seven opt-in skips in
+  the regular invocation. Original prototype smoke six, production build,
+  and eleven actual-main browser checks passed. Temporary browser service closed.
+  The 28 friendly-order checks fail 14/pass 14 against 35d1952 and all pass now.
+- Evidence: acceptance/ai-fleet-crossovers-2026-10-13.md. No art/assets,
+  local downloads, Windows package, version bump or release tag. Package stays
+  0.7.9; material-B remains isolated. Physical Surface/mobile FPS and two-PC LAN
+  acceptance remain outstanding.
+
+## Previous checkpoint — 2026-10-10: symmetric calibration
 
 - Removed enemy-only optical resampling from unused aviation updates. Empty/
   unavailable squadrons and fighter guard orders no longer advance a surface

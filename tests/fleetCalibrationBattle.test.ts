@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { BATTLE_DURATION_SECONDS, FIXED_STEP } from "../src/sim/config";
-import { runFleetCalibration } from "./helpers/fleetCalibration";
+import { calibrationRosterOrder, runFleetCalibration } from "./helpers/fleetCalibration";
 import { prototypePlayerBuild, prototypeSpawnSide } from "./helpers/fleetSmokeScenario";
 import { prototypeSeedOffset } from "./helpers/objectiveSmokeMetrics";
 
@@ -13,12 +13,18 @@ if (rawLabelSwap !== undefined && rawLabelSwap !== "0" && rawLabelSwap !== "1") 
   throw new Error("FLEET_CALIBRATION_LABEL_SWAP must be 0 or 1");
 }
 const swapTeamLabels = rawLabelSwap === "1";
+const rawIdentitySwap = process.env.FLEET_CALIBRATION_IDENTITY_SWAP;
+if (rawIdentitySwap !== undefined && rawIdentitySwap !== "0" && rawIdentitySwap !== "1") {
+  throw new Error("FLEET_CALIBRATION_IDENTITY_SWAP must be 0 or 1");
+}
+const swapFleetIdentities = rawIdentitySwap === "1";
+const rosterOrder = calibrationRosterOrder(process.env.FLEET_CALIBRATION_ROSTER_ORDER);
 
 describe.skipIf(!enabled)("equal-loadout full-session fleet calibration", () => {
   for (const teamSize of [5, 7] as const) {
     it(`${teamSize}v${teamSize} uses equivalent ships and the production AI path for both fleets`, () => {
       const seed = (teamSize === 5 ? 0x71501 : 0x71701) + seedOffset;
-      const { state, session, report } = runFleetCalibration({ teamSize, seed, side, build, swapTeamLabels });
+      const { state, session, report } = runFleetCalibration({ teamSize, seed, side, build, swapTeamLabels, swapFleetIdentities, rosterOrder });
       console.log(`FLEET_CALIBRATION_REPORT ${JSON.stringify(report)}`);
       expect(state.status).not.toBe("running");
       expect(state.time).toBeLessThanOrEqual(BATTLE_DURATION_SECONDS);

@@ -65,6 +65,16 @@ export interface FriendlyCollisionRisk {
   avoidanceHeading: number;
 }
 
+/** Friendly telemetry can be stale or malformed; never steer toward an unusable record. */
+function validFriendlyNavigation(
+  selfId: string,
+  friendly: Readonly<FriendlyShipObservation>,
+): boolean {
+  return friendly.id !== selfId && friendly.hullRatio > 0
+    && [friendly.position.x, friendly.position.y, friendly.position.z,
+      friendly.heading, friendly.speedKnots, friendly.hullRatio].every(Number.isFinite);
+}
+
 /** Predicts close approaches without using enemy or hidden-state information. */
 export function friendlyCollisionRisk(
   self: Readonly<ShipState>,
@@ -76,6 +86,7 @@ export function friendlyCollisionRisk(
   const selfHull = getShipClass(self.shipClassId);
   let best: FriendlyCollisionRisk | undefined;
   for (const friendly of friendlies) {
+    if (!validFriendlyNavigation(self.id, friendly)) continue;
     const dx = friendly.position.x - self.position.x;
     const dz = friendly.position.z - self.position.z;
     const distance = Math.hypot(dx, dz);
@@ -103,7 +114,11 @@ export function friendlyCollisionRisk(
       timeToClosestApproach,
       avoidanceHeading: Math.atan2(awayX, awayZ),
     };
-    if (!best || risk.closestApproachMeters < best.closestApproachMeters) best = risk;
+    if (!best || risk.closestApproachMeters < best.closestApproachMeters
+      || (risk.closestApproachMeters === best.closestApproachMeters
+        && (risk.timeToClosestApproach < best.timeToClosestApproach
+          || (risk.timeToClosestApproach === best.timeToClosestApproach
+            && risk.friendlyId < best.friendlyId)))) best = risk;
   }
   return best;
 }
@@ -689,8 +704,21 @@ export class RuleBasedAi implements Controller {
     const role = fleetRoleForShip(observation.self);
     const engagementBand = fleetEngagementBandForRole(role);
     const friendlies = observation.friendlies ?? [];
-    const capitalAnchor = friendlies.find((friendly) =>
-      getShipClass(friendly.shipClassId).hullId === "battleship");
+    let capitalAnchor: Readonly<FriendlyShipObservation> | undefined;
+    let anchorDistance = Number.POSITIVE_INFINITY;
+    for (const friendly of friendlies) {
+      if (!validFriendlyNavigation(observation.self.id, friendly)
+        || getShipClass(friendly.shipClassId).hullId !== "battleship") continue;
+      const distance = Math.hypot(friendly.position.x - observation.self.position.x,
+        friendly.position.z - observation.self.position.z);
+      if (!Number.isFinite(distance)) continue;
+      // Stable navigation identity resolves exact ties, never array insertion order.
+      if (distance < anchorDistance
+        || (distance === anchorDistance && (!capitalAnchor || friendly.id < capitalAnchor.id))) {
+        capitalAnchor = friendly;
+        anchorDistance = distance;
+      }
+    }
     const hullRatio = observation.self.hull / observation.self.maxHull;
     const withdrawThreshold = role === "screen" ? 0.36 : role === "escort" ? 0.31 : 0.27;
     const damaged = hullRatio < withdrawThreshold;

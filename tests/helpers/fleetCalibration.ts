@@ -9,6 +9,15 @@ import {
 } from "./fleetSmokeScenario";
 import { ObjectiveSmokeMetrics } from "./objectiveSmokeMetrics";
 
+export const FLEET_CALIBRATION_ROSTER_ORDERS = ["a-then-b", "b-then-a", "interleaved"] as const;
+export type FleetCalibrationRosterOrder = typeof FLEET_CALIBRATION_ROSTER_ORDERS[number];
+
+export function calibrationRosterOrder(raw: string | undefined): FleetCalibrationRosterOrder {
+  if (raw === undefined) return "a-then-b";
+  if ((FLEET_CALIBRATION_ROSTER_ORDERS as readonly string[]).includes(raw)) return raw as FleetCalibrationRosterOrder;
+  throw new Error("FLEET_CALIBRATION_ROSTER_ORDER must be a-then-b, b-then-a or interleaved");
+}
+
 export interface FleetCalibrationOptions {
   teamSize: 5 | 7;
   seed: number;
@@ -16,6 +25,10 @@ export interface FleetCalibrationOptions {
   build?: PrototypePlayerBuild;
   /** Exchange team labels only: preserve identity, random streams, world poses and iteration order. */
   swapTeamLabels?: boolean;
+  /** Swap paired IDs only; includes ID-derived randomness and tie breaking, not world/team/order. */
+  swapFleetIdentities?: boolean;
+  /** Array order of original spatial cohorts; independent of IDs and team-label exchange. */
+  rosterOrder?: FleetCalibrationRosterOrder;
 }
 
 const otherTeam = (team: Team): Team => team === "player" ? "enemy" : "player";
@@ -56,7 +69,13 @@ export function createFleetCalibration(options: FleetCalibrationOptions): Battle
     oppositePose(opponent);
     return opponent;
   });
-  state.ships = [...a, ...b];
+  if (options.swapFleetIdentities) for (let index = 0; index < a.length; ++index) {
+    [a[index]!.id, b[index]!.id] = [b[index]!.id, a[index]!.id];
+  }
+  const order = calibrationRosterOrder(options.rosterOrder);
+  state.ships = order === "b-then-a" ? [...b, ...a]
+    : order === "interleaved" ? a.flatMap((ship, index) => [ship, b[index]!])
+      : [...a, ...b];
   applyFleetSmokeSpawnSide(state, options.side ?? "default");
   if (options.swapTeamLabels) for (const ship of state.ships) ship.team = otherTeam(ship.team);
   return state;
@@ -181,9 +200,10 @@ export function runFleetCalibration(options: FleetCalibrationOptions) {
   const report = {
     kind: "equal-loadout-production-session-ai", ...options,
     side: options.side ?? "default", build: options.build ?? "default-fletcher",
-    swapTeamLabels: options.swapTeamLabels ?? false, weather: state.weatherId,
+    swapTeamLabels: options.swapTeamLabels ?? false,
+    swapFleetIdentities: options.swapFleetIdentities ?? false, weather: state.weatherId,
     controllerPath: "LocalBattleSession.step(empty humanCommands)",
-    terrainTransformed: false, rosterOrder: "a-then-b", initialFleet,
+    terrainTransformed: false, rosterOrder: options.rosterOrder ?? "a-then-b", initialFleet,
     maximumAircraft, status: state.status, endReason: state.endReason,
     finalCanonicalStateSha256: fleetCalibrationStateHash(state, options.swapTeamLabels),
     durationSeconds: rounded(state.time), steps, wallSeconds: rounded((performance.now() - start) / 1000),

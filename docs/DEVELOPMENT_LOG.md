@@ -1,3 +1,34 @@
+## 2026-10-13 — Stable friendly navigation and fleet identity/order crossovers
+
+Screens and escorts now select the nearest valid living friendly battleship,
+with stable ID ties. Equal collision CPA prefers earlier arrival, then ID.
+The input is not mutated and existing safety/tactical priorities are preserved.
+Fourteen of the 28 new friendly-order tests fail against 35d1952; all pass now.
+An independent read-only review found no blocker; dynamic near-equal anchor
+switching remains a follow-up, not an untested hysteresis change.
+
+Added orthogonal ID-only and array-only controls to the equal-equipment
+benchmark. Thirty-four checks cover complete-state independence, combinations,
+defaults, non-aliasing and real short-session determinism. Shared firing RNG
+still redistributes scatter samples when simultaneous ships change array order;
+this observation alone does not prove average strength bias.
+
+All 32 final full surface cases passed. They cross two fresh seeds per size,
+5v5/7v7, spawn sides, ID assignments and update orders. Every ship fired, maximum
+grounding was 0.05 s, and all ended at twenty minutes. Two label-only controls
+retain identical normalized full-state hashes after 72,000 steps each.
+Player/enemy labels won 17/15, but north/south spawns won 23/9. These are
+correlated deterministic variants, not independent win-rate samples. Broader
+geographic-side route/objective analysis is next, followed by weather, aviation
+and separate human difficulty; overall balance and pacing remain open.
+
+All 1,592 regular/balance tests, six original prototype checks, production build
+and eleven actual-main browser checks passed. Seven opt-in cases were skipped
+in the regular invocation; temporary browser service closed. Reproduction,
+all primary outcomes and limitations: acceptance/ai-fleet-crossovers-2026-10-13.md.
+No art/assets, local download, Windows package, version bump or release tag.
+All code and evidence remain on GPU-821560.
+
 ## 2026-10-10 — Symmetric fleet calibration and sensor timing
 
 A team-label crossover exposed a real enemy-only sensor side effect:
