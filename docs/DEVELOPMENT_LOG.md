@@ -1,3 +1,42 @@
+## 2026-10-14 — Route-aware capture selection and sustained-progress handoff
+
+Capture candidates are ranked by their full verified route to available
+stations. The new distance API reuses the existing bounded capture planner and
+does not change its control output. Four-second coarse sampling retains at most
+64 observer entries; the sort comparator does not run navigation searches.
+
+An off-zone capture duty may pass to a reachable replacement after sixty seconds
+without sufficient progress. Renewal needs both real hull displacement and
+remaining-route reduction of 20 m. A longer route can rebase the comparison but
+not the grace clock. Replacement candidates must form a feasible station pair
+with retained ships; valid current stations are preserved. Finite retry priority
+prevents rapid take-back, while no-alternative recovery and legitimate in-zone
+disabled participants remain supported.
+
+Eighteen route-distance, twenty-three coordinator and four physical-session
+regressions pass. Against exact old coordinator source, nineteen of the
+twenty-three focused cases fail, as do all four physical-session cases. The
+physical tests exclude capture by the wrong ship, and the sustained-slow-motion
+case is explicitly a developer-speed fixture, not a production damage model.
+Independent review caught and verified fixes for route-growth false stalls
+and incompatible replacements. Original test thresholds were not loosened.
+
+All sixteen final 5v5/7v7 surface cases passed across four seed offsets and both
+spawn sides. Every ship fired; maximum continuous grounding was 0.05 seconds.
+All reached twenty minutes. Two label-only controls match exact normalized
+final states after 72,000 steps each. North won eleven of sixteen both before
+and after the change: correct handoff behavior is not proof of map balance.
+Weather/aviation calibration and further geographic analysis remain next.
+
+All 1,667 regular/balance tests passed, plus six original prototype checks,
+production build and eleven actual-main browser checks. Seven opt-in cases
+were skipped in the regular run; temporary preview closed. Reproduction and
+case results: acceptance/capture-route-progress-2026-10-14.md.
+
+No art/assets, local downloads, Windows delivery, main merge or release tag.
+Package stays 0.7.9. All code, generated evidence and build output remain on
+GPU-821560.
+
 ## 2026-10-14 — Multi-ridge visibility and safe astern recovery
 
 The geographic-side audit reproduced a one-way mountain visibility leak.

@@ -29,7 +29,38 @@ development, builds, tests and artifacts stay on the server. Do not create local
 staging or download packages/source/logs without fresh explicit consent. See
 `AGENTS.md`; this overrides the older automatic local-delivery workflow.
 
-## Latest working changes — 2026-10-14
+## Latest working changes — 2026-10-14: route-aware capture duties
+
+- Capture assignment now ranks verified full sailing routes, not just straight
+  distance. Two station-specific navigators per eligible observer are sampled
+  every four seconds, with at most 64 cached observers and no searches inside
+  sorting. The existing route planner and ship steering remain unchanged.
+- An off-zone duty with sixty seconds of insufficient progress can pass to a
+  reachable ally. Progress requires both 20 m of real hull displacement and
+  route reduction. Longer replans do not renew the clock; replaced ships receive
+  a finite sixty-second retry deprioritization. No-alternative recovery and
+  healthy in-zone disabled hulls retain their existing roles.
+- Two-ship station assignment respects reachability and preserves valid stations.
+  Replacement pairing cannot be undone by re-sorting. Twenty-three coordinator
+  tests pass versus nineteen failures on exact old coordinator source; eighteen
+  route-distance tests and four actual-session tests also pass. Real sessions
+  verify the selected reachable ship captures and a developer-limited slow
+  ship hands off without immediately taking the duty back.
+- Sixteen full surface cases passed across four seeds per size, 5v5/7v7 and both
+  spawn sides. All ships fired, maximum continuous grounding was 0.05 s, and all
+  ended at twenty minutes. Two label-reversal controls retain exact normalized
+  final-state hashes after 72,000 steps. North/south wins remain 11/5 across the
+  paired set before and after; map balance is not accepted as complete.
+- All 1,659 regular plus eight balance tests, six original prototype checks,
+  production build and eleven actual-main browser checks passed. Seven opt-in
+  cases remain skipped in the regular invocation. Temporary preview closed.
+- Next: broader weather/aviation calibration and continued geographic-side
+  analysis. Real Surface/mobile FPS and physical two-PC LAN acceptance remain
+  outstanding. Evidence: acceptance/capture-route-progress-2026-10-14.md.
+  No art/assets, local download, Windows package, version bump or release tag;
+  package stays 0.7.9 and material-B stays isolated.
+
+## Previous checkpoint — 2026-10-14: multi-ridge visibility and reverse recovery
 
 - Fixed a real one-way terrain visibility leak: concave-island rays now check
   later land intervals, not just the first low lobe. Navigation retains its

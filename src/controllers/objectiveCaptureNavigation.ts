@@ -73,6 +73,26 @@ export class ObjectiveCaptureNavigator {
   private cached?: RouteCache;
   reset(): void { this.cached = undefined; }
 
+  /**
+   * Distance along the same verified remaining polyline, not merely to its next
+   * waypoint. In-zone ships already contribute; unsafe/invalid routes have no
+   * available estimate. This reuses plan's two-second search cadence and checks.
+   */
+  remainingDistanceMeters(
+    mapId: BattleMapId, ship: CaptureNavigationShip, objective: CaptureNavigationObjective,
+    stationIndex: 0 | 1, time: number,
+  ): number {
+    const plan = this.plan(mapId, ship, objective, stationIndex, time);
+    if (plan.mode === "in-zone") return 0;
+    if (plan.mode === "recovery" || !this.cached?.points.length) return Infinity;
+    const route = this.cached;
+    let remaining = distance(ship.position, route.points[route.index]!);
+    for (let index = route.index + 1; index < route.points.length; ++index) {
+      remaining += distance(route.points[index - 1]!, route.points[index]!);
+    }
+    return Number.isFinite(remaining) ? remaining : Infinity;
+  }
+
   plan(
     mapId: BattleMapId, ship: CaptureNavigationShip, objective: CaptureNavigationObjective,
     stationIndex: 0 | 1, time: number,
