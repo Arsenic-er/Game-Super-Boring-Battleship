@@ -2,6 +2,7 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import { createDefaultLocalProfile } from "../src/profile/localProfile";
 import type { BattleshipLanApi, LanBridgeEvent, LanSendTarget } from "../src/net/lanBridge";
 import { LanMultiplayerRuntime } from "../src/net/lanMultiplayerRuntime";
+import type { HostStepOutput } from "../src/net/hostBattleSession";
 import { LAN_CONTENT_HASH, LAN_GAME_VERSION } from "../src/net/networkFingerprint";
 import {
   LAN_PROTOCOL_VERSION,
@@ -162,12 +163,13 @@ describe("LanMultiplayerRuntime structured guidance", () => {
   });
 });
 
-async function createPostMatchHostFixture(): Promise<{
+async function createPostMatchHostFixture(options: { publishTerminal?: boolean } = {}): Promise<{
   bridge: FakeLanBridge;
   runtime: LanMultiplayerRuntime;
   roomId: string;
   lobbyUpdates: ReturnType<typeof vi.fn>;
   lobbyReturned: ReturnType<typeof vi.fn>;
+  terminalOutput: HostStepOutput;
 }> {
   const profile = createDefaultLocalProfile();
   const build = profile.savedShipBuilds[0]!;
@@ -208,9 +210,11 @@ async function createPostMatchHostFixture(): Promise<{
   const output = runtime.hostSession!.step({
     throttle: 0, rudder: 0, aimPoint: { x: 0, y: 0, z: 1_000 }, fire: false,
   });
-  await runtime.publishHostStep(output);
-  expect((lobbyUpdates.mock.calls.at(-1)?.[0] as LobbySnapshotPayload).phase).toBe("post-match");
-  return { bridge, runtime, roomId, lobbyUpdates, lobbyReturned };
+  if (options.publishTerminal !== false) {
+    await runtime.publishHostStep(output);
+    expect((lobbyUpdates.mock.calls.at(-1)?.[0] as LobbySnapshotPayload).phase).toBe("post-match");
+  }
+  return { bridge, runtime, roomId, lobbyUpdates, lobbyReturned, terminalOutput: output };
 }
 
 describe("LanMultiplayerRuntime receive validation", () => {
@@ -1022,17 +1026,11 @@ describe("LanMultiplayerRuntime receive validation", () => {
   });
 
   it("does not resume a stale terminal publish after its session is cleared during snapshot send", async () => {
-    const { bridge, runtime, lobbyUpdates } = await createPostMatchHostFixture();
-    const session = runtime.hostSession!;
+    // Block the actual transition snapshot, not a replay from terminal step().
+    const { bridge, runtime, lobbyUpdates, terminalOutput: output } = await createPostMatchHostFixture({ publishTerminal: false });
     const guestPeerId = runtime.currentGuestPeerId()!;
-    let output = session.step({
-      throttle: 0, rudder: 0, aimPoint: { x: 0, y: 0, z: 1_000 }, fire: false,
-    });
-    for (let attempt = 0; output.snapshots.size === 0 && attempt < 6; attempt += 1) {
-      output = session.step({
-        throttle: 0, rudder: 0, aimPoint: { x: 0, y: 0, z: 1_000 }, fire: false,
-      });
-    }
+    expect(output.state.status).not.toBe("running");
+    expect((lobbyUpdates.mock.calls.at(-1)?.[0] as LobbySnapshotPayload).phase).toBe("in-match");
     expect(output.snapshots.has(guestPeerId)).toBe(true);
     const snapshotSend = deferred<void>();
     const sendCount = bridge.send.mock.calls.length;

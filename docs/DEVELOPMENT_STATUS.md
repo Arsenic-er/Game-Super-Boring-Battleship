@@ -29,7 +29,39 @@ development, builds, tests and artifacts stay on the server. Do not create local
 staging or download packages/source/logs without fresh explicit consent. See
 `AGENTS.md`; this overrides the older automatic local-delivery workflow.
 
-## Latest working changes — 2026-10-14: route-aware capture duties
+## Latest working changes — 2026-10-14: weather-aware fleet aviation
+
+- Aviation dispatch follows authoritative AI ownership for either team; human
+  takeover and explicit squadron orders take priority. Orders and target
+  validation sample the same pre-movement ship state. Dead or deleted
+  controllers no longer supply ship vision or cause unknown-ship crashes.
+- Air-to-surface, ship-to-air and air-to-air optics respect weather visibility.
+  Air contacts also respect terrain elevation while preserving friendly
+  navigation and the existing five-second historical-contact expiry.
+- Patrol/search direction uses a stable squadron ID seed, not team labels.
+  A full-session crossover exposed the old bias at 27.333 seconds, beyond the
+  original twenty-second regression; the retained session check now runs sixty.
+- Finished local and host sessions stop sensor/AI mutation, duplicate effects,
+  repeated network snapshots and tick advancement. The actual terminal frame
+  remains deliverable once; reset starts clean. The LAN asynchronous-publication
+  fixture now tests that real frame rather than depending on duplicate playback.
+- Eighteen full weather/aviation sessions pass: twelve geographic cases plus
+  six label-only controls. Each control matches the exact unrounded normalized
+  final state after 72,000 steps. Both teams launch and attack; maximum continuous
+  grounding is 0.05 s. All end at twenty minutes and north wins eight of the
+  twelve geographic cases, so map fairness and timeout-heavy pacing remain open.
+- All 1,733 regular plus eight balance tests, six prototype checks, build and
+  eleven actual-main browser checks pass. Thirteen opt-in cases are skipped in
+  the regular invocation. Temporary preview closed; the existing bundle warning
+  remains. Evidence: acceptance/weather-air-coordination-2026-10-14.md.
+- Next: aircraft command succession after controller loss, LAN aircraft
+  visibility and terrain-aware AA, then broader geographic/pacing calibration.
+  Runtime weather changes may wait one ship-sensor sample; fixed starting weather
+  is covered. Real Surface/mobile FPS and physical two-PC LAN remain outstanding.
+  No assets, local download, Windows delivery, main merge, tag or version bump.
+  Package stays 0.7.9 and material-B stays isolated.
+
+## Previous checkpoint — 2026-10-14: route-aware capture duties
 
 - Capture assignment now ranks verified full sailing routes, not just straight
   distance. Two station-specific navigators per eligible observer are sampled

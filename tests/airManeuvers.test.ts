@@ -14,6 +14,25 @@ const squadron = (role: AircraftRole = "diveBomber") => {
 };
 
 describe("mission-driven 3D flight", () => {
+  it.each([
+    ["fighter", "patrolling"], ["fighter", "searching"],
+    ["diveBomber", "patrolling"], ["diveBomber", "searching"],
+    ["torpedoBomber", "patrolling"], ["torpedoBomber", "searching"],
+  ] as const)("keeps %s %s guidance independent of team labels", (role, phase) => {
+    const s = squadron(role);
+    s.phase = phase;
+    s.position = { x: 0, y: 300, z: 700 };
+    s.heading = 0;
+    const target = { x: 0, y: 0, z: 0 };
+    const original = planAirManeuver(s, target, 40);
+    const relabeled = planAirManeuver({ ...s, team: "enemy" }, target, 40);
+    expect(relabeled).toEqual(original);
+    expect(Math.abs(original.destination.x)).toBeGreaterThan(1);
+    // Handedness is persistent per formation, not a clock-driven oscillation.
+    expect(planAirManeuver(s, target, 120)).toEqual(original);
+    expect(planAirManeuver({ ...s, team: "enemy" }, target, 120)).toEqual(original);
+  });
+
   it("uses a reachable tangent patrol without clock-driven waypoint motion", () => {
     const s = squadron("torpedoBomber"); s.phase = "patrolling"; s.position = { x: 0, y: 225, z: 0 };
     const a = planAirManeuver(s, { x: 0, y: 0, z: 0 }, 10);

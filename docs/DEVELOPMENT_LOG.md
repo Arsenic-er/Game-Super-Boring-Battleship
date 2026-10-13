@@ -1,3 +1,46 @@
+## 2026-10-14 — Weather-aware aviation and terminal-session protection
+
+AI-owned squadrons now dispatch for both fleets using authoritative session
+control. Human takeover suppresses automatic commands, explicit squadron
+orders win, and all aviation validation precedes ship movement. Weather affects
+all three optical aviation paths; ship-air and air-air contacts respect terrain.
+Aircraft still retain their own observations after losing a controller, but
+sunk/deleted ships cannot supply vision and missing IDs no longer crash tracking.
+
+Full-session label reversal found a second bias at 27.333 seconds: patrol and
+search direction depended on player/enemy labels. Stable squadron ID handedness
+replaces that rule without extra RNG draws. The actual-session symmetry test
+now covers sixty seconds; direct patrol/search tests cover three aircraft roles.
+
+Post-result local steps were still mutating sensors/AI and repeating frame
+events. Local and host guards preserve the final state, send the true terminal
+snapshot once and freeze subsequent network ticks/events. Reset resumes cleanly.
+The LAN stale-publication test now blocks the actual transition snapshot while
+retaining its disconnect/session-clear race assertions.
+
+Seventy-four new focused tests cover ownership, weather, paired resources,
+maneuver direction and terminal behavior. In isolated exact-old-source checks,
+43 of 65 initial cases fail, all six direction cases fail, and two of three
+host-terminal cases fail. Living-controller fighter/bomber tests complete two
+physical sorties rather than merely resetting phase fields.
+
+Twelve full 5v5/7v7 cases cover clear, rain and fog from both spawn sides; six
+more label-only reversals match exact final-state hashes after 72,000 steps.
+Both teams launch aircraft and release weapons, with a firing ship majority.
+Maximum continuous grounding is 0.05 seconds. All cases reach the twenty-minute
+limit and north wins eight of twelve geographic cases: map fairness and pacing
+remain unaccepted, not fixed by label symmetry.
+
+All 1,733 regular and eight balance tests pass, plus six original prototype
+checks, production build and eleven actual-main browser checks. Thirteen opt-in
+cases are skipped in the regular run; temporary preview closes. Reproduction,
+case table and limitations: acceptance/weather-air-coordination-2026-10-14.md.
+
+Next gaps are controller-loss aircraft succession, LAN aircraft visibility,
+terrain-aware AA and broader map/pacing samples. Asset repository unchanged;
+all development and evidence stay on GPU-821560. No local download, Windows
+delivery, main merge, tag or version change; package remains 0.7.9.
+
 ## 2026-10-14 — Route-aware capture selection and sustained-progress handoff
 
 Capture candidates are ranked by their full verified route to available

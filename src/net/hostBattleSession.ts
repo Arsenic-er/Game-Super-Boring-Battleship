@@ -288,6 +288,13 @@ export class HostBattleSession implements AuthoritativeBattleSession {
     dt = FIXED_STEP,
     options?: Readonly<BattleStepOptions>,
   ): HostStepOutput {
+    // Preserve the exact final snapshot and deliver its effects only once.
+    // A render frame can contain additional fixed steps after the result tick.
+    if (this.state.status !== "running") {
+      return { state: this.state, shots: [], impacts: [], airEvents: [],
+        destroyedShips: [], hullDamage: [], serverTick: this.serverTickValue,
+        snapshots: new Map() };
+    }
     const commands = hostCommandOrCommands instanceof Map
       ? this.commandsFromAuthoritativeMap(hostCommandOrCommands)
       : this.commandsForStep(hostCommandOrCommands as ControlCommand);

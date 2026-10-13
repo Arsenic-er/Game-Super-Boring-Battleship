@@ -43,6 +43,12 @@ export class LocalBattleSession implements AuthoritativeBattleSession {
     dt = FIXED_STEP,
     options?: Readonly<BattleStepOptions>,
   ): BattleStepOutput {
+    // The renderer may keep ticking after a result. Do not mutate observations,
+    // restart AI planning or deliver the previous frame's effects again.
+    if (this.currentState.status !== "running") {
+      return { state: this.currentState, shots: [], impacts: [], airEvents: [],
+        destroyedShips: [], hullDamage: [] };
+    }
     const commands = new Map(humanCommands);
     const includeDeveloperAi = options?.includeDeveloperAi ?? this.defaultIncludeDeveloperAi;
     const aiShips = this.currentState.ships.filter((ship) =>
@@ -83,7 +89,7 @@ export class LocalBattleSession implements AuthoritativeBattleSession {
         fleetObjective: objectiveAssignments?.get(aiShip.id),
       }));
     }
-    stepSimulation(this.currentState, commands, dt);
+    stepSimulation(this.currentState, commands, dt, { automatedAirControllerIds: activeAiIds });
     return {
       state: this.currentState,
       shots: [...this.currentState.shots],

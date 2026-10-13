@@ -1,4 +1,4 @@
-import { AIR_FLIGHT_PROFILE, airSquadronTargetAltitude } from "./airFlightModel";
+import { AIR_FLIGHT_PROFILE, airSquadronSeed, airSquadronTargetAltitude } from "./airFlightModel";
 import type { AirSquadronState, AirWeaponKind, Vec3 } from "./types";
 
 const clamp = (v: number, low: number, high: number) => Math.max(low, Math.min(high, v));
@@ -28,7 +28,9 @@ export function planAirManeuver(
     const turnRadius = speed ** 2 / (9.81 * Math.tan(AIR_FLIGHT_PROFILE[squadron.role].maximumBankRadians));
     const radius = Math.max(squadron.order?.area?.radius ?? 700, turnRadius * 1.35);
     const radial = range > 1 ? Math.atan2(squadron.position.x - target.x, squadron.position.z - target.z) : squadron.heading;
-    const direction = squadron.team === "player" ? 1 : -1;
+    // A formation keeps its turn handedness after a team-label swap. Team names
+    // must not steer aircraft onto different terrain, contacts or AA envelopes.
+    const direction = airSquadronSeed(squadron.id) < .5 ? 1 : -1;
     const lead = clamp(speed * 5 / radius, .24, .7) * direction;
     plan.destination = { x: target.x + Math.sin(radial + lead) * radius, y: cruise, z: target.z + Math.cos(radial + lead) * radius };
   } else if (squadron.phase === "intercepting" || (squadron.phase === "outbound" && squadron.order?.kind === "interceptSquadron")) {
