@@ -450,6 +450,13 @@ describe("network fingerprint", () => {
     expect(LAN_FINGERPRINT_SOURCE).toContain("\"simulationConfig\"");
     expect(LAN_FINGERPRINT_SOURCE).toContain("\"airOperationRules\"");
     expect(LAN_FINGERPRINT_SOURCE).toContain("\"airFlightProfile\"");
+    expect(LAN_FINGERPRINT_SOURCE).toContain("\"aviationContinuityRulesRevision\":1");
+  });
+
+  it("rejects pre-continuity content even without a package-version change", () => {
+    const previous = JSON.parse(LAN_FINGERPRINT_SOURCE);
+    delete previous.aviationContinuityRulesRevision;
+    expect(computeLanContentHash(previous)).not.toBe(LAN_CONTENT_HASH);
   });
 
   it("changes when a single client-reconstructed combat catalog field changes", () => {

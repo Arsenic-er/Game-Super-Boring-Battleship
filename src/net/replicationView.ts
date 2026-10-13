@@ -1,7 +1,8 @@
 import { isProjectileVisibleToPlayer } from "../sim/playerPerception";
-import { observe } from "../sim/simulation";
+import { AIR_CONTACT_VALID_SECONDS, observe } from "../sim/simulation";
 import type {
-  AirCombatEvent,
+  AirContactSnapshot,
+  AirSquadronState,
   BattleState,
   ImpactEvent,
   PlayerTargetView,
@@ -97,16 +98,26 @@ function visibleImpact(
   );
 }
 
-function visibleAirEvent(
-  event: Readonly<AirCombatEvent>,
-  viewer: Readonly<ShipState>,
-  friendlyIds: ReadonlySet<string>,
-  visibleEnemyIds: ReadonlySet<string>,
-): boolean {
-  return friendlyIds.has(event.controllerId)
-    || visibleEnemyIds.has(event.controllerId)
-    || Boolean(event.targetId && (friendlyIds.has(event.targetId) || visibleEnemyIds.has(event.targetId)))
-    || Boolean(event.position && distanceTo(event.position, viewer.position) <= VISUAL_EVENT_RANGE_METERS);
+function authorizedAirContact(squadron: Readonly<AirSquadronState>, team: ShipState["team"],
+  time: number): Readonly<AirContactSnapshot> | undefined {
+  const contact = squadron.contactsByTeam[team];
+  if (!contact || !Number.isFinite(time) || !Number.isFinite(contact.observedAt)
+    || contact.observedAt < 0 || contact.observedAt > time
+    || time - contact.observedAt > AIR_CONTACT_VALID_SECONDS
+    || !Number.isFinite(contact.confidence) || contact.confidence <= 0
+    || ![contact.lastKnownPosition.x, contact.lastKnownPosition.y, contact.lastKnownPosition.z,
+      contact.observedHeading, contact.estimatedAircraft].every(value => Number.isFinite(value))
+    || contact.estimatedAircraft! < 0
+    || !["fighter", "diveBomber", "torpedoBomber"].includes(contact.observedRole ?? "")) return undefined;
+  // Missing old-schema metadata must not fall back to hidden live aircraft state.
+  return contact;
+}
+
+function cloneAirFlight(squadron: Readonly<AirSquadronState>): Record<string, unknown> {
+  return squadron.flight ? { flight: {
+    speedMetersPerSecond: squadron.flight.speedMetersPerSecond,
+    pitch: squadron.flight.pitch, bank: squadron.flight.bank,
+  } } : {};
 }
 
 export function replicationViewFor(
@@ -166,28 +177,39 @@ export function replicationViewFor(
       age: projectile.age,
       detectionRange: projectile.detectionRange,
     }));
-  const aircraft = state.airSquadrons
-    .filter((squadron) =>
-      squadron.team === self.team
-      || distanceTo(squadron.position, self.position) <= VISUAL_EVENT_RANGE_METERS
-      || visibleEnemyIds.has(squadron.controllerId))
-    .map((squadron) => {
-      const sourceVisible = squadron.team === self.team || visibleEnemyIds.has(squadron.controllerId);
-      return {
-        ...(sourceVisible ? { id: squadron.id, controllerId: squadron.controllerId } : {}),
-        team: squadron.team,
-        role: squadron.role,
-        phase: squadron.phase,
-        position: cloneVec(squadron.position),
-        heading: squadron.heading,
-        ...(squadron.flight ? { flight: {
-          speedMetersPerSecond: squadron.flight.speedMetersPerSecond,
-          pitch: squadron.flight.pitch,
-          bank: squadron.flight.bank,
-        } } : {}),
-        aircraftOperational: squadron.aircraftOperational,
-      };
-    });
+  const friendlyAirIds = new Set(state.airSquadrons.filter(air => air.team === self.team).map(air => air.id));
+  const liveEnemyAirIds = new Set<string>();
+  // LAN is always viewer-scoped, including developer/sea-trials sessions.
+  // A visible controller or a nearby unobserved aircraft grants no optical authority.
+  const aircraft = state.airSquadrons.flatMap((squadron): Record<string, unknown>[] => {
+    if (squadron.team === self.team) return [{
+      id: squadron.id, controllerId: squadron.controllerId, team: squadron.team,
+      role: squadron.role, phase: squadron.phase, position: cloneVec(squadron.position),
+      heading: squadron.heading, ...cloneAirFlight(squadron), aircraftOperational: squadron.aircraftOperational,
+    }];
+    const contact = authorizedAirContact(squadron, self.team, state.time);
+    if (!contact) return [];
+    const live = state.time - contact.observedAt <= 1e-6;
+    if (live) liveEnemyAirIds.add(squadron.id);
+    // Up to five seconds of stale contact means a frozen observed marker, not
+    // five seconds of hidden live pose, count, role or flight telemetry.
+    return [{
+      id: squadron.id,
+      ...(visibleEnemyIds.has(squadron.controllerId) ? { controllerId: squadron.controllerId } : {}),
+      team: squadron.team, role: contact.observedRole,
+      contact: {
+        observedAt: contact.observedAt, confidence: contact.confidence,
+        lastKnownPosition: cloneVec(contact.lastKnownPosition),
+        observedRole: contact.observedRole, observedHeading: contact.observedHeading,
+        estimatedAircraft: contact.estimatedAircraft,
+      },
+      phase: live ? squadron.phase : "patrolling",
+      position: cloneVec(contact.lastKnownPosition), heading: contact.observedHeading,
+      ...(live ? cloneAirFlight(squadron) : {}),
+      aircraftOperational: contact.estimatedAircraft,
+    }];
+  });
+  const visibleTargetIds = new Set([...friendlyIds, ...friendlyAirIds, ...visibleEnemyIds, ...liveEnemyAirIds]);
   const events = [
     ...state.shots
       .filter((shot) => shot.team === self.team || visibleEnemyIds.has(shot.ownerId))
@@ -222,31 +244,32 @@ export function replicationViewFor(
         weaponSource: impact.weaponSource,
         airWeapon: impact.airWeapon,
       })),
-    ...state.airEvents
-      .filter((event) => visibleAirEvent(event, self, friendlyIds, visibleEnemyIds))
-      .flatMap((event) => {
-        const sourceVisible = friendlyIds.has(event.controllerId) || visibleEnemyIds.has(event.controllerId);
-        const targetVisible = Boolean(event.targetId && (friendlyIds.has(event.targetId) || visibleEnemyIds.has(event.targetId)));
-        const positionVisible = Boolean(event.position && distanceTo(event.position, self.position) <= VISUAL_EVENT_RANGE_METERS);
-        if (!sourceVisible && !targetVisible && !positionVisible) return [];
-        return [{
-          id: event.id,
-          time: event.time,
-          kind: event.kind,
-          team: event.team,
-          ...(sourceVisible ? { controllerId: event.controllerId, squadronId: event.squadronId } : {}),
-          ...(targetVisible && event.targetId ? { targetId: event.targetId } : {}),
-          ...(event.position && (sourceVisible || positionVisible || targetVisible)
-            ? { position: cloneVec(event.position) }
-            : {}),
-          orderKind: event.orderKind,
-          rejectReason: event.rejectReason,
-          weapon: event.weapon,
-          damage: event.damage,
-          aircraftLost: event.aircraftLost,
-          lossCause: event.lossCause,
-        }];
-      }),
+    ...state.airEvents.flatMap((event) => {
+      const friendlySource = event.team === self.team;
+      // Enemy commands are private even when their aircraft or controller is seen.
+      if (!friendlySource && (event.kind === "orderAccepted" || event.kind === "orderRejected")) return [];
+      const sourceVisible = friendlySource || liveEnemyAirIds.has(event.squadronId);
+      const targetVisible = Boolean(event.targetId && visibleTargetIds.has(event.targetId));
+      const impact = event.kind === "attackHit" || event.kind === "attackMiss";
+      if (!sourceVisible && !(impact && targetVisible)) return [];
+      // Release/loss/phase events locate their source; hit/miss events locate an
+      // impact. Being the target must never reveal an unseen attacker's position.
+      const positionVisible = impact
+        ? targetVisible || Boolean(event.position && distanceTo(event.position, self.position) <= VISUAL_EVENT_RANGE_METERS)
+        : sourceVisible;
+      return [{
+        id: event.id, time: event.time, kind: event.kind, team: event.team,
+        ...(sourceVisible ? { squadronId: event.squadronId } : {}),
+        ...(sourceVisible && (friendlySource || visibleEnemyIds.has(event.controllerId))
+          ? { controllerId: event.controllerId } : {}),
+        ...(targetVisible && event.targetId ? { targetId: event.targetId } : {}),
+        ...(event.position && positionVisible ? { position: cloneVec(event.position) } : {}),
+        ...(friendlySource ? { orderKind: event.orderKind, rejectReason: event.rejectReason } : {}),
+        weapon: event.weapon,
+        ...(friendlySource || targetVisible ? { damage: event.damage } : {}),
+        ...(sourceVisible ? { aircraftLost: event.aircraftLost, lossCause: event.lossCause } : {}),
+      }];
+    }),
   ];
 
   return {

@@ -23,12 +23,17 @@ function squadron(overrides: Partial<AirSquadronState> = {}): AirSquadronState {
 }
 
 function wireAircraft(overrides: Record<string, unknown> = {}): Record<string, unknown> {
-  return {
+  const wire: Record<string, unknown> = {
     id: "flight-a", controllerId: "player", team: "player", role: "fighter", phase: "patrolling",
     position: { x: 0, y: 300, z: 0 }, heading: 0, aircraftOperational: 6,
     flight: { speedMetersPerSecond: 100, pitch: 0.1, bank: 0.2 },
     ...overrides,
   };
+  if (wire.team === "enemy") wire.contact = {
+    observedAt: 0, confidence: 1, lastKnownPosition: { ...(wire.position as object) },
+    observedRole: wire.role, observedHeading: wire.heading, estimatedAircraft: wire.aircraftOperational,
+  };
+  return wire;
 }
 
 function snapshot(aircraft: Record<string, unknown>[], serverTick = 1, time = 0): PlayerSnapshotPayload {
@@ -79,7 +84,7 @@ describe("aircraft flight replication", () => {
     expect(replicationViewFor(state, "player", 1, 0).aircraft[0]).not.toHaveProperty("flight");
   });
 
-  it("keeps far hidden hostile flights absent and near hidden-controller flights anonymous", () => {
+  it("uses an observed flight identity while keeping its unseen controller private", () => {
     const state = createInitialState(478, "battle");
     const player = state.ships.find((ship) => ship.id === "player")!;
     const enemy = state.ships.find((ship) => ship.id === "enemy")!;
@@ -91,16 +96,20 @@ describe("aircraft flight replication", () => {
       squadron({ id: "secret-near-flight", controllerId: enemy.id, team: "enemy",
         position: { x: player.position.x + 600, y: 300, z: player.position.z + 100 } }),
     ];
+    const seen = state.airSquadrons[1]!;
+    seen.contactsByTeam.player = { observedAt: state.time, confidence: 1,
+      lastKnownPosition: { ...seen.position }, observedRole: seen.role,
+      observedHeading: seen.heading, estimatedAircraft: seen.aircraftOperational };
     const wire = replicationViewFor(state, "player", 1, 0);
     expect(wire.contacts).toHaveLength(0);
     expect(wire.aircraft).toHaveLength(1);
-    expect(wire.aircraft[0]).not.toHaveProperty("id");
+    expect(wire.aircraft[0]!.id).toBe("secret-near-flight");
     expect(wire.aircraft[0]).not.toHaveProperty("controllerId");
     expect(wire.aircraft[0]!.flight).toEqual(state.airSquadrons[1]!.flight);
-    expect(JSON.stringify(wire.aircraft)).not.toContain("secret-");
+    expect(JSON.stringify(wire.aircraft)).not.toContain("secret-far-flight");
   });
 
-  it("preserves flight and existing identity when the hostile controller is visible", () => {
+  it("preserves fresh observed flight and a separately visible controller identity", () => {
     const state = createInitialState(479, "battle");
     const player = state.ships.find((ship) => ship.id === "player")!;
     const enemy = state.ships.find((ship) => ship.id === "enemy")!;
@@ -108,6 +117,10 @@ describe("aircraft flight replication", () => {
     enemy.previousPosition = { ...enemy.position };
     state.time = 1;
     state.airSquadrons = [squadron({ id: "visible-flight", controllerId: enemy.id, team: "enemy" })];
+    const seen = state.airSquadrons[0]!;
+    seen.contactsByTeam.player = { observedAt: state.time, confidence: 1,
+      lastKnownPosition: { ...seen.position }, observedRole: seen.role,
+      observedHeading: seen.heading, estimatedAircraft: seen.aircraftOperational };
     const wire = replicationViewFor(state, "player", 1, 0);
     expect(wire.aircraft[0]).toMatchObject({
       id: "visible-flight", controllerId: enemy.id, flight: state.airSquadrons[0]!.flight,
@@ -147,7 +160,7 @@ describe("client aircraft motion", () => {
       .toEqual([["b", 110], ["new", 500], ["a", 10]]);
   });
 
-  it("does not treat anonymous array indices as stable hostile identities", () => {
+  it("rejects anonymous hostile aircraft rather than inventing targetable identities from indices", () => {
     const anonymous = { id: undefined, controllerId: undefined, team: "enemy" };
     const session = pair([
       wireAircraft({ ...anonymous, position: { x: 0, y: 300, z: 0 } }),
@@ -156,7 +169,7 @@ describe("client aircraft motion", () => {
       wireAircraft({ ...anonymous, position: { x: 920, y: 350, z: 0 } }),
       wireAircraft({ ...anonymous, position: { x: 20, y: 320, z: 0 } }),
     ]);
-    expect(session.renderState(220)!.state.airSquadrons.map(({ position }) => position.x)).toEqual([920, 20]);
+    expect(session.renderState(220)!.state.airSquadrons).toEqual([]);
   });
 
   it("does not cross-match an anonymous flight when its controller becomes visible", () => {

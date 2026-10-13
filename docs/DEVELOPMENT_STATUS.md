@@ -29,7 +29,38 @@ development, builds, tests and artifacts stay on the server. Do not create local
 staging or download packages/source/logs without fresh explicit consent. See
 `AGENTS.md`; this overrides the older automatic local-delivery workflow.
 
-## Latest working changes — 2026-10-14: weather-aware fleet aviation
+## Latest working changes — 2026-10-14: aircraft command and observation continuity
+
+- A missing, sunk or wrong-team controller yields its surviving aircraft as
+  a stable command group to the nearest eligible same-team AI. Human owners
+  are not displaced; existing tasks, resources and recovery sources remain.
+  Ready aircraft can dispatch immediately under the successor.
+- LAN enemy aircraft require recipient-team optical contacts. Stable aircraft
+  IDs and original contact timestamps now reach client presentation, map
+  selection and server-validated interception. Lost tracks retain observed
+  state for five seconds; no hidden live position or controller shortcut.
+  Enemy commands remain private and unseen impacts can remain anonymous.
+- Client hidden-controller aliases survive array reordering. Enemy interpolation
+  never extrapolates beyond the newest observed fix. LAN content fingerprint
+  changed, so participants need matching builds; package remains 0.7.9.
+- Mountains block continuous AA and flak. Open-sea damage, weapon ranges and
+  weather rules retain their previous values.
+- All 1,832 regular tests, eight balance tests, six prototype checks, eighteen
+  full aviation/weather sessions, build and eleven actual-main browser checks
+  pass. Twelve geographic cases include 57 squadron handoffs; six label-only
+  controls match exact unrounded normalized final state. Maximum continuous
+  grounding is 0.05 s. Temporary preview closed, bundle warning unchanged.
+  Evidence: acceptance/air-command-continuity-2026-10-14.md.
+- Next: geographic balance and timeout-heavy pacing; all full scenarios still
+  reach twenty minutes. Carrier-deck recovery safeguards await actual carrier
+  support; current production uses map-edge recovery. Runtime weather changes
+  may wait one surface sensor sample. Real Surface/mobile FPS and physical
+  two-PC LAN remain outstanding. Opposite-team DOM-map behavior is not accepted
+  by the recipient-team data-path tests.
+- No assets, local download, Windows delivery, main merge, tag or material-B
+  integration. Only concise development/acceptance records are retained in Git.
+
+## Previous checkpoint — 2026-10-14: weather-aware fleet aviation
 
 - Aviation dispatch follows authoritative AI ownership for either team; human
   takeover and explicit squadron orders take priority. Orders and target

@@ -544,8 +544,11 @@ describe("ClientBattleSession", () => {
         position: { x: 7, y: -1, z: 8 }, velocity: { x: 1, y: 0, z: 2 }, age: 1, detectionRange: 700,
       }],
       aircraft: [{
-        team: "enemy", role: "fighter", phase: "patrolling",
+        id: "observed-flight", team: "enemy", role: "fighter", phase: "patrolling",
         position: { x: 10, y: 80, z: 20 }, heading: 1.2, aircraftOperational: 4,
+        contact: { observedAt: 0, confidence: 1,
+          lastKnownPosition: { x: 10, y: 80, z: 20 },
+          observedRole: "fighter", observedHeading: 1.2, estimatedAircraft: 4 },
       }],
       events: [
         { id: 51, kind: "shot", team: "player", ownerId: "guest-ship", position: { x: 0, y: 3, z: 0 }, projectileKind: "shell", ammoType: "he", weaponSource: "aircraft", airWeapon: "heBomb" },

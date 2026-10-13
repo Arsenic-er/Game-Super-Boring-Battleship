@@ -193,6 +193,8 @@ export function runFleetCalibration(options: FleetCalibrationOptions) {
   const initialAirFleet = structuredClone(state.airSquadrons);
   const airMetrics = new Map(state.airSquadrons.map(squadron => [squadron.id, {
     id: squadron.id, controllerId: squadron.controllerId, team: squadron.team, role: squadron.role,
+    initialControllerId: squadron.controllerId,
+    controllerHistory: [{ time: state.time, controllerId: squadron.controllerId }],
     launches: 0, releases: 0, hits: 0, landings: 0, aircraftLost: 0,
     firstLaunchSeconds: null as number | null, firstReleaseSeconds: null as number | null,
     minimumAltitude: squadron.position.y, maximumAltitude: squadron.position.y,
@@ -220,6 +222,16 @@ export function runFleetCalibration(options: FleetCalibrationOptions) {
     const output = session.step(new Map(), FIXED_STEP);
     ++steps;
     objective.update(state);
+    // Aircraft damage is credited to its current command owner at impact.
+    // Keep the history explicit rather than assigning every sortie to a sunk ship.
+    for (const squadron of state.airSquadrons) {
+      const metric = airMetrics.get(squadron.id);
+      if (metric && metric.controllerId !== squadron.controllerId) {
+        metric.controllerId = squadron.controllerId;
+        metric.controllerHistory.push({ time: state.time, controllerId: squadron.controllerId });
+      }
+      airOwners.set(squadron.id, squadron.controllerId);
+    }
     maximumAircraft = Math.max(maximumAircraft, state.airSquadrons.length);
     maximumOperationalAircraft = Math.max(maximumOperationalAircraft,
       state.airSquadrons.reduce((total, squadron) => total + squadron.aircraftOperational, 0));

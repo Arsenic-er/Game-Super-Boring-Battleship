@@ -118,10 +118,7 @@ describe("replicationViewFor", () => {
       expect.not.objectContaining({ ownerId: enemy.id }),
       expect.not.objectContaining({ sourceId: enemy.id }),
     ]));
-    expect(view.aircraft).toEqual(expect.arrayContaining([
-      expect.not.objectContaining({ id: "enemy-squadron-hidden" }),
-      expect.not.objectContaining({ controllerId: enemy.id }),
-    ]));
+    expect(view.aircraft).toEqual([]);
     expect(serialized).not.toContain('"ownerId":"enemy"');
     expect(serialized).not.toContain('"sourceId":"enemy"');
     expect(serialized).not.toContain('"controllerId":"enemy"');
@@ -190,6 +187,10 @@ describe("replicationViewFor", () => {
       lastUpdatedAt: 0,
       attackRunReleased: false,
     }];
+    const seen = visible.airSquadrons[0]!;
+    seen.contactsByTeam.player = { observedAt: visible.time, confidence: 1,
+      lastKnownPosition: { ...seen.position }, observedRole: seen.role,
+      observedHeading: seen.heading, estimatedAircraft: seen.aircraftOperational };
     visible.airEvents = [{
       id: 913,
       time: visible.time,
@@ -285,9 +286,9 @@ describe("replicationViewFor", () => {
       id: 952,
       time: 3.25,
       kind: "weaponReleased",
-      team: "enemy",
-      controllerId: "hidden-air-controller",
-      squadronId: "hidden-air-squadron",
+      team: "player",
+      controllerId: player.id,
+      squadronId: "friendly-air-squadron",
       position: { x: player.position.x + 100, y: 90, z: player.position.z + 100 },
       weapon: "aerialTorpedo",
       lossCause: "flak",
@@ -321,14 +322,14 @@ describe("replicationViewFor", () => {
     expect(view.events).toEqual(expect.arrayContaining([
       expect.objectContaining({ id: 950, projectileKind: "depthCharge", weaponSource: "secondary", team: "player" }),
       expect.objectContaining({ id: 951, projectileKind: "depthCharge", weaponSource: "aircraft", airWeapon: "heBomb", ammoType: "he" }),
-      expect.objectContaining({ id: 952, time: 3.25, kind: "weaponReleased", team: "enemy", weapon: "aerialTorpedo", lossCause: "flak" }),
+      expect.objectContaining({ id: 952, time: 3.25, kind: "weaponReleased", team: "player", weapon: "aerialTorpedo", lossCause: "flak" }),
       expect.objectContaining({
         id: 953, time: 3.5, kind: "orderRejected", team: "player",
         orderKind: "strikeShip", rejectReason: "invalid-target",
       }),
     ]));
     const air = view.events.find(({ id }) => id === 952)!;
-    expect(air).not.toHaveProperty("controllerId");
-    expect(air).not.toHaveProperty("squadronId");
+    expect(air.controllerId).toBe(player.id);
+    expect(air.squadronId).toBe("friendly-air-squadron");
   });
 });

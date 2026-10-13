@@ -1,7 +1,8 @@
-import { createDeveloperShipState, createInitialState } from "../sim/simulation";
+import { AIR_CONTACT_VALID_SECONDS, createDeveloperShipState, createInitialState } from "../sim/simulation";
 import { battleLoadoutFromSlots, type BattleLoadout } from "../profile/localProfile";
 import type {
   AirCombatEvent,
+  AirContactSnapshot,
   AirFlightState,
   AirSquadronState,
   BattleState,
@@ -11,6 +12,7 @@ import type {
   ProjectileState,
   ShipState,
   ShotEvent,
+  Team,
   Vec3,
 } from "../sim/types";
 import { LAN_PROTOCOL_VERSION, validateRemoteCommand, type InputFrame, type LanBuildDescriptor, type LanPeerDisconnectedReason, type PlayerSnapshotPayload } from "./protocol";
@@ -348,27 +350,58 @@ function cloneReplicatedAirFlight(value: unknown): AirFlightState | undefined {
   };
 }
 
-function cloneReplicatedAircraft(source: Record<string, unknown>, index: number): AirSquadronState | undefined {
-  const position = asVec3(source.position);
-  const heading = asNumber(source.heading);
-  const operational = asNumber(source.aircraftOperational);
+function cloneReplicatedAirContact(value: unknown, snapshotTime: number): AirContactSnapshot | undefined {
+  if (!value || typeof value !== "object" || Array.isArray(value)) return undefined;
+  const source = value as Record<string, unknown>;
+  const position = asVec3(source.lastKnownPosition);
+  const observedAt = asNumber(source.observedAt);
+  const confidence = asNumber(source.confidence);
+  const heading = asNumber(source.observedHeading);
+  const count = asNumber(source.estimatedAircraft);
+  const role = source.observedRole;
+  if (!position || observedAt === undefined || observedAt < 0 || observedAt > snapshotTime
+    || snapshotTime - observedAt > AIR_CONTACT_VALID_SECONDS
+    || confidence === undefined || confidence <= 0 || heading === undefined
+    || count === undefined || count < 0
+    || (role !== "fighter" && role !== "diveBomber" && role !== "torpedoBomber")) return undefined;
+  return {
+    observedAt, confidence, lastKnownPosition: position,
+    observedRole: role, observedHeading: heading, estimatedAircraft: count,
+  };
+}
+
+function cloneReplicatedAircraft(
+  source: Record<string, unknown>, index: number, viewerTeam: Team, snapshotTime: number,
+): AirSquadronState | undefined {
   const team = source.team === "player" || source.team === "enemy" ? source.team : undefined;
+  if (!team) return undefined;
+  const hostile = team !== viewerTeam;
+  const id = asString(source.id);
+  const contact = hostile ? cloneReplicatedAirContact(source.contact, snapshotTime) : undefined;
+  // A hostile record needs a real server identity and authorized observation.
+  // Old schemas must not turn hidden live pose fields into fresh sensor data.
+  if (hostile && (!id || !contact)) return undefined;
+  const position = contact?.lastKnownPosition ?? asVec3(source.position);
+  const heading = contact?.observedHeading ?? asNumber(source.heading);
+  const operational = contact?.estimatedAircraft ?? asNumber(source.aircraftOperational);
   if (!position || heading === undefined || operational === undefined || !team) return undefined;
-  const flight = cloneReplicatedAirFlight(source.flight);
-  const role = source.role === "fighter" || source.role === "diveBomber" || source.role === "torpedoBomber"
-    ? source.role : "fighter";
-  const phase = source.phase === "ready" || source.phase === "launching" || source.phase === "outbound"
+  const fresh = !contact || snapshotTime - contact.observedAt <= 1e-6;
+  const flight = fresh ? cloneReplicatedAirFlight(source.flight) : undefined;
+  const role = contact?.observedRole
+    ?? (source.role === "fighter" || source.role === "diveBomber" || source.role === "torpedoBomber"
+      ? source.role : "fighter");
+  const phase = fresh && (source.phase === "ready" || source.phase === "launching" || source.phase === "outbound"
     || source.phase === "searching" || source.phase === "attackRun" || source.phase === "intercepting"
     || source.phase === "patrolling" || source.phase === "returning" || source.phase === "landing"
-    || source.phase === "rearming" || source.phase === "destroyed"
+    || source.phase === "rearming" || source.phase === "destroyed")
     ? source.phase : "patrolling";
   return {
-    id: asString(source.id) ?? `replicated-air-${index}`,
-    controllerId: asString(source.controllerId) ?? `replicated-hidden-air-${index}`,
+    id: id ?? `replicated-air-${index}`,
+    controllerId: asString(source.controllerId) ?? `replicated-hidden-air-${id ?? index}`,
     team,
     role,
     recoverySource: { kind: "mapEdge", position: { ...position } },
-    contactsByTeam: {},
+    contactsByTeam: contact ? { [viewerTeam]: contact } : {},
     phase,
     position: { ...position },
     previousPosition: { ...position },
@@ -389,17 +422,20 @@ function cloneReplicatedAircraft(source: Record<string, unknown>, index: number)
 }
 
 function interpolateAircraft(
-  previous: readonly Record<string, unknown>[],
-  next: readonly Record<string, unknown>[],
+  previous: PlayerSnapshotPayload,
+  next: PlayerSnapshotPayload,
   alpha: number,
 ): AirSquadronState[] {
-  const previousById = new Map(previous.flatMap((entry, index) => {
+  const viewerTeam: Team = next.self.team === "enemy" ? "enemy" : "player";
+  const previousViewerTeam: Team = previous.self.team === "enemy" ? "enemy" : "player";
+  const previousById = new Map(previous.aircraft.flatMap((entry, index) => {
     const id = asString(entry.id);
-    const squadron = id ? cloneReplicatedAircraft(entry, index) : undefined;
+    const squadron = id && viewerTeam === previousViewerTeam
+      ? cloneReplicatedAircraft(entry, index, previousViewerTeam, previous.time) : undefined;
     return id && squadron ? [[id, squadron] as const] : [];
   }));
-  return next.flatMap((entry, index) => {
-    const squadron = cloneReplicatedAircraft(entry, index);
+  return next.aircraft.flatMap((entry, index) => {
+    const squadron = cloneReplicatedAircraft(entry, index, viewerTeam, next.time);
     if (!squadron) return [];
     // Anonymous hostile entries have no stable identity. Never match their array
     // indices or expose a hidden source ID merely to smooth their motion.
@@ -407,19 +443,27 @@ function interpolateAircraft(
     const before = id ? previousById.get(id) : undefined;
     if (!before || before.team !== squadron.team || before.role !== squadron.role
       || before.controllerId !== squadron.controllerId) return [squadron];
-    const position = asVec3(lerpVec3(before.position, squadron.position, alpha))
+    // Interpolate authorized enemy fixes, but never extrapolate their hidden
+    // motion after the latest observation. Preserve the source observation age.
+    const motionAlpha = squadron.team === viewerTeam ? alpha : Math.max(0, Math.min(1, alpha));
+    const position = asVec3(lerpVec3(before.position, squadron.position, motionAlpha))
       ?? { ...squadron.position };
+    const heading = lerpAngle(before.heading, squadron.heading, motionAlpha);
+    const contact = squadron.contactsByTeam[viewerTeam];
     return [{
       ...squadron,
       position,
       previousPosition: { ...position },
-      heading: lerpAngle(before.heading, squadron.heading, alpha),
+      heading,
+      ...(contact ? { contactsByTeam: { [viewerTeam]: {
+        ...contact, lastKnownPosition: { ...position }, observedHeading: heading,
+      } } } : {}),
       ...(before.flight && squadron.flight ? { flight: {
         speedMetersPerSecond: clampAircraftSpeed(lerpNumber(
-          before.flight.speedMetersPerSecond, squadron.flight.speedMetersPerSecond, alpha,
+          before.flight.speedMetersPerSecond, squadron.flight.speedMetersPerSecond, motionAlpha,
         )),
-        pitch: clampAircraftPitch(lerpAngle(before.flight.pitch, squadron.flight.pitch, alpha)),
-        bank: lerpAngle(before.flight.bank, squadron.flight.bank, alpha),
+        pitch: clampAircraftPitch(lerpAngle(before.flight.pitch, squadron.flight.pitch, motionAlpha)),
+        bank: lerpAngle(before.flight.bank, squadron.flight.bank, motionAlpha),
       } } : {}),
     }];
   });
@@ -765,7 +809,7 @@ export class ClientBattleSession {
           return projectile ? [projectile] : [];
         }),
       ],
-      airSquadrons: interpolateAircraft(previous.aircraft, next.aircraft, alpha),
+      airSquadrons: interpolateAircraft(previous, next, alpha),
     };
   }
 

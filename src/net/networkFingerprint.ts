@@ -99,6 +99,8 @@ const fingerprintInput = {
     shipClassId,
     maximumRangeMeters: MAIN_BATTERY_MAXIMUM_RANGE_METERS[shipClassId],
   })),
+  // Aircraft identity and visibility now follow authoritative optical contacts.
+  aviationContinuityRulesRevision: 1,
   clientReconstructionSchemaRevision: 1,
   loadoutConversionSchemaRevision: 1,
   schemaRevision: 3,

@@ -62,6 +62,7 @@ import { effectiveTorpedoDetectionRange } from "./detection";
 import { buildAtollBattleScenario } from "./scenarios";
 import { isFleetSize, type BattleSetup } from "./battleSetup";
 import { normalizeWeatherId, weatherPreset } from "./weather";
+import { planAirCommandSuccession } from "./airCommandSuccession";
 import type { ShipDestroyedAttributionEvent, ShipHullDamageEvent } from "./types";
 import type {
   AmmoType,
@@ -3693,6 +3694,12 @@ function resolveShipAntiAir(state: BattleState, dt: number): void {
         ship.position.z - squadron.position.z,
       );
       if (distance > profile.rangeMeters) continue;
+      // Both direct AA fire and flak need a clear path above the terrain. Use
+      // deck height, not the elevated optical lookout, as the battery origin.
+      if (terrainBlocksLineOfSight(
+        state.mapId, ship.position, squadron.position,
+        getShipClass(ship.shipClassId).deckHeight, 0,
+      )) continue;
       continuousDps += profile.continuousDps;
       flakBurstsPerSecond += profile.flakBurstsPerSecond;
       flakDamageWeighted += profile.flakDamage * profile.flakBurstsPerSecond;
@@ -3975,6 +3982,16 @@ export function stepSimulation(
   state.impacts = [];
   state.airEvents = [];
   state.time += dt;
+  const automatedAirControllerIds = options?.automatedAirControllerIds
+    ?? new Set(state.ships.filter(ship => ship.hull > 0 && !ship.isTestTarget
+      && !commands.has(ship.id) && (ship.aiControlled || ship.id === "enemy"))
+      .map(ship => ship.id));
+  // Command succession is authoritative and precedes this frame's sensing and
+  // orders. Recovery sources and in-flight resources belong to the squadron.
+  for (const handoff of planAirCommandSuccession(state, automatedAirControllerIds)) {
+    const squadron = state.airSquadrons.find(candidate => candidate.id === handoff.squadronId);
+    if (squadron) squadron.controllerId = handoff.controllerId;
+  }
   refreshAirContacts(state);
   assignGuardInterceptions(state);
   state.airSquadrons = state.airSquadrons.map((squadron) => {
@@ -4012,9 +4029,7 @@ export function stepSimulation(
     const command = commands.get(ship.id);
     const explicit = command?.airMissions
       ?? (command?.airMission ? [command.airMission] : []);
-    const autonomous = !ship.isTestTarget && (options?.automatedAirControllerIds
-      ? options.automatedAirControllerIds.has(ship.id)
-      : !commands.has(ship.id) && (ship.aiControlled || ship.id === "enemy"));
+    const autonomous = !ship.isTestTarget && automatedAirControllerIds.has(ship.id);
     const missions = [
       ...explicit,
       ...(autonomous ? automatedAirMissionsFor(

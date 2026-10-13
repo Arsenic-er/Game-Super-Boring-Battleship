@@ -1,3 +1,34 @@
+## 2026-10-14 — Aircraft command succession and LAN observation continuity
+
+Surviving squadrons now transfer as a command group to the nearest eligible
+same-team AI when their controller sinks, disappears or changes team. Live
+human ownership is protected; tasks, fuel, weapons and map-edge recovery are
+preserved. Calibration reports record controller history and credit aircraft
+damage to the command owner at impact.
+
+LAN aircraft now follow authoritative optical contacts, not controller
+visibility or the old 1,200 m shortcut. Original observation timestamps and
+stable IDs reach client presentation and interception selection. Lost tracks
+retain only the observed state for up to five seconds. Enemy order messages
+and hidden launch positions are private; friendly impact effects can remain
+anonymous. Stable hidden-controller aliases preserve interpolation after
+array reorder, and the LAN fingerprint rejects incompatible old builds.
+
+Terrain blocks both continuous AA and flak from deck height to actual flight
+altitude. Weapon ranges, weather art, scoring and damage values are unchanged.
+
+Verification: 1,832 regular tests, eight balance tests, six prototype smokes,
+eighteen complete aviation/weather sessions, production build and eleven
+actual-main browser checks pass. Twelve geographic cases contain 57 squadron
+handoffs; six team-label controls match exact normalized final hashes.
+All complete battles still time out at twenty minutes, so pacing and map
+fairness remain open. Physical two-PC LAN and Surface/mobile FPS are not
+accepted by these server tests.
+
+See acceptance/air-command-continuity-2026-10-14.md for rules, regression
+counterexamples and evidence. Development and checks stayed on the server.
+No assets, local delivery, main merge, tag, version bump or material-B changes.
+
 ## 2026-10-14 — Weather-aware aviation and terminal-session protection
 
 AI-owned squadrons now dispatch for both fleets using authoritative session
