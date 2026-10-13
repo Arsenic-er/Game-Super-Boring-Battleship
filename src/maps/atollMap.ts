@@ -330,12 +330,19 @@ export function terrainNavigationAt(
   return { kind: "shallow", speedMultiplier, depthMeters, zone: shallow };
 }
 
-function segmentTerrainInterval(
+type SegmentTerrainInterval = { enter: number; exit: number };
+
+/**
+ * Yield each sampled coast interval: concave profiles can cross one ray more than once.
+ * At most 128 scan steps and 8 refinements per transition yield at most 65 intervals.
+ * Consumers stop early after their first valid contact; navigation requests only one interval.
+ */
+function* segmentTerrainIntervals(
   zone: Readonly<AtollTerrainZone>,
   from: Readonly<Vec3>,
   to: Readonly<Vec3>,
   paddingMeters = 0,
-): { enter: number; exit: number } | undefined {
+): Generator<SegmentTerrainInterval> {
   const dx = to.x - from.x;
   const dz = to.z - from.z;
   const lengthSquared = dx * dx + dz * dz;
@@ -347,7 +354,7 @@ function segmentTerrainInterval(
   const radialPadding = paddingMeters / Math.max(1, Math.min(zone.radiusX, zone.radiusZ));
   const reach = Math.max(zone.radiusX, zone.radiusZ)
     * (terrainDerived(zone).maximumRadial + radialPadding);
-  if ((closestX - zone.x) ** 2 + (closestZ - zone.z) ** 2 > reach ** 2) return undefined;
+  if ((closestX - zone.x) ** 2 + (closestZ - zone.z) ** 2 > reach ** 2) return;
   const length = Math.sqrt(lengthSquared);
   const sampleSpacing = Math.max(12, Math.min(zone.radiusX, zone.radiusZ) * .12);
   const steps = Math.max(8, Math.min(128, Math.ceil(length / sampleSpacing)));
@@ -375,12 +382,21 @@ function segmentTerrainInterval(
         const middle = (low + high) / 2;
         if (containsAt(middle)) low = middle; else high = middle;
       }
-      return { enter, exit: low };
+      yield { enter, exit: low };
+      enter = undefined;
     }
     previousFraction = fraction;
     previousInside = inside;
   }
-  return enter === undefined ? undefined : { enter, exit: 1 };
+  if (enter !== undefined) yield { enter, exit: 1 };
+}
+
+/** Navigation only needs the first shore contact; retain its early-exit cost. */
+function segmentTerrainInterval(
+  zone: Readonly<AtollTerrainZone>, from: Readonly<Vec3>, to: Readonly<Vec3>, paddingMeters = 0,
+): SegmentTerrainInterval | undefined {
+  const first = segmentTerrainIntervals(zone, from, to, paddingMeters).next();
+  return first.done ? undefined : first.value;
 }
 
 export function firstTerrainIntersection(
@@ -392,22 +408,26 @@ export function firstTerrainIntersection(
   let first: TerrainContact | undefined;
   for (const zone of battleMapDefinition(mapId).terrain) {
     if (!kinds.includes(zone.kind)) continue;
-    const interval = segmentTerrainInterval(zone, from, to);
-    if (!interval) continue;
-    const steps = 14;
-    for (let index = 0; index <= steps; index += 1) {
-      const fraction = interval.enter + (interval.exit - interval.enter) * index / steps;
-      if (first && fraction >= first.distanceFraction) break;
-      const point = {
-        x: from.x + (to.x - from.x) * fraction,
-        y: from.y + (to.y - from.y) * fraction,
-        z: from.z + (to.z - from.z) * fraction,
-      };
-      const heightMeters = zoneHeightAt(zone, point.x, point.z);
-      if (point.y <= heightMeters + 0.5) {
-        first = { zone, point, distanceFraction: fraction, heightMeters };
-        break;
+    for (const interval of segmentTerrainIntervals(zone, from, to)) {
+      if (first && interval.enter >= first.distanceFraction) break;
+      const steps = 14;
+      let hit = false;
+      for (let index = 0; index <= steps; index += 1) {
+        const fraction = interval.enter + (interval.exit - interval.enter) * index / steps;
+        if (first && fraction >= first.distanceFraction) break;
+        const point = {
+          x: from.x + (to.x - from.x) * fraction,
+          y: from.y + (to.y - from.y) * fraction,
+          z: from.z + (to.z - from.z) * fraction,
+        };
+        const heightMeters = zoneHeightAt(zone, point.x, point.z);
+        if (point.y <= heightMeters + 0.5) {
+          first = { zone, point, distanceFraction: fraction, heightMeters };
+          hit = true;
+          break;
+        }
       }
+      if (hit) break;
     }
   }
   return first;

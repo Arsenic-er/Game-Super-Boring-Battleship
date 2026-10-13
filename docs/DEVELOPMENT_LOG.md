@@ -1,3 +1,48 @@
+## 2026-10-14 — Multi-ridge visibility and safe astern recovery
+
+The geographic-side audit reproduced a one-way mountain visibility leak.
+The old intersection code stopped after the first connected land interval,
+missing a later high lobe of the same island. All intervals are now visited for
+height intersections; navigation keeps the first-shore early exit. Twelve
+geometry and eight actual-sensor regressions pass; four tests in each group
+fail against exact 9f968e5 terrain code. A bounded 4,079-ray check found no
+reciprocity mismatch, and 1,500 navigation queries preserve full old results.
+This is still sampled geometry, not an analytic proof over every ray.
+
+A fresh baseline 7v7 seed exposed 34.58 seconds of continuous Cleveland
+grounding while reversing into another shoal lobe. Recovery now checks the
+actual beam-scaled collision margin, bounded alternative reverse corridors
+and the current stern's braking clearance. Zero-power inertia is preserved;
+low-power braking distances no longer use an unsafe upward response floor.
+Ten regressions pass against eight failures on exact old navigation. Four
+short physical fixtures clear the recorded shoal contact without teleporting.
+One old enclosed-mountain support test now verifies genuine recovery delegation
+and safe zero throttle, not mandatory backing into land.
+
+All eight final 5v5/7v7 clear-weather surface cases passed across offsets
+211/503 and both spawn sides. Every ship fired, maximum continuous grounding
+was 0.05 seconds, and every battle ended at twenty minutes. The two label-only
+controls matched exact normalized full-state hashes after 72,000 steps each.
+Northern fleets still won five of eight, unchanged from the baseline; these
+paired deterministic cases do not establish general map balance.
+
+All 1,614 regular tests and eight separate balance tests passed, with seven
+opt-in skips in the regular invocation. Six original prototype smoke tests,
+production build and eleven actual-main browser checks passed. The temporary
+browser server closed. These checks do not substitute for real Surface/mobile
+FPS measurements or physical two-PC LAN acceptance.
+
+The audit also exposed a capture-selection limitation: straight-line ranking
+does not account for routed distance or sustained lack of progress. Route-aware
+assignment and handoff remain next; the frozen diagnostic does not establish
+a long real-session stall. Complete propulsion/steering failure and human
+takeover already release duties. Overall map fairness, broader weather/aircraft
+balance and human difficulty are not accepted as complete.
+
+Reproduction and limits: acceptance/terrain-visibility-recovery-2026-10-14.md.
+No art/assets, local download, Windows package, version bump or release tag.
+Package remains 0.7.9; all code, build output and evidence stay on GPU-821560.
+
 ## 2026-10-13 — Stable friendly navigation and fleet identity/order crossovers
 
 Screens and escorts now select the nearest valid living friendly battleship,

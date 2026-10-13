@@ -1,4 +1,4 @@
-import { battleMapDefinition, firstNavigationHazard, shipDraftMeters, terrainSafeHeading, type BattleMapId } from "../maps/atollMap";
+import { battleMapDefinition, canExitNavigationContact, firstNavigationHazard, shipDraftMeters, terrainNavigationAt, terrainSafeHeading, type BattleMapId } from "../maps/atollMap";
 import { getShipClass } from "../ships/classes";
 import { NAVIGATION_PACE, shipSpeedMetersPerSecond } from "./config";
 import type { ShipState, Vec3 } from "./types";
@@ -7,6 +7,37 @@ export interface AiNavigationCommand {
   desiredHeading: number;
   throttleLimit?: number;
   recovering: boolean;
+}
+
+/**
+ * Validate the actual hull margin, not just the planner's wider padding. A reverse
+ * may leave one lobe of a concave shoal and meet another before its 65 m retreat.
+ * Existing margin overlap permits only monotonically outward one-metre steps.
+ */
+function clearReverseCorridor(
+  mapId: BattleMapId, position: Readonly<Vec3>, heading: number, distance: number,
+  draft: number, padding: number,
+): boolean {
+  const extent = battleMapDefinition(mapId).halfExtentMeters;
+  const point = (meters: number): Vec3 => ({
+    x: position.x + Math.sin(heading) * meters, y: 0,
+    z: position.z + Math.cos(heading) * meters,
+  });
+  const end = point(distance);
+  if (Math.abs(end.x) > extent || Math.abs(end.z) > extent
+    || terrainNavigationAt(mapId, end.x, end.z, draft).kind === "grounded") return false;
+  let from = { ...position };
+  // A finite hull-margin escape may precede an otherwise clear corridor.
+  const escapeSteps = Math.ceil(padding * 4);
+  for (let step = 0; step <= escapeSteps; ++step) {
+    const hazard = firstNavigationHazard(mapId, from, end, draft, padding);
+    if (!hazard) return true;
+    if (hazard.distanceFraction > 0 || step >= escapeSteps || step >= distance) return false;
+    const next = point(Math.min(distance, step + 1));
+    if (!canExitNavigationContact(mapId, from, next, draft, padding)) return false;
+    from = next;
+  }
+  return false;
 }
 
 /** Controller-local state, never replicated: coarse planning with normal rudder/propulsion controls. */
@@ -46,8 +77,31 @@ export class AiNavigationRecovery {
         this.reorienting = true;
       } else {
         // The bow points opposite the safe astern travel direction. Steering remains physical.
-        const astern = terrainSafeHeading(mapId, ship.position, ship.heading + Math.PI, ship.shipClassId);
-        this.cached = { desiredHeading: astern + Math.PI, throttleLimit: -.25, recovering: true };
+        const preferredAstern = terrainSafeHeading(mapId, ship.position, ship.heading + Math.PI, ship.shipClassId);
+        const draft = shipDraftMeters(ship.shipClassId);
+        const contactPadding = hull.beam * .42;
+        const offsets = [0, 22.5, -22.5, 45, -45, 67.5, -67.5, 90, -90,
+          112.5, -112.5, 135, -135, 157.5, -157.5, 180];
+        const astern = offsets.map(degrees => preferredAstern + degrees * Math.PI / 180)
+          .find(heading => clearReverseCorridor(mapId, ship.position, heading, 100, draft, contactPadding));
+        const reverseSpeed = shipSpeedMetersPerSecond(Math.max(0, -ship.speedKnots));
+        const engineRatio = Math.max(0, Math.min(1,
+          ship.modules.engine.health / Math.max(1, ship.modules.engine.maxHealth)));
+        const reverseBraking = hull.accelerationKnotsPerSecond
+          * ship.performance.accelerationMultiplier * NAVIGATION_PACE.propulsionResponseScale
+          * (engineRatio <= 0 ? 0 : .2 + .8 * engineRatio);
+        // Match propulsion's zero-power case: stopping distance is not finite.
+        // A zero throttle request does not erase the simulation's existing inertia.
+        const brakingCorridor = reverseBraking > 0
+          ? Math.max(10, reverseSpeed * Math.max(0, -ship.speedKnots)
+            / reverseBraking * .5 + reverseSpeed * .5 + 2)
+          : Number.POSITIVE_INFINITY;
+        const canBack = reverseBraking > 0 && astern !== undefined && clearReverseCorridor(mapId, ship.position,
+          ship.heading + Math.PI, brakingCorridor, draft, contactPadding);
+        // Turn physically with zero throttle until the current stern direction
+        // has braking clearance; never continue astern into a blocked short step.
+        this.cached = { desiredHeading: (astern ?? preferredAstern) + Math.PI,
+          throttleLimit: canBack ? -.25 : 0, recovering: true };
         return this.cached;
       }
     }

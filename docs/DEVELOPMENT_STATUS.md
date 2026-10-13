@@ -1,6 +1,6 @@
 # Condensed Development Status
 
-Last updated: 2026-10-13
+Last updated: 2026-10-14
 
 This is the current operational handoff. Product decisions are preserved in
 `CONVERSATION_SUMMARY.md`; milestone history is preserved in `DEVELOPMENT_LOG.md`.
@@ -29,7 +29,40 @@ development, builds, tests and artifacts stay on the server. Do not create local
 staging or download packages/source/logs without fresh explicit consent. See
 `AGENTS.md`; this overrides the older automatic local-delivery workflow.
 
-## Latest working changes — 2026-10-13
+## Latest working changes — 2026-10-14
+
+- Fixed a real one-way terrain visibility leak: concave-island rays now check
+  later land intervals, not just the first low lobe. Navigation retains its
+  first-shore fast path; 1,500 fixed navigation queries match the old source.
+  Twelve geometry and eight real-sensor regressions pass, including reversed
+  teams/order and open-sea positive controls.
+- Reverse recovery validates actual hull-margin clearance through concave
+  shoals before backing up. It selects bounded alternative exit headings and
+  uses zero throttle when the current stern cannot clear its stopping path.
+  Destroyed engines do not imply instant braking; damaged engines use actual
+  braking response. Ten new recovery tests pass against eight old-source failures.
+- All eight final 5v5/7v7 clear-weather surface cases passed across offsets
+  211/503 and both spawn sides. Every ship fired, maximum continuous grounding
+  was 0.05 seconds, and every battle ended at twenty minutes. The two label-only
+  controls matched exact normalized full-state hashes after 72,000 steps each.
+  Northern fleets still won five of eight, unchanged from the baseline; these
+  paired deterministic cases do not establish general map balance.
+- All 1,614 regular tests and eight separate balance tests passed, with seven
+  opt-in skips in the regular invocation. Six original prototype smoke tests,
+  production build and eleven actual-main browser checks passed. The temporary
+  browser server closed. These checks do not substitute for real Surface/mobile
+  FPS measurements or physical two-PC LAN acceptance.
+- Geographic fairness remains open: the coordinator still uses straight-line
+  capture-candidate distance, not routed distance or sustained progress.
+  A nearer ship can retain a duty while recovering; frozen-state evidence is
+  not proof of prolonged real-session starvation. Next: route-aware assignment
+  and progress-based handoff, then weather/aviation and human difficulty.
+- Evidence: acceptance/terrain-visibility-recovery-2026-10-14.md. No terrain/art
+  asset changes, local downloads, Windows package, version bump or release tag.
+  Package remains 0.7.9; material-B stays isolated. Physical Surface/mobile FPS
+  and two-PC LAN acceptance remain outstanding.
+
+## Previous checkpoint — 2026-10-13: fleet identity/order crossovers
 
 - Friendly formation now chooses the nearest living valid battleship rather
   than the first observation. Exact ties use stable IDs. Collision-risk ties

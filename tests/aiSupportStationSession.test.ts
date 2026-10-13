@@ -6,6 +6,7 @@ import {
 } from "../src/maps/atollMap";
 import { getShipClass } from "../src/ships/classes";
 import { FIXED_STEP } from "../src/sim/config";
+import { AiNavigationRecovery } from "../src/sim/aiNavigation";
 import { createDeveloperShipState, createInitialState, observe, stepSimulation } from "../src/sim/simulation";
 import type { ControlCommand, FleetObjectiveAssignment, Vec3 } from "../src/sim/types";
 import { createFleetSmokeBattle } from "./helpers/fleetSmokeScenario";
@@ -120,18 +121,25 @@ describe("AI support stations use real static terrain through the controller", (
     expect(command.aiDecision?.objectiveDuty).toBeUndefined();
   });
 
-  it("leaves genuine no-safe-point recovery to physical navigation instead of holding a fake station", () => {
+  it("delegates an enclosed mountain position to recovery without pushing into an unsafe astern corridor", () => {
     const mountain = ATOLL_MAP.terrain.find(({ id }) => id === "mountain-nw")!;
-    const { self, observation } = fixture({ x: mountain.x, y: 0, z: mountain.z });
+    const { state, self, observation } = fixture({ x: mountain.x, y: 0, z: mountain.z });
     expect(self.navigationZone).toBe("grounded");
     const planner = vi.spyOn(ObjectiveSupportNavigator.prototype, "plan");
+    const recovery = vi.spyOn(AiNavigationRecovery.prototype, "command"); // Real call-through.
+    for (let index = 0; index < 16; ++index) {
+      const angle = index * Math.PI / 8;
+      expect(terrainNavigationAt(state.mapId, self.position.x + Math.sin(angle) * 100,
+        self.position.z + Math.cos(angle) * 100, shipDraftMeters(self.shipClassId)).kind).toBe("grounded");
+    }
     const command = new RuleBasedAi(815).command(observation());
     expect(planner).toHaveBeenCalledTimes(1);
     expect(planner.mock.results[0]!.value).toEqual({
       mode: "recovery", arrivalRadiusMeters: SUPPORT_NAVIGATION.arrivalRadiusMeters,
     });
-    expect(command.throttle).toBeLessThan(0);
-    expect(command.throttle).toBeGreaterThanOrEqual(-.25);
+    expect(recovery).toHaveBeenCalledTimes(1);
+    expect(recovery.mock.results[0]!.value).toMatchObject({ recovering: true, throttleLimit: 0 });
+    expect(command.throttle).toBe(0);
     expect(Number.isFinite(command.aiDecision!.desiredHeading)).toBe(true);
     expect(command.fire).toBe(false);
   });
