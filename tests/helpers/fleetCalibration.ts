@@ -11,6 +11,7 @@ import {
 } from "./fleetSmokeScenario";
 import { ObjectiveSmokeMetrics } from "./objectiveSmokeMetrics";
 import { FleetPacingMetrics } from "./fleetPacingMetrics";
+import { FleetDiagnosticSnapshots } from "./fleetDiagnosticSnapshots";
 
 export const FLEET_CALIBRATION_ROSTER_ORDERS = ["a-then-b", "b-then-a", "interleaved"] as const;
 export type FleetCalibrationRosterOrder = typeof FLEET_CALIBRATION_ROSTER_ORDERS[number];
@@ -206,6 +207,7 @@ export function runFleetCalibration(options: FleetCalibrationOptions) {
   const session = new LocalBattleSession(state);
   const objective = new ObjectiveSmokeMetrics(state);
   const pacing = new FleetPacingMetrics(state);
+  const diagnostics = new FleetDiagnosticSnapshots();
   const metrics = new Map(state.ships.map(ship => [ship.id, {
     id: ship.id, team: ship.team, shipClassId: ship.shipClassId,
     travelMeters: 0, shots: 0, creditedHullDamage: 0, longestGroundedSeconds: 0,
@@ -225,6 +227,7 @@ export function runFleetCalibration(options: FleetCalibrationOptions) {
     ++steps;
     objective.update(state);
     pacing.update(state, output.shots);
+    diagnostics.update(state);
     // Aircraft damage is credited to its current command owner at impact.
     // Keep the history explicit rather than assigning every sortie to a sunk ship.
     for (const squadron of state.airSquadrons) {
@@ -318,6 +321,7 @@ export function runFleetCalibration(options: FleetCalibrationOptions) {
       enemy: rounded(measured.inZoneShipSeconds.enemy) },
     contestedSeconds: rounded(measured.contestedSeconds),
     pacing: pacing.report(),
+    diagnostics: diagnostics.report(),
     ships: [...metrics.values()].map(metric => Object.fromEntries(Object.entries(metric)
       .map(([key, value]) => [key, typeof value === "number" ? rounded(value) : value])) as unknown as CalibrationShipMetrics),
   };

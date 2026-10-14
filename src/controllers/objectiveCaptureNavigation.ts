@@ -63,6 +63,8 @@ const inCorridor = (point: Readonly<Vec3>, from: Readonly<Vec3>, to: Readonly<Ve
 };
 type RouteCache = {
   context: string; time: number; points: Vec3[]; index: number; legStart: Vec3; margin: number;
+  /** Static original polyline identity survives advancing/retaining its suffix. */
+  identity?: string;
 };
 
 /**
@@ -72,6 +74,9 @@ type RouteCache = {
 export class ObjectiveCaptureNavigator {
   private cached?: RouteCache;
   reset(): void { this.cached = undefined; }
+
+  /** No own pose, elapsed time or mutable waypoint cursor participates. */
+  progressRouteIdentity(): string | undefined { return this.cached?.identity; }
 
   /**
    * Distance along the same verified remaining polyline, not merely to its next
@@ -137,9 +142,12 @@ export class ObjectiveCaptureNavigator {
     if (previous?.context === context && time >= previous.time
       && time - previous.time < CAPTURE_NAVIGATION.planningIntervalSeconds) return output(previous);
 
-    const finish = (points: readonly Vec3[], margin = 0): ObjectiveCapturePlan => {
+    const finish = (points: readonly Vec3[], margin = 0, retainedIdentity?: string): ObjectiveCapturePlan => {
+      const identity = points.length ? retainedIdentity ?? JSON.stringify([
+        context, points.map(point => [point.x, point.z]),
+      ]) : undefined;
       const route: RouteCache = { context, time, points: points.map(copy), index: 0,
-        legStart: copy(ship.position), margin };
+        legStart: copy(ship.position), margin, identity };
       this.cached = route;
       return output(route);
     };
@@ -157,15 +165,19 @@ export class ObjectiveCaptureNavigator {
       }
       return undefined;
     };
+    const rest = previous?.context === context && time >= previous.time
+      ? previous.points.slice(previous.index) : [];
+    while (rest.length > 1 && distance(ship.position, rest[0]!) <= waypointRadius) rest.shift();
     const directMargin = startMargin(goal);
-    if (directMargin !== undefined) return finish([goal], directMargin);
+    if (directMargin !== undefined) return finish([goal], directMargin,
+      // Reaching the final leg is not a different route. Only a shortcut that
+      // bypasses unvisited waypoints establishes a new verified polyline.
+      rest.length === 1 && distance(rest[0]!, goal) < 1e-7 ? previous?.identity : undefined);
     // Preserve a valid route's next leg when steering around an island. Its
     // remaining static legs were already checked against this geometry revision.
-    if (previous?.context === context && time >= previous.time && previous.points.length) {
-      const rest = previous.points.slice(previous.index);
-      while (rest.length > 1 && distance(ship.position, rest[0]!) <= waypointRadius) rest.shift();
+    if (rest.length) {
       const margin = startMargin(rest[0]!);
-      if (margin !== undefined) return finish(rest, margin);
+      if (margin !== undefined) return finish(rest, margin, previous?.identity);
     }
 
     const graphKey = JSON.stringify([revision, mapId, ship.shipClassId, draft, routePadding, nodePadding]);

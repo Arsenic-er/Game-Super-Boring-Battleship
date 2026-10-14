@@ -10,16 +10,20 @@ const HOLD_SECONDS = 12;
 const ROUTE_SECONDS = 4;
 const NO_PROGRESS_SECONDS = 60;
 const PROGRESS_METERS = 20;
+/** Never evict: cycling route identities must not manufacture fresh grace. */
+export const MAX_CAPTURE_PROGRESS_ROUTES = 128;
+type RouteHighWater = { best: number; position: { x: number; z: number } };
 const RETRY_SECONDS = 60;
 type CaptureRoute = {
   context: string;
   navigators: [ObjectiveCaptureNavigator, ObjectiveCaptureNavigator];
   remaining: [number, number];
+  identities: [string | undefined, string | undefined];
   sampledAt: number;
   eligible: boolean;
   inside: boolean;
   retryAfter: number;
-  progress?: { station: 0 | 1; best: number; at: number; position: { x: number; z: number } };
+  progress?: { station: 0 | 1; at: number; routes: Map<string, RouteHighWater> };
 };
 const BUFFER_SECONDS = 30;
 const compareId = (a: string, b: string): number => a < b ? -1 : a > b ? 1 : 0;
@@ -283,13 +287,13 @@ export class FleetObjectiveCoordinator {
         if (station >= 0 && distance(item) > item.objective.radius) {
           const index = station as 0 | 1;
           if (!route.progress || previous?.duty !== "capture") {
-            route.progress = { station: index, best: route.remaining[index], at: time,
-              position: { x: item.self.position.x, z: item.self.position.z } };
+            route.progress = { station: index, at: time, routes: new Map() };
+            this.recordRouteProgress(route, item, false);
           } else if (route.progress.station !== index) {
-            // Rebase incomparable station distances, but do not let repeated
-            // station changes reset the no-progress clock indefinitely.
-            route.progress = { station: index, best: route.remaining[index], at: route.progress.at,
-              position: { x: item.self.position.x, z: item.self.position.z } };
+            // Station costs are incomparable. Retain each route high-water mark
+            // and the clock, so switching back cannot masquerade as new travel.
+            route.progress.station = index;
+            this.recordRouteProgress(route, item, false);
           }
         } else route.progress = undefined;
         next.set(item.self.id, { duty, urgent, assignedAt: time,
@@ -308,7 +312,8 @@ export class FleetObjectiveCoordinator {
     const inside = distance(item) <= item.objective.radius;
     if (!route || route.context !== context) {
       route = { context, navigators: [new ObjectiveCaptureNavigator(), new ObjectiveCaptureNavigator()],
-        remaining: [Infinity, Infinity], sampledAt: -Infinity, eligible, inside, retryAfter: 0 };
+        remaining: [Infinity, Infinity], identities: [undefined, undefined],
+        sampledAt: -Infinity, eligible, inside, retryAfter: 0 };
       this.routes.set(item.self.id, route);
     }
     if (time - route.sampledAt < ROUTE_SECONDS && route.eligible === eligible && route.inside === inside) return;
@@ -316,24 +321,35 @@ export class FleetObjectiveCoordinator {
     route.remaining = inside ? [0, 0] : !eligible ? [Infinity, Infinity]
       : [route.navigators[0].remainingDistanceMeters(item.mapId, item.self, item.objective, 0, time),
         route.navigators[1].remainingDistanceMeters(item.mapId, item.self, item.objective, 1, time)];
+    route.identities = inside || !eligible ? [undefined, undefined] : [
+      route.navigators[0].progressRouteIdentity(), route.navigators[1].progressRouteIdentity(),
+    ];
+    if (route.progress && !inside && eligible) this.recordRouteProgress(route, item, true);
+  }
+
+  private recordRouteProgress(route: CaptureRoute, item: Readonly<Observation>, advanceClock: boolean): void {
     const progress = route.progress;
-    if (progress && !inside && eligible) {
-      const remaining = route.remaining[progress.station];
-      // A newly longer detour may reset the distance baseline, never the clock.
-      // A later decrease must also be backed by own physical displacement:
-      // stationary planner cost fluctuations must not fabricate progress.
-      const displaced = Math.hypot(item.self.position.x - progress.position.x,
-        item.self.position.z - progress.position.z) >= PROGRESS_METERS;
-      const rebased = !Number.isFinite(remaining) || !Number.isFinite(progress.best)
-        || remaining > progress.best + PROGRESS_METERS;
-      const advanced = Number.isFinite(remaining) && remaining <= progress.best - PROGRESS_METERS
-        && displaced;
-      if (rebased || advanced) {
-        progress.best = remaining;
-        progress.position = { x: item.self.position.x, z: item.self.position.z };
-        if (advanced && !rebased) progress.at = time;
-      }
+    if (!progress) return;
+    const remaining = route.remaining[progress.station];
+    const identity = route.identities[progress.station];
+    if (!identity || !Number.isFinite(remaining)) return;
+    const previous = progress.routes.get(identity);
+    if (!previous) {
+      // A genuinely different verified route may be longer. Establish its own
+      // baseline, but replanning itself never counts as physical progress.
+      // At capacity, unfamiliar routes cannot renew the clock; ordinary fallback
+      // and no-alternative duty retention remain available. No permanent ban.
+      if (progress.routes.size < MAX_CAPTURE_PROGRESS_ROUTES) progress.routes.set(identity, {
+        best: remaining, position: { x: item.self.position.x, z: item.self.position.z },
+      });
+      return;
     }
+    if (!advanceClock || remaining > previous.best - PROGRESS_METERS
+      || Math.hypot(item.self.position.x - previous.position.x,
+        item.self.position.z - previous.position.z) < PROGRESS_METERS) return;
+    previous.best = remaining;
+    previous.position = { x: item.self.position.x, z: item.self.position.z };
+    progress.at = item.time;
   }
 
   private pairReachable(a: string, b: string): boolean {

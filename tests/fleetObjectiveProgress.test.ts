@@ -195,8 +195,14 @@ describe("route-aware capture assignment and sustained progress", () => {
   it("accepts real displacement along a newly longer route without resetting grace just for replanning", () => {
     // Controlled route lengths isolate a legitimate replan from the terrain
     // planner. Positions really change; this is not a geometry-validity test.
-    vi.spyOn(ObjectiveCaptureNavigator.prototype, "remainingDistanceMeters").mockImplementation((_map, ship, _objective, _station, time) =>
-      ship.position.z < 5000 ? time === 0 ? 1000 : 3000 - (time - 4) * 25 : 6000);
+    // The fixture explicitly supplies evidence of a different verified route;
+    // a cost increase alone is indistinguishable from physical backtracking.
+    const identities = new WeakMap<ObjectiveCaptureNavigator, string>();
+    vi.spyOn(ObjectiveCaptureNavigator.prototype, "remainingDistanceMeters").mockImplementation(function (this: ObjectiveCaptureNavigator, _map, ship, _objective, station, time) {
+      identities.set(this, station + ":" + (time === 0 ? "direct" : "new-detour"));
+      return ship.position.z < 5000 ? time === 0 ? 1000 : 3000 - (time - 4) * 25 : 6000;
+    });
+    vi.spyOn(ObjectiveCaptureNavigator.prototype, "progressRouteIdentity").mockImplementation(function (this: ObjectiveCaptureNavigator) { return identities.get(this); });
     const a = item("a", 0, 1000), b = item("b", 0, 6000);
     const coordinator = new FleetObjectiveCoordinator();
     for (let time = 0; time <= 64; time += 4) {

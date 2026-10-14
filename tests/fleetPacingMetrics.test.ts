@@ -171,3 +171,161 @@ describe("read-only fleet pacing telemetry", () => {
     expect(fleetCalibrationStateHash(tracked)).toBe(fleetCalibrationStateHash(plain));
   });
 });
+
+describe("late-battle pacing windows", () => {
+  it("does not create future windows before 900 seconds or after early termination", () => {
+    const s = state(), meter = new FleetPacingMetrics(s);
+    s.time = 743.38; s.status = "enemy-won"; meter.update(s, []);
+    s.time = 1200; meter.update(s, []);
+    expect(meter.report().lateWindows).toEqual([]);
+  });
+
+  it("splits elapsed time across both boundaries but attributes shots only to their sample endpoint", () => {
+    const s = state(), ship = s.ships[0]!;
+    s.time = 890;
+    const meter = new FleetPacingMetrics(s);
+    localTrack(ship); ship.perception!.mode = "acquiring"; ship.aiDecision!.objectiveDuty = "capture";
+    s.time = 1060; meter.update(s, [shot(ship.id), shot(ship.id)]);
+    const first = meter.report().lateWindows;
+    expect(first).toHaveLength(2);
+    expect(first[0]).toMatchObject({ startSeconds: 900, endSeconds: 1050,
+      sampledFromSeconds: 900, sampledThroughSeconds: 1050, complete: true, terminal: false });
+    expect(first[0]!.ships[0]).toMatchObject({ aliveSeconds: 150, localAcquiringSeconds: 150,
+      localTrackingSeconds: 0, localContactSeconds: 150, captureDutySeconds: 150, mainGunShots: 0 });
+    expect(first[1]!.ships[0]).toMatchObject({ aliveSeconds: 10, localAcquiringSeconds: 10, mainGunShots: 2 });
+    expect(first[1]).toMatchObject({ sampledThroughSeconds: 1060, complete: false, terminal: false });
+    ship.perception!.mode = "tracking"; ship.aiDecision!.objectiveDuty = "support";
+    s.time = 1070; meter.update(s, []);
+    expect(meter.report().lateWindows[1]!.ships[0]).toMatchObject({ aliveSeconds: 20,
+      localContactSeconds: 20, localAcquiringSeconds: 10, localTrackingSeconds: 10,
+      estimatedFiringOpportunitySeconds: 10, captureDutySeconds: 10, supportDutySeconds: 10, mainGunShots: 2 });
+  });
+
+  it("assigns a shot exactly at 1050 to the first window, with no tiny duplicate window from clock roundoff", () => {
+    const s = state(), ship = s.ships[0]!, meter = new FleetPacingMetrics(s);
+    s.time = 900; meter.update(s, [shot(ship.id)]);
+    expect(meter.report().lateWindows).toEqual([]);
+    s.time = 1050 + 1e-8; meter.update(s, [shot(ship.id)]);
+    expect(meter.report().lateWindows).toHaveLength(1);
+    expect(meter.report().lateWindows[0]!.ships[0]).toMatchObject({ aliveSeconds: 150, mainGunShots: 1 });
+    s.time = 1050 + FIXED_STEP; meter.update(s, [shot(ship.id), shot(ship.id)]);
+    expect(meter.report().lateWindows[1]!.ships[0]).toMatchObject({ aliveSeconds: .02, mainGunShots: 2 });
+    expect(meter.report().ships[0]!.mainGunShots).toBe(4);
+  });
+
+  it("marks a partial first window with its true terminal sample and creates no second window", () => {
+    const s = state(), meter = new FleetPacingMetrics(s);
+    s.time = 920; s.status = "player-won"; meter.update(s, []);
+    const report = meter.report();
+    expect(report.lateWindows).toHaveLength(1);
+    expect(report.lateWindows[0]).toMatchObject({ startSeconds: 900, endSeconds: 1050,
+      sampledFromSeconds: 900, sampledThroughSeconds: 920, complete: true, terminal: true });
+    expect(report.lateWindows[0]!.ships[0]!.aliveSeconds).toBe(20);
+    s.time = 1200; meter.update(s, [shot(s.ships[0]!.id)]);
+    expect(meter.report()).toEqual(report);
+  });
+
+  it("does not charge late time to ships already dead and stops after the sinking interval", () => {
+    const s = state(), a = s.ships[0]!, b = s.ships[1]!, meter = new FleetPacingMetrics(s);
+    a.hull = 0; s.time = 899; meter.update(s, []);
+    s.time = 950; meter.update(s, []);
+    b.hull = 0; s.time = 970; meter.update(s, []);
+    s.time = 1100; meter.update(s, []);
+    const [first, last] = meter.report().lateWindows;
+    expect(first!.ships.find(ship => ship.id === a.id)!.aliveSeconds).toBe(0);
+    expect(first!.ships.find(ship => ship.id === b.id)!.aliveSeconds).toBe(70);
+    expect(last!.ships.find(ship => ship.id === b.id)!.aliveSeconds).toBe(0);
+  });
+
+  it("distinguishes disabled guns from healthy reloading guns and computes local states once per interval", () => {
+    const s = state(), ship = s.ships[0]!;
+    s.time = 900; const meter = new FleetPacingMetrics(s);
+    localTrack(ship); ship.modules.gun.health = 0;
+    s.time = 915; meter.update(s, []);
+    ship.modules.gun.health = ship.modules.gun.maxHealth;
+    ship.mainBatteryMounts.forEach(mount => { mount.reloadRemaining = 5; });
+    s.time = 930; meter.update(s, []);
+    ship.mainBatteryMounts.forEach(mount => { mount.reloadRemaining = 0; });
+    s.time = 945; meter.update(s, []);
+    const own = meter.report().lateWindows[0]!.ships[0]!;
+    expect(own).toMatchObject({ aliveSeconds: 45, localContactSeconds: 45,
+      localTrackingSeconds: 45, estimatedFiringOpportunitySeconds: 15, mainGunDisabledSeconds: 15 });
+    ship.installedEquipment.mainGun.fill(null);
+    s.time = 960; meter.update(s, []);
+    expect(meter.report().lateWindows[0]!.ships[0]!.mainGunDisabledSeconds).toBe(30);
+  });
+
+  it("uses the same global and window accumulators and permits only finite known tag keys", () => {
+    const s = state(), ship = s.ships[0]!;
+    s.time = 900; const meter = new FleetPacingMetrics(s);
+    localTrack(ship);
+    ship.aiDecision!.phase = "invalid-phase" as "forming";
+    ship.aiDecision!.contactSource = "invalid-source" as "local";
+    s.time = 1050; meter.update(s, [shot(ship.id)]);
+    ship.aiDecision!.phase = "withdrawing"; ship.aiDecision!.contactSource = "memory";
+    s.time = 1200; s.status = "enemy-won"; meter.update(s, [shot(ship.id)]);
+    const report = meter.report(), global = report.ships[0]!, parts = report.lateWindows.map(w => w.ships[0]!);
+    for (const field of ["aliveSeconds", "localContactSeconds", "localAcquiringSeconds", "localTrackingSeconds",
+      "estimatedFiringOpportunitySeconds", "mainGunDisabledSeconds", "fireIntentSeconds", "captureDutySeconds",
+      "supportDutySeconds", "mainGunShots"] as const) {
+      expect(parts.reduce((sum, part) => sum + part[field], 0)).toBe(global[field]);
+    }
+    expect(global.phaseSeconds).toEqual({ none: 150, withdrawing: 150 });
+    expect(global.contactSourceSeconds).toEqual({ none: 150, memory: 150 });
+    expect(report.lateWindows[1]).toMatchObject({ sampledThroughSeconds: 1200, terminal: true, complete: true });
+  });
+
+  it("keeps duplicate ticks idempotent and all nested window/counter reports detached", () => {
+    const s = state(), ship = s.ships[0]!;
+    s.time = 900; const meter = new FleetPacingMetrics(s);
+    localTrack(ship); s.time = 910; meter.update(s, [shot(ship.id)]);
+    const expected = meter.report();
+    meter.update(s, [shot(ship.id)]);
+    expect(meter.report()).toEqual(expected);
+    const mutated = meter.report();
+    mutated.lateWindows[0]!.ships[0]!.phaseSeconds.engaging = -10;
+    mutated.lateWindows[0]!.ships[0]!.contactSourceSeconds.local = -10;
+    mutated.ships[0]!.phaseSeconds.engaging = -10;
+    mutated.groups[0]!.contactSourceSeconds.local = -10;
+    expect(meter.report()).toEqual(expected);
+  });
+
+  it.each([899, 900, 920, 1050, 1100])("refreshes same-time terminal metadata at %ss without replaying counters or creating future data", time => {
+    const s = state(), ship = s.ships[0]!, meter = new FleetPacingMetrics(s);
+    localTrack(ship); s.time = time; meter.update(s, [shot(ship.id)]);
+    const expected = meter.report();
+    for (const window of expected.lateWindows) if (window.sampledThroughSeconds === time) {
+      window.complete = true; window.terminal = true;
+    }
+    for (const milestone of expected.milestones) if (milestone.sampledSeconds === time) {
+      milestone.status = "enemy-won";
+    }
+    s.status = "enemy-won";
+    const before = fleetCalibrationStateHash(s);
+    meter.update(s, [shot(ship.id), shot(ship.id)]);
+    expect(fleetCalibrationStateHash(s)).toBe(before);
+    expect(meter.report()).toEqual(expected);
+    meter.update(s, [shot(ship.id)]);
+    expect(meter.report()).toEqual(expected);
+    // Even a caller continuing to advance its clock cannot fabricate late data.
+    s.time = 1200; meter.update(s, [shot(ship.id)]);
+    expect(meter.report()).toEqual(expected);
+  });
+
+  it("does not change exact production simulation state while crossing the 1050 second boundary", () => {
+    const tracked = state(), plain = state();
+    tracked.time = plain.time = 1049.5;
+    const meter = new FleetPacingMetrics(tracked);
+    const sessions = [new LocalBattleSession(tracked), new LocalBattleSession(plain)];
+    for (let tick = 0; tick < 120; ++tick) {
+      const output = sessions[0]!.step(new Map(), FIXED_STEP);
+      sessions[1]!.step(new Map(), FIXED_STEP);
+      const before = fleetCalibrationStateHash(tracked);
+      meter.update(tracked, output.shots); meter.report();
+      expect(fleetCalibrationStateHash(tracked)).toBe(before);
+    }
+    expect(meter.report().lateWindows).toHaveLength(2);
+    expect(meter.report().lateWindows[0]).toMatchObject({ sampledFromSeconds: 1049.5, sampledThroughSeconds: 1050 });
+    expect(fleetCalibrationStateHash(tracked)).toBe(fleetCalibrationStateHash(plain));
+  });
+});

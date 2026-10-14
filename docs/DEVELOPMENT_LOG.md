@@ -1,3 +1,35 @@
+## 2026-10-15 — Capture duty progress and late battle diagnostics
+
+Capture progress now requires genuinely new distance reduction and displacement
+on a stable verified route. Revisiting old water or an old detour cannot renew
+the stall clock. Navigation commands and existing no-substitute behavior remain;
+bounded route history never evicts old baselines to create fresh grace.
+
+Sixteen coordinator and seven route-identity tests cover both teams, real
+open-water loops, island detours, route changes and bounded history. The old
+coordinator fails all four isolated loop counterexamples by assertion.
+Test-only late windows and three bounded snapshots distinguish contact,
+readiness, tactical phases and actual main-gun fire without changing state.
+All twelve telemetry baselines reproduce the preceding complete-state hashes.
+
+The correction does not improve overall pacing in the paired sample:
+final-300-second silent survivors rise from 9 to 13, with survival changes and
+existing contact/navigation gaps contributing. All 144 ship appearances still
+fire their main batteries, but eleven battles still time out and one ends at
+743.38 seconds. Six label controls match exact hashes; four independent fog
+cases pass. See acceptance/capture-progress-2026-10-15.md for the full table,
+measurement limits and the low-visibility/recovery work still required.
+
+Final checks: 1,931 regular tests, eight isolated balance tests, six prototype
+checks, twenty-two complete sessions, production build and eleven browser
+checks pass. A concurrent regular run hit one unchanged five-second test
+timeout; its subsequent serial run passes. No limits or assertions were relaxed.
+Temporary preview closed; existing bundle-size warning remains.
+
+Only code, tests and concise development records are published. Work and build
+outputs stay on the server; no assets, main merge, tag, version bump or local
+delivery. Next isolate shoal recovery and weather-dependent re-engagement.
+
 ## 2026-10-15 — Weather-aware support ships and main-gun participation
 
 Support ships now select useful weather-dependent stations, including the

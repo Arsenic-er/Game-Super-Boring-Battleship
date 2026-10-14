@@ -29,7 +29,36 @@ development, builds, tests and artifacts stay on the server. Do not create local
 staging or download packages/source/logs without fresh explicit consent. See
 `AGENTS.md`; this overrides the older automatic local-delivery workflow.
 
-## Latest working changes — 2026-10-15: weather-aware support participation
+## Latest working changes — 2026-10-15: capture progress and late battle diagnostics
+
+- Capture duty no longer counts repeated backtracking as progress. Stable
+  route identities retain per-route best distances through replanning and
+  waypoint advancement; new routes alone grant no extra stall grace.
+  History is bounded without eviction; no-substitute recovery retains duty.
+- Sixteen coordinator and seven route-identity tests pass. The exact old
+  coordinator fails four real-route loop counterexamples by assertion.
+- Passive late windows distinguish local acquisition/tracking, gun disability,
+  fire intent and tactical phases; at most three detached snapshots expose
+  own aim/reload/arcs. Same-time terminal updates do not duplicate counts.
+- This is not general pacing acceptance: twelve paired battles retain zero
+  never-fired main batteries, but silent final-300-second survivors rise
+  from 9 to 13 and shells change from 19,729 to 19,631. Eleven still time out;
+  one ends by destruction at 743.38 seconds. Initial manifests match in all
+  twelve; six label controls retain exact normalized final hashes.
+- Verification: 1,931 regular tests, eight isolated balance tests, six prototype
+  checks, twenty-two complete sessions, build and eleven browser checks pass.
+  One concurrent regular test hit its 5-second wall-clock limit; the unchanged
+  serial suite passes. Temporary preview closed; bundle warning unchanged.
+  Evidence: acceptance/capture-progress-2026-10-15.md.
+- Next: separately reproduce low-visibility support retreat/firing arcs,
+  reverse-to-reorient shoal recovery, and reacquisition/reload behavior.
+  Do not remove terrain safety or allow radio contacts to authorize fire.
+  Normal 15-20 minute pacing and geographic balance remain open.
+- Server-only checkpoint; no assets, local download, Windows delivery, main
+  merge, tag, version bump or material-B integration. Physical device FPS and
+  two-PC LAN remain outstanding.
+
+## Previous checkpoint — 2026-10-15: weather-aware support participation
 
 - Support stations use public weather and reserve their stopping band in rain
   and fog. Healthy support ships can search bounded legitimate radio/memory
