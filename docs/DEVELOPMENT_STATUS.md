@@ -1,6 +1,6 @@
 # Condensed Development Status
 
-Last updated: 2026-10-14
+Last updated: 2026-10-15
 
 This is the current operational handoff. Product decisions are preserved in
 `CONVERSATION_SUMMARY.md`; milestone history is preserved in `DEVELOPMENT_LOG.md`.
@@ -29,7 +29,35 @@ development, builds, tests and artifacts stay on the server. Do not create local
 staging or download packages/source/logs without fresh explicit consent. See
 `AGENTS.md`; this overrides the older automatic local-delivery workflow.
 
-## Latest working changes — 2026-10-14: aircraft command and observation continuity
+## Latest working changes — 2026-10-15: weather-aware support participation
+
+- Support stations use public weather and reserve their stopping band in rain
+  and fog. Healthy support ships can search bounded legitimate radio/memory
+  reports without crossing the capture disk; local acquisition and safety
+  priorities remain. No weapon, scoring or player-control changes.
+- Runtime weather changes immediately invalidate surface optical samples.
+  Legacy observations default to clear weather; hydro and RNG behavior remain.
+- Test-only pacing reports separate main-gun shells from all other fire,
+  capture from support duty, local contact from estimated opportunities, and
+  actual 15/17.5-minute milestones from missing post-terminal ones.
+- In twelve same-seed paired cases, zero-main-gun ship appearances fall from
+  11 to zero out of 144; final-five-minute silent survivors fall from 25 to nine.
+  Initial surface/air manifests match in all cases. Six label-only controls
+  retain exact normalized final hashes. Four independent fog cases also pass.
+- Final verification: 1,889 regular tests, eight balance tests, six prototype
+  checks, twenty-two complete sessions, build and eleven actual-main browser
+  checks pass. Temporary preview closed; bundle warning unchanged. Evidence:
+  acceptance/weather-support-pacing-2026-10-15.md.
+- Pacing is still open: eleven primary cases end at twenty minutes and one
+  destruction ends at 743.38 seconds. Normal 15–20 minute duration and >=70%
+  non-timeout outcomes are not accepted. North still wins seven of twelve;
+  no claim of geographic balance. Next: late-window contact/shot inactivity
+  and objective-pressure analysis, keeping radio distinct from optical locks.
+- No assets, local download, Windows delivery, main merge, tag or material-B
+  integration; package remains 0.7.9. Physical Surface/mobile FPS and two-PC
+  LAN remain outstanding.
+
+## Previous checkpoint — 2026-10-14: aircraft command and observation continuity
 
 - A missing, sunk or wrong-team controller yields its surviving aircraft as
   a stable command group to the nearest eligible same-team AI. Human owners

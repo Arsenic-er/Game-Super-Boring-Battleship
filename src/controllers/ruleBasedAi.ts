@@ -10,6 +10,7 @@ import {
   shipSpeedMetersPerSecond,
 } from "../sim/config";
 import { objectiveIsUrgent } from "./fleetObjectiveCoordinator";
+import { supportMaySearchKnownContact, supportStationRadius } from "./supportEngagement";
 import { ObjectiveSupportNavigator } from "./objectiveSupportNavigation";
 import { ObjectiveCaptureNavigator } from "./objectiveCaptureNavigation";
 import { terrainSafeHeading } from "../maps/atollMap";
@@ -723,9 +724,10 @@ export class RuleBasedAi implements Controller {
     const withdrawThreshold = role === "screen" ? 0.36 : role === "escort" ? 0.31 : 0.27;
     const damaged = hullRatio < withdrawThreshold;
     const tacticalObjectivePush = !damaged && objectiveOrder?.duty === "capture" && objectiveNeedsCapture;
-    const supportRadius = Math.max(objective.radius + 400,
-      Math.min(engagementBand.preferredMeters * 0.65, mainBatteryRange * 0.55));
-    const supportReposition = !damaged && objectiveOrder?.duty === "support"
+    const supportRadius = supportStationRadius(observation, engagementBand.preferredMeters, mainBatteryRange);
+    const supportSearch = !damaged && objectiveOrder?.duty === "support" && searchingTarget
+      && supportMaySearchKnownContact(observation, supportRadius, target, radioReport);
+    const supportReposition = !damaged && objectiveOrder?.duty === "support" && !supportSearch
       && (!localContact || objectiveDistance > supportRadius + 500);
     const supportPlan = supportReposition
       ? this.supportNavigator.plan(observation.mapId, observation.self, objective, supportRadius, observation.time)

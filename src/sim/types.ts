@@ -243,6 +243,8 @@ export interface AiDecisionTelemetry {
 
 export interface SensorSnapshot {
   sampleIndex: number;
+  /** Public weather is part of the optical sample cache key. */
+  weatherId?: WeatherId;
   hydroActive: boolean;
   gunBloomSignature: string;
   contacts: SensorContact[];
@@ -584,6 +586,8 @@ export interface ControlCommand {
 export interface Observation {
   /** Public match mode; sea trials have no scoring objective. */
   gameMode?: GameMode;
+  /** Public conditions, never an enemy-position hint; omitted legacy observations use clear. */
+  weatherId?: WeatherId;
   self: Readonly<ShipState>;
   mapId: BattleMapId;
   contacts: readonly Readonly<SensorContact>[];

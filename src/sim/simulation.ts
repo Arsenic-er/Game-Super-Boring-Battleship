@@ -2988,11 +2988,13 @@ export function observe(state: BattleState, shipId: string) {
     scores: { ...state.objective.scores },
   };
   const sampleIndex = Math.floor(state.time / SENSOR.observationIntervalSeconds);
+  const weatherId = normalizeWeatherId(state.weatherId);
   const hydroActive = self.hydroActiveRemaining > 0;
   const currentGunBloomSignature = gunBloomSignature(state, self);
   const cached = state.sensorSnapshots[shipId];
   if (
     cached?.sampleIndex === sampleIndex
+    && cached.weatherId === weatherId
     && cached.hydroActive === hydroActive
     && cached.gunBloomSignature === currentGunBloomSignature
   ) {
@@ -3000,6 +3002,7 @@ export function observe(state: BattleState, shipId: string) {
       self,
       mapId: state.mapId,
       gameMode: state.mode,
+      weatherId,
       contacts: cached.contacts,
       friendlies,
       objective,
@@ -3133,6 +3136,7 @@ export function observe(state: BattleState, shipId: string) {
   }
   state.sensorSnapshots[shipId] = {
     sampleIndex,
+    weatherId,
     hydroActive,
     gunBloomSignature: currentGunBloomSignature,
     contacts,
@@ -3141,6 +3145,7 @@ export function observe(state: BattleState, shipId: string) {
     self,
     mapId: state.mapId,
     gameMode: state.mode,
+    weatherId,
     contacts,
     friendlies,
     objective,

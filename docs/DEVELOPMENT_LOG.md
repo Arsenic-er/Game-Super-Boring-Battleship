@@ -1,3 +1,34 @@
+## 2026-10-15 — Weather-aware support ships and main-gun participation
+
+Support ships now select useful weather-dependent stations, including the
+arrival band, and may search bounded legitimate radio or memory reports.
+Search does not cut through the capture disk, replace local optical acquisition
+or override defensive/safety priorities. Live weather changes refresh optical
+caches immediately. Weapons, scoring, match duration and art are unchanged.
+
+Test-only telemetry now distinguishes main-gun fire, contact, estimated firing
+opportunity and capture/support duty, with real 900/1,050-second milestones.
+Thirty support regressions include actual firing in clear/rain/fog; exact old
+controller source fails six. Sixteen weather and eleven telemetry tests pass.
+
+In twelve paired full cases, zero-main-gun appearances fall from 11 to zero
+out of 144, and final-300-second silent survivors fall from 25 to nine.
+Manifests match exactly; six team-label controls match complete normalized
+final states. Four independent fog cases also pass on final source.
+Eleven primary cases still time out; one ends by destruction at 743.38 seconds.
+The 15–20 minute/non-timeout pacing goal and geographic balance remain open.
+
+All 1,889 regular tests, eight isolated balance tests, six prototype checks,
+twenty-two final-source full sessions, build and eleven browser checks pass.
+The initial concurrent balance run had three wall-clock timeouts; the unchanged
+isolated retry passed. Temporary preview closed; known bundle warning remains.
+See acceptance/weather-support-pacing-2026-10-15.md for the paired table,
+measurement limits and reproduction paths. Next: explain late-game contact
+and firing gaps before adjusting objective pressure.
+
+All work stayed on the server. No assets, local delivery, main merge, tag,
+version bump or material-B changes; physical device/LAN checks remain pending.
+
 ## 2026-10-14 — Aircraft command succession and LAN observation continuity
 
 Surviving squadrons now transfer as a command group to the nearest eligible
