@@ -1,3 +1,13 @@
+## Current battle duration decision — recorded 2026-10-20
+
+The owner accepts twenty-minute battles. Keep the existing 1,200-second limit;
+reaching it and resolving by score is a normal outcome, not a failed match.
+Do not increase damage, scoring speed or forced pressure merely to reduce time
+endings. Earlier goals for at least 70% non-timeout outcomes are superseded.
+Improve useful activity instead: safe shoal recovery, meaningful navigation,
+contact reacquisition and valid opportunities to engage. Legitimate concealment,
+withdrawal, repair and reloading are not automatically inactivity defects.
+
 ## Latest working agreement — 2026-10-03
 
 All development, editing, dependencies, builds, tests, results and Git publishing
@@ -253,7 +263,7 @@ sub-agent transcripts, temporary patches, credentials, or repeated status update
 - Expand fleet composition rules and scenario objectives after 3v3 stability.
 - Deepen terrain navigation, cover seeking, shared spotting delays and tactical withdrawal.
 - Run larger paired-seed balance matrices; current open balance concern is Kagero versus Fletcher.
-- Tune normal battles toward the 15–20 minute target with fewer timeout endings.
+- Keep twenty-minute score endings as normal; improve recovery, navigation and contact reacquisition without forcing earlier conclusions.
 - Capture visual-regression baselines at 1440x900 and 1280x720.
 - Produce and publish a fresh Windows directory build, optionally delivered as a ZIP, only
   after the current single-player loop and asset pipeline are stable.

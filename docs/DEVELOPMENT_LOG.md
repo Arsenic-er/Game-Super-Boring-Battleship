@@ -1,3 +1,43 @@
+## 2026-10-20 — Bounded battleship shoal recovery
+
+Battleships near a shoal may continue verified reverse steering before handing
+back to normal navigation. Existing terrain, actual-stern stopping distance,
+engine and boundary safeguards remain; no maneuverability buff, damage change
+or scoring adjustment is used. The owner accepts twenty-minute time endings,
+and the former non-timeout quota is superseded in current project decisions.
+
+Four actual production-session regressions cover both team labels and two
+headings without injecting recovery or sensor state. First recovery now
+releases at 216/276 seconds rather than 418/not-by-480 seconds, with only
+0.20 seconds of stationary turning instead of 339/387 seconds. Each then
+completes sixty seconds and over 300 m of normal navigation without grounding.
+The old source fails the same final assertions. Eleven new tests also cover
+real engine loss during reverse, precise handoff bounds and smaller hulls.
+
+The full 480-second observation still encounters another coastal segment
+later, with a 0.05-second contact. Full-battle participation is not accepted:
+twelve matched sessions retain zero never-fired ships, but late silent
+survivors increase 13→16 and main-gun shells fall 19,631→17,716. Some changes
+reflect survival/damage, others remain healthy-ship contact or firing gaps.
+Six label controls match exact final hashes and four independent fog cases
+pass. Twenty-minute score endings are normal, not a failure metric.
+
+Final checks pass 1,942 regular tests, eight isolated balance tests, six
+prototype checks, twenty-two full sessions, production build and eleven browser
+checks. One initial balance fixture hit its existing ten-second wall-clock
+limit; the unchanged complete retry passes. No assertion or timeout was
+relaxed. Temporary preview is closed; the large-bundle warning remains.
+
+See acceptance/shoal-recovery-2026-10-20.md for counterexamples, full paired
+results, precise 45/240-second conditions and remaining limits. Next inspect
+same-frame firing prerequisites in the rain Richelieu case and later coastal
+navigation separately. A read-only fog/reload audit did not establish a
+reload-reset defect, so neither firing nor reload rules were changed.
+
+Source, tests and concise records stay on the server and are published on the
+active development branch. Assets, package version, main and local storage
+remain unchanged; raw logs and experimental red tests stay outside Git.
+
 ## 2026-10-15 — Capture duty progress and late battle diagnostics
 
 Capture progress now requires genuinely new distance reduction and displacement

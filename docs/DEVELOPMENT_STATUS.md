@@ -1,6 +1,6 @@
 # Condensed Development Status
 
-Last updated: 2026-10-15
+Last updated: 2026-10-20
 
 This is the current operational handoff. Product decisions are preserved in
 `CONVERSATION_SUMMARY.md`; milestone history is preserved in `DEVELOPMENT_LOG.md`.
@@ -29,7 +29,52 @@ development, builds, tests and artifacts stay on the server. Do not create local
 staging or download packages/source/logs without fresh explicit consent. See
 `AGENTS.md`; this overrides the older automatic local-delivery workflow.
 
-## Latest working changes — 2026-10-15: capture progress and late battle diagnostics
+## Current battle duration decision — recorded 2026-10-20
+
+The owner accepts twenty-minute battles. Keep the existing 1,200-second limit;
+reaching it and resolving by score is a normal outcome, not a failed match.
+Do not increase damage, scoring speed or forced pressure merely to reduce time
+endings. Earlier goals for at least 70% non-timeout outcomes are superseded.
+Improve useful activity instead: safe shoal recovery, meaningful navigation,
+contact reacquisition and valid opportunities to engage. Legitimate concealment,
+withdrawal, repair and reloading are not automatically inactivity defects.
+
+## Latest working changes — 2026-10-20: bounded battleship shoal recovery
+
+- Battleships retain verified reverse steering until there is sufficient exit
+  space instead of handing off after a fixed short retreat. Existing engine,
+  stern-clearance, boundary and reorientation guards remain; smaller hulls
+  keep their previous thresholds. No steering or speed modifiers changed.
+- Four real-session counterexamples cover both teams and two headings. The
+  longest stationary interval in the first recovery falls from 339/387 s to
+  0.20 s; all four then sail normally for sixty seconds and over 300 m.
+  The same final assertions fail on the exact old navigation source.
+- This is a local recovery correction, not general navigation acceptance.
+  The full 480-second fixtures later encounter another coastal segment and
+  record a 0.05-second contact. The 240-second handoff threshold applies only
+  to an ungrounded initial reverse phase, not the whole recovery state.
+- In twelve matched full battles, all 144 ship appearances still fire main
+  guns, but final-300-second silent survivors rise from 13 to 16 and shells
+  fall from 19,631 to 17,716. Ten normal time endings and two destructions are
+  recorded; twenty-minute score settlement is explicitly accepted.
+- Six team-label controls match exact normalized hashes; four independent
+  fog sessions pass. No maximum continuous grounding exceeds 0.05 seconds.
+  Some new silent survivors reflect battle damage or survival changes, but
+  healthy reacquisition/engagement gaps remain and are recorded, not dismissed.
+- Verification: 1,942 regular tests, eight balance tests, six prototype checks,
+  twenty-two full sessions, build and eleven browser checks pass. An initial
+  balance fixture hit its existing 10-second wall-clock limit; the unchanged
+  eight-test retry passes. No assertions or limits were relaxed. Temporary
+  preview closed; large-bundle warning unchanged.
+- Next: sample same-frame contact, ammunition/reload, firing arc and rejected
+  shot reasons for 7/default/rain Richelieu a5; separately improve later
+  coastal navigation. Do not claim a reload bug from sparse snapshots or
+  grant fire authorization from radio reports.
+- Server-only checkpoint, no assets/main merge/tag/version bump/local delivery.
+  Evidence and limits: acceptance/shoal-recovery-2026-10-20.md. Device FPS and
+  physical two-PC LAN checks remain outstanding.
+
+## Previous checkpoint — 2026-10-15: capture progress and late battle diagnostics
 
 - Capture duty no longer counts repeated backtracking as progress. Stable
   route identities retain per-route best distances through replanning and
@@ -625,7 +670,7 @@ staging or download packages/source/logs without fresh explicit consent. See
    established external-model pipeline for Cleveland and Yamato.
 4. Run at least 100 paired seeds per important matchup and rebase Kagero/Fletcher plus
    heavy-ship hit/timeout behaviour.
-5. Calibrate mixed-fleet missions toward a 15–20 minute normal duration and at least 70% non-timeout endings.
+5. Keep twenty-minute score endings as normal; improve safe recovery, useful navigation and contact reacquisition rather than chasing a non-timeout quota.
 6. Expand visual regression to all saved mixed/sparse loadouts and additional refit-year variants.
 7. Add terrain-cover use, delayed shared spotting and two-to-three objective scenarios.
 

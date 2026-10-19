@@ -72,12 +72,28 @@ export class AiNavigationRecovery {
     }
     if (this.reverseFrom) {
       const backedAway = Math.hypot(ship.position.x - this.reverseFrom.x, ship.position.z - this.reverseFrom.z);
-      if (!grounded && time - this.reverseStartedAt >= 12 && (backedAway >= 65 || time - this.reverseStartedAt >= 45)) {
+      const exitLookahead = Math.max(180, Math.min(480, hull.length * 1.4 + stopDistance));
+      const extent = battleMapDefinition(mapId).halfExtentMeters - padding;
+      const bowEnd = { x: ship.position.x + Math.sin(ship.heading) * exitLookahead, y: 0,
+        z: ship.position.z + Math.cos(ship.heading) * exitLookahead };
+      const hasTurningRoom = Math.abs(bowEnd.x) <= extent && Math.abs(bowEnd.z) <= extent
+        && !firstNavigationHazard(mapId, ship.position, bowEnd, shipDraftMeters(ship.shipClassId), padding);
+      const reverseElapsed = time - this.reverseStartedAt;
+      // A 65m retreat can leave a long battleship facing the same nearby shoal.
+      // Keep the verified astern corridor until there is room for normal ahead
+      // steerage. Stop a stalled or excessively long attempt rather than looping.
+      const clearedApproach = backedAway >= 65 && (hasTurningRoom || backedAway >= exitLookahead);
+      const shortRecovery = hull.hullId !== "battleship" && (backedAway >= 65 || reverseElapsed >= 45);
+      const stalledAttempt = reverseElapsed >= 45 && backedAway < 10;
+      if (!grounded && reverseElapsed >= 12
+        && (shortRecovery || clearedApproach || stalledAttempt || reverseElapsed >= 240)) {
         this.reverseFrom = undefined;
         this.reorienting = true;
       } else {
         // The bow points opposite the safe astern travel direction. Steering remains physical.
-        const preferredAstern = terrainSafeHeading(mapId, ship.position, ship.heading + Math.PI, ship.shipClassId);
+        const preferredAstern = terrainSafeHeading(mapId, ship.position,
+          (hull.hullId === "battleship" && reverseElapsed >= 45 ? desiredHeading : ship.heading) + Math.PI,
+          ship.shipClassId);
         const draft = shipDraftMeters(ship.shipClassId);
         const contactPadding = hull.beam * .42;
         const offsets = [0, 22.5, -22.5, 45, -45, 67.5, -67.5, 90, -90,
