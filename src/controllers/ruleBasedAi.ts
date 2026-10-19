@@ -290,6 +290,7 @@ export class RuleBasedAi implements Controller {
   private radioTargetId?: string;
   private randomSeed: number;
   private selectedAmmo: AmmoType = "he";
+  private ammoSalvoCommitment?: { ammoType: AmmoType; lastFiredAt: number | undefined };
   private nextAmmoDecisionAt = 0;
   private nextTorpedoAt = 12;
   private nextSmokeAt = 10;
@@ -581,6 +582,19 @@ export class RuleBasedAi implements Controller {
   }
 
   command(observation: Observation): ControlCommand {
+    const self = observation.self;
+    this.selectedAmmo = self.pendingAmmoType ?? self.ammoType;
+    if (self.pendingAmmoType) {
+      // Finish the actual reload, then use its ammunition before switching again.
+      // Refresh while pending: an earlier-ready mount may still fire old shells.
+      this.ammoSalvoCommitment = { ammoType: self.pendingAmmoType, lastFiredAt: self.lastMainGunFiredAt };
+    } else if (this.ammoSalvoCommitment
+      && (self.ammoType !== this.ammoSalvoCommitment.ammoType
+        || self.lastMainGunFiredAt !== this.ammoSalvoCommitment.lastFiredAt)) {
+      // Honor external loadout/cancellation changes and acknowledge real shots,
+      // not a fire request that reload, damage or geometry might reject.
+      this.ammoSalvoCommitment = undefined;
+    }
     const mainBattery = effectiveMainBattery(observation.self);
     const mainBatteryRange = mainBattery.maximumRangeMeters;
     const perception = this.updatePerception(observation);
@@ -689,12 +703,18 @@ export class RuleBasedAi implements Controller {
     if (perception.mode === "tracking" && target) {
       this.updateFireControl(observation, target, range, mainBatteryRange);
       if (observation.time >= this.nextAmmoDecisionAt) {
-        this.selectedAmmo = recommendedAmmoForTarget(
-          range,
-          bearingToTarget,
-          target.heading,
-          this.selectedAmmo,
-        );
+        if (!self.pendingAmmoType && !this.ammoSalvoCommitment) {
+          this.selectedAmmo = recommendedAmmoForTarget(
+            range,
+            bearingToTarget,
+            target.heading,
+            this.selectedAmmo,
+          );
+          if (this.selectedAmmo !== self.ammoType) {
+            this.ammoSalvoCommitment = { ammoType: this.selectedAmmo, lastFiredAt: self.lastMainGunFiredAt };
+          }
+        }
+        // Keep the original decision cadence and RNG draw even while committed.
         this.nextAmmoDecisionAt = observation.time + 18 + this.random() * 8;
       }
     } else {

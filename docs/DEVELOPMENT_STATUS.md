@@ -39,7 +39,45 @@ Improve useful activity instead: safe shoal recovery, meaningful navigation,
 contact reacquisition and valid opportunities to engage. Legitimate concealment,
 withdrawal, repair and reloading are not automatically inactivity defects.
 
-## Latest working changes — 2026-10-20: bounded battleship shoal recovery
+## Latest working changes — 2026-10-20: AI ammunition commitment
+
+- Same-frame tracing establishes the rain Richelieu's late firing failure:
+  all 1,267 fire requests hit two reloading mounts. It loaded AP, chose HE
+  again 1.15 seconds later and consumed the next natural firing window.
+  Passive tracing reproduces the baseline final state exactly.
+- AI now follows real loaded/pending ammunition, finishes a change and
+  acknowledges it only after a real main-gun shot before reconsidering.
+  Old-ammo partial volleys while pending do not falsely acknowledge new ammo.
+  Human commands and new controllers synchronize with actual state.
+- Twelve regressions pass and the exact old controller fails all twelve.
+  Four controlled public-contact cases change from zero to sixteen shells
+  in 120 seconds with identical tracking/fire-intent durations and unchanged
+  forty-second reload. These are not full optical replay or shop-flow tests.
+- Twelve paired full sessions retain zero never-fired ships out of 144.
+  Late silent survivors change 16→9 and shells 17,716→18,825, with local
+  regressions: seven new silent survivors, two retained and fourteen removed.
+  Four removals sink; ten survive and fire. Healthy stationary tracking/
+  radio-search cases remain open, not dismissed as survival bias.
+- Six label controls match complete normalized hashes; four independent fog
+  sessions pass. Eleven primary matches settle normally at twenty minutes,
+  one ends by destruction; maximum continuous grounding remains 0.05 s.
+  The diagnosed ship sinks earlier in the changed battle, so the controlled
+  regressions—not its missing late trace—establish the actual policy repair.
+- Existing per-mount reload/global ammo interaction can delay a staggered
+  switch while old shells still fire. No claim that all switches now finish
+  promptly. Player controls, damage, optics, salvo randomness, terrain
+  rules, score and match duration are unchanged.
+- Verification: 1,954 regular tests, eight isolated balance tests, six
+  prototype checks, twenty-two complete sessions, build and eleven browser
+  checks pass. Temporary preview closed; large-bundle warning unchanged.
+- Next: same-frame terrain/navigation/firing-arc evidence for 5/default/rain
+  Richelieu a4 and 7/mirrored/rain b5, plus radio-search stopping; do not
+  grant firing authority from radio or remove safety constraints.
+- Server-only; assets/main/tag/version/local delivery unchanged. Evidence:
+  acceptance/ai-ammo-commitment-2026-10-20.md. Surface/mobile FPS and physical
+  two-PC LAN testing remain outstanding.
+
+## Previous checkpoint — 2026-10-20: bounded battleship shoal recovery
 
 - Battleships retain verified reverse steering until there is sufficient exit
   space instead of handing off after a fixed short retreat. Existing engine,

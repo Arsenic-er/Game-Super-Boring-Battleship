@@ -1,3 +1,40 @@
+## 2026-10-20 — AI completes a useful ammunition change before reconsidering
+
+Passive same-frame replay confirms 1,267 late Richelieu fire requests were
+rejected because both mounts were reloading. A fresh AP load was replaced
+only 1.15 seconds later, before the natural salvo window. Instrumentation
+preserves the exact original complete-state hash.
+
+AI now synchronizes with actual loaded/pending ammo and holds a change until
+a real main-gun shot acknowledges it. Pending old-ammo partial volleys do not
+acknowledge the new type. Original decision RNG cadence and fire permissions
+remain; no reload shortening, accuracy boost or forced salvo is introduced.
+
+Twelve new tests pass, while the exact old controller fails all twelve.
+Four controlled public-contact cases go from zero to sixteen shells in
+120 seconds; tracking and fire-intent durations are unchanged. Forty- and
+48-second real reloads and external command/controller synchronization are
+covered, not shop installation or full controller lifecycle acceptance.
+
+Twelve paired full battles retain main-gun participation for all 144 ship
+appearances. Late silent survivors decrease 16→9 and shells rise
+17,716→18,825, but seven new silent cases include healthy navigation and
+firing-arc gaps. Four of fourteen removed cases sink in the new battles;
+the diagnosed Richelieu itself also sinks earlier, preventing a direct
+candidate late-window comparison. Six label controls match exact hashes;
+four independent fog cases pass. Twenty-minute score endings are normal.
+
+Final verification: 1,954 regular tests, eight balance tests, six prototype
+checks, twenty-two full sessions, production build and eleven browser checks
+pass. Temporary preview closed; large-bundle warning unchanged. Source,
+tests and concise records are published on the active development branch;
+no assets, main merge, version/tag or local download.
+
+See acceptance/ai-ammo-commitment-2026-10-20.md for causal evidence, paired
+results and remaining per-mount/global-ammo limitation. Next isolate healthy
+ships stopping in blocked firing arcs or radio-guided search without granting
+hidden-target firing or bypassing terrain safety.
+
 ## 2026-10-20 — Bounded battleship shoal recovery
 
 Battleships near a shoal may continue verified reverse steering before handing
