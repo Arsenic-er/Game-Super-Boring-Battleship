@@ -39,7 +39,33 @@ Improve useful activity instead: safe shoal recovery, meaningful navigation,
 contact reacquisition and valid opportunities to engage. Legitimate concealment,
 withdrawal, repair and reloading are not automatically inactivity defects.
 
-## Latest working changes — 2026-10-20: blocked recovery heading stabilization
+## Latest working changes — 2026-10-20: developer AI decision diagnostics
+
+- The developer panel now explains the selected ship's last navigation plan,
+  main-gun intent and pre-command mount readiness in all seven languages.
+  Normal battle HUD and gameplay rules are unchanged. A fire request is not
+  a successful shot; reload and disabled-gun restrictions can coexist with it.
+- Missing legacy telemetry stays unknown. Navigation snapshots retain the
+  existing half-second planning cadence; reading them never plans or queries
+  terrain. Nested snapshots are detached, and LAN replication still omits AI
+  policy information rather than disclosing enemy decisions.
+- Exact passive replays close two firing-cause questions: fog a5 has no local
+  contact and a blocked 347 m bow corridor while turning; clear b2 deliberately
+  suppresses fire throughout its damaged tracking interval. The former's slow
+  coastal maneuver remains an unresolved pacing issue, not a new oscillation.
+  A nearer short-corridor exit meets the same shoal farther ahead and is not
+  accepted as a safe shortcut.
+- Verification: 2,020 regular tests, six prototype checks and build pass;
+  thirteen developer-panel and eleven existing render-loop browser checks pass.
+  Both full 7v7 old/new pairs have identical normalized commands and terminal
+  states, retaining all older AI/perception data. Evidence is recorded in
+  acceptance/ai-decision-diagnostics-2026-10-20.md.
+- Next: improve long coastal maneuvers using physically safe route continuity,
+  with full-session evidence; do not relax hull clearance or grant radio fire.
+  Twenty-minute score endings remain normal. No assets/main/tag/version/local
+  delivery changes; native Windows, physical LAN and device FPS remain untested.
+
+## Previous checkpoint — 2026-10-20: blocked recovery heading stabilization
 
 - A verified exit is retained only after an adjacent, low-speed, blocked-bow
   candidate reversal. Moving recovery and stable slow turns do not start a

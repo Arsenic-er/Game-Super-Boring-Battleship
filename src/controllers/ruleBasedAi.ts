@@ -15,6 +15,7 @@ import { ObjectiveSupportNavigator } from "./objectiveSupportNavigation";
 import { ObjectiveCaptureNavigator } from "./objectiveCaptureNavigation";
 import { terrainSafeHeading } from "../maps/atollMap";
 import { AiNavigationRecovery } from "../sim/aiNavigation";
+import { aiGunneryTelemetry } from "./aiGunneryTelemetry";
 import { planFleetCover, type FleetCoverPlan } from "../sim/fleetCover";
 import { getShipClass } from "../ships/classes";
 import { getTorpedo } from "../ships/torpedoes";
@@ -1075,6 +1076,15 @@ export class RuleBasedAi implements Controller {
         desiredHeading,
         throttle: damaged ? Math.min(tacticalThrottle, 0.52) : tacticalThrottle,
         fireIntent,
+        navigation: this.navigationRecovery.getTelemetry(),
+        gunnery: aiGunneryTelemetry(observation.self, mainGunAim, {
+          preparingTorpedoes, fireIntent, concealmentRetreat,
+          smokeSuppression: activateSmoke || observation.self.smokeDeploymentRemaining > 0,
+          seekingCover: Boolean(this.coverPlan), tracking: perception.mode === "tracking",
+          inRange: range >= GUN.minAimRange && range <= mainBatteryRange,
+          bearingAllowed: mainGunBearingAllowed,
+          inSalvoWindow: observation.time <= this.fireWindowUntil,
+        }),
         avoidanceReason: collisionRisk
           ? `规避友舰 ${collisionRisk.friendlyId}`
           : undefined,

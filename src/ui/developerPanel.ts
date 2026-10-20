@@ -1,4 +1,6 @@
 import "./developerPanelSandbox.css";
+import { DEFAULT_GAME_LOCALE, isGameLocale } from "../i18n/gameLocale";
+import { formatAiDecisionStatus } from "./aiDecisionStatus";
 import { COMPARTMENT_MAX_HEALTH, HYDRO, SMOKE } from "../sim/config";
 import { getShipClass, SHIP_CLASSES, SHIP_CLASS_IDS, torpedoesPerSalvo } from "../ships/classes";
 import { mainBatteryMountCanBear, torpedoLauncherAlignmentError } from "../sim/simulation";
@@ -64,6 +66,10 @@ export class DeveloperPanel {
   private readonly armorStatus: HTMLElement;
   private readonly viewStatus: HTMLElement;
   private readonly strategyStatus: HTMLElement;
+  private readonly aiDecisionStatus: HTMLElement;
+  private readonly navigationStatus: HTMLElement;
+  private readonly gunneryStatus: HTMLElement;
+  private readonly mountStatus: HTMLElement;
   private open = false;
 
   constructor(
@@ -140,6 +146,11 @@ export class DeveloperPanel {
           <button data-action="release-control" type="button">交还 AI / 返回本舰</button>
         </div>
         <div class="dev-strategy-status" data-role="strategy-status">策略：选择一个舰船或机群</div>
+        <div class="dev-strategy-status" data-role="ai-decision-status" data-i18n-keyed>
+          <div data-role="ai-navigation"></div>
+          <div data-role="ai-gunnery"></div>
+          <div data-role="ai-mounts"></div>
+        </div>
       </section>
       <div class="dev-live" data-role="live">等待状态</div>
       <div class="dev-perception" data-role="perception">感知：无遥测</div>
@@ -207,6 +218,11 @@ export class DeveloperPanel {
     const armorStatus = this.element.querySelector<HTMLElement>('[data-role="armor"]');
     const viewStatus = this.element.querySelector<HTMLElement>('[data-role="view-status"]');
     const strategyStatus = this.element.querySelector<HTMLElement>('[data-role="strategy-status"]');
+    const aiDecisionStatus = this.element.querySelector<HTMLElement>('[data-role="ai-decision-status"]');
+    const navigationStatus = this.element.querySelector<HTMLElement>('[data-role="ai-navigation"]');
+    const gunneryStatus = this.element.querySelector<HTMLElement>('[data-role="ai-gunnery"]');
+    const mountStatus = this.element.querySelector<HTMLElement>('[data-role="ai-mounts"]');
+    if (!aiDecisionStatus || !navigationStatus || !gunneryStatus || !mountStatus) throw new Error("Missing AI diagnostic controls");
     if (!shipSelect || !entitySelect || !sandboxStatus || !live || !perception || !torpedoStatus || !secondaryStatus || !armorStatus || !viewStatus || !strategyStatus) throw new Error("Missing developer panel controls");
     this.shipSelect = shipSelect;
     this.entitySelect = entitySelect;
@@ -217,6 +233,10 @@ export class DeveloperPanel {
     this.armorStatus = armorStatus;
     this.viewStatus = viewStatus;
     this.strategyStatus = strategyStatus;
+    this.aiDecisionStatus = aiDecisionStatus;
+    this.navigationStatus = navigationStatus;
+    this.gunneryStatus = gunneryStatus;
+    this.mountStatus = mountStatus;
     this.bindControls();
   }
 
@@ -589,6 +609,15 @@ export class DeveloperPanel {
     const entityId = this.entitySelect.value;
     const entityShip = this.getState().ships.find(({ id }) => id === entityId);
     const entityAir = this.getState().airSquadrons.find(({ id }) => id === entityId);
+    this.aiDecisionStatus.hidden = !entityShip;
+    if (entityShip) {
+      // applyDocumentLocale updates lang; read it afresh rather than caching translated text.
+      const language = document.documentElement.lang;
+      const status = formatAiDecisionStatus(entityShip.aiDecision, isGameLocale(language) ? language : DEFAULT_GAME_LOCALE);
+      if (this.navigationStatus.textContent !== status.navigation) this.navigationStatus.textContent = status.navigation;
+      if (this.gunneryStatus.textContent !== status.gunnery) this.gunneryStatus.textContent = status.gunnery;
+      if (this.mountStatus.textContent !== status.mounts) this.mountStatus.textContent = status.mounts;
+    }
     if (entityShip) {
       const decision = entityShip.aiDecision;
       this.strategyStatus.textContent = decision

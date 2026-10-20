@@ -222,6 +222,29 @@ export interface FleetObjectiveAssignment {
 export type FleetAiPhase =
   | "forming" | "securing" | "engaging" | "evading" | "withdrawing" | "searching";
 
+/** Snapshot of the last actual navigation planning pass, not a live clearance query. */
+export interface AiNavigationTelemetry {
+  phase: "cruising" | "reversing" | "reorienting";
+  throttleLimit?: number;
+  forwardClear?: boolean;
+  exitCommitted?: boolean;
+}
+
+export type AiMainGunHoldReason =
+  | "torpedo-selected" | "withdrawal" | "smoke" | "cover"
+  | "no-track" | "out-of-range" | "arc" | "salvo-window"
+  | "no-guns" | "gun-disabled" | "reloading";
+
+/** Pre-command intent/readiness; not confirmation that the simulation fired. */
+export interface AiGunneryTelemetry {
+  requested: boolean;
+  holdReasons: AiMainGunHoldReason[];
+  readyMounts: number;
+  operationalMounts: number;
+  totalMounts: number;
+  reloadSeconds?: number;
+}
+
 /** Compact, display-only explanation of the last fleet AI decision. */
 export interface AiDecisionTelemetry {
   role: FleetAiRole;
@@ -239,6 +262,8 @@ export interface AiDecisionTelemetry {
   friendlyTargetLoad?: number;
   objectiveDuty?: "capture" | "support";
   objectiveUrgent?: boolean;
+  navigation?: AiNavigationTelemetry;
+  gunnery?: AiGunneryTelemetry;
 }
 
 export interface SensorSnapshot {

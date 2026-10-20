@@ -24,7 +24,7 @@ export function fleetDiagnosticSnapshot(state: Readonly<BattleState>) {
         heading: mount.heading, canBearOwnAim: mainBatteryMountCanBear(ship, mount.mountIndex, ship.aimPoint),
       })),
       smokeDeploymentRemaining: ship.smokeDeploymentRemaining,
-      aiDecision: ship.aiDecision ? { ...ship.aiDecision } : undefined,
+      aiDecision: ship.aiDecision ? structuredClone(ship.aiDecision) : undefined,
       perception: ship.perception ? structuredClone(ship.perception) : undefined,
     })),
   };

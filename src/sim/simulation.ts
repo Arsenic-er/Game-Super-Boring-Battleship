@@ -4115,6 +4115,9 @@ export function stepSimulation(
     }
     ship.aiDecision = command.aiDecision ? {
       ...command.aiDecision,
+      navigation: command.aiDecision.navigation ? { ...command.aiDecision.navigation } : undefined,
+      gunnery: command.aiDecision.gunnery ? { ...command.aiDecision.gunnery,
+        holdReasons: [...command.aiDecision.gunnery.holdReasons] } : undefined,
     } : undefined;
     ship.torpedoSpreadMode = command.torpedoSpread ?? ship.torpedoSpreadMode;
     ship.damageControlPriority = command.damageControlPriority ?? ship.damageControlPriority;

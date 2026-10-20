@@ -1,3 +1,32 @@
+## 2026-10-20 — Explain AI navigation and main-gun decisions in developer mode
+
+The next two silent-ship traces do not establish another firing defect.
+The fog Richelieu has no local contact and a blocked full-hull forward corridor;
+the clear-weather Cleveland preserves concealment while badly damaged. After
+recovering to its withdrawal threshold it has no remaining local track.
+Both passive replays reproduce their pre-change complete-state hashes.
+
+Add display-only navigation phase, corridor/exit status, main-gun restrictions,
+ready/operational mount counts and earliest eligible reload to the selected
+ship's developer panel. Seven keyed translations update when the language
+changes; missing older fields remain unknown. The normal battle HUD is untouched.
+
+The navigation getter returns the last real planning snapshot without new
+queries or cache changes. Gunnery diagnostics explain existing decision facts
+without changing intent or RNG. Simulation and diagnostic snapshots clone their
+nested data; LAN replication still excludes AI policy. Readiness is not proof
+of a shot, and the UI explicitly says so.
+
+The 2,020 passing regular tests include 31 new targeted regressions. Six
+prototype checks, build and 24 browser checks also pass. Two full old/new pairs compare
+605,290 and 704,521 commands respectively: removing only the two new fields
+leaves identical commands and terminal state. Raw hashes differ as expected.
+Full evidence is recorded in
+acceptance/ai-decision-diagnostics-2026-10-20.md. Raw traces, screenshots and
+test-only instrumentation remain ignored on the server. This improves inspection,
+not fleet-wide participation or slow-turn acceptance; no damage/physics/vision
+rule, duration, asset, main branch, version or local delivery change.
+
 ## 2026-10-20 — Stabilize demonstrated blocked AI heading reversals
 
 A passive original-session replay identifies a Richelieu switching full helm

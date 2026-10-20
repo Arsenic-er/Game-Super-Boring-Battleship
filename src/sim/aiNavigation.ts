@@ -1,7 +1,7 @@
 import { battleMapDefinition, canExitNavigationContact, firstNavigationHazard, shipDraftMeters, terrainNavigationAt, terrainSafeHeading, type BattleMapId } from "../maps/atollMap";
 import { getShipClass } from "../ships/classes";
 import { NAVIGATION_PACE, shipSpeedMetersPerSecond } from "./config";
-import type { ShipState, Vec3 } from "./types";
+import type { AiNavigationTelemetry, ShipState, Vec3 } from "./types";
 
 export interface AiNavigationCommand {
   desiredHeading: number;
@@ -50,6 +50,12 @@ export class AiNavigationRecovery {
   private boundaryReorientation = false;
   private nextCheckAt = 0;
   private cached?: AiNavigationCommand;
+  private telemetry?: AiNavigationTelemetry;
+
+  /** Read-only diagnostic snapshot: no planning, queries, or cache invalidation. */
+  getTelemetry(): AiNavigationTelemetry | undefined {
+    return this.telemetry ? { ...this.telemetry } : undefined;
+  }
 
   command(mapId: BattleMapId, ship: Readonly<ShipState>, desiredHeading: number, time: number,
     interruptReorientation = false): AiNavigationCommand {
@@ -131,6 +137,7 @@ export class AiNavigationRecovery {
         // has braking clearance; never continue astern into a blocked short step.
         this.cached = { desiredHeading: (astern ?? preferredAstern) + Math.PI,
           throttleLimit: canBack ? -.25 : 0, recovering: true };
+        this.telemetry = { phase: "reversing", throttleLimit: this.cached.throttleLimit };
         return this.cached;
       }
     }
@@ -218,12 +225,15 @@ export class AiNavigationRecovery {
         // of spending many minutes turning at its stationary rudder authority.
         const steerage = clearForward && ship.speedKnots >= -.5 ? .18 : 0;
         this.cached = { desiredHeading: exitHeading, throttleLimit: steerage, recovering: true };
+        this.telemetry = { phase: "reorienting", throttleLimit: steerage,
+          forwardClear: clearForward, exitCommitted: this.reorientationHeading !== undefined };
         return this.cached;
       }
     }
     const throttleLimit = distance < Math.max(85, speed * 6) ? .12
       : distance < lookahead ? .35 : undefined;
     this.cached = { desiredHeading, throttleLimit, recovering: false };
+    this.telemetry = { phase: "cruising", throttleLimit };
     return this.cached;
   }
 }
