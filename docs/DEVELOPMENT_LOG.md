@@ -1,3 +1,38 @@
+## 2026-10-21 — Match AI braking estimates to actual damaged propulsion
+
+Fix duplicated stopping estimates in terrain navigation and objective-station
+approach. Both now use a read-only helper matching the real positive-headway
+zero-throttle branch, including engine health and acceleration equipment.
+The controlled Yamato case changes from 56.12 m to 246.42 m. Invalid or
+unbounded stopping estimates keep queries finite without requesting ahead
+thrust; simulation inertia is never cleared by planning.
+
+Twenty-two helper tests include four fixed-step physical braking experiments;
+ten integration tests cover both teams, healthy comparison, planning cadence
+and unbounded-distance safety. The original integration subset fails five
+checks against exact old call sites and passes after wiring. All 2,052 regular
+tests, six prototype checks, build and eleven browser checks pass.
+
+Twelve real full fleet-support sessions pass basic battle gates, with 144/144
+ship appearances firing. Five exact old-version scenario comparisons are
+retained on the server. The previously motionless fog a5 travels 2,324.97 m
+during its last five minutes, but three rain survivors still become stationary
+in blocked reorientation. One is a new late-stop outcome against a same-length
+surviving old comparator; the others have unequal survival/end windows.
+These are navigation defects to investigate, not evidence of AI readiness.
+
+Do not ship the isolated forward-creep or astern-turn probes: the former
+thrashes its throttle and the latter is not the historical controller state.
+The actual old a5 exits reverse at its 240 s cap, not an early-clearance
+handoff. Propulsion, steering, damage, gun rules, perception and the twenty-
+minute limit remain unchanged. The conservative full-hull probe also identifies
+a geometry-validation gap beyond the existing centre-line terrain resolver.
+
+Detailed scope and limitations:
+acceptance/ai-braking-consistency-2026-10-21.md.
+Source/tests/condensed records only; raw QA stays ignored on the server.
+No main merge, stable release, assets, tag/version or local download.
+
 ## 2026-10-20 — Explain AI navigation and main-gun decisions in developer mode
 
 The next two silent-ship traces do not establish another firing defect.

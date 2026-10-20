@@ -1,6 +1,7 @@
 import { battleMapDefinition, canExitNavigationContact, firstNavigationHazard, shipDraftMeters, terrainNavigationAt, terrainSafeHeading, type BattleMapId } from "../maps/atollMap";
 import { getShipClass } from "../ships/classes";
 import { NAVIGATION_PACE, shipSpeedMetersPerSecond } from "./config";
+import { forwardStoppingDistance } from "./navigationKinematics";
 import type { AiNavigationTelemetry, ShipState, Vec3 } from "./types";
 
 export interface AiNavigationCommand {
@@ -73,8 +74,7 @@ export class AiNavigationRecovery {
     const hull = getShipClass(ship.shipClassId);
     const padding = hull.beam * .6 + 12;
     const speed = Math.max(0, shipSpeedMetersPerSecond(ship.speedKnots));
-    const braking = hull.brakingKnotsPerSecond * NAVIGATION_PACE.propulsionResponseScale;
-    const stopDistance = speed * Math.max(0, ship.speedKnots) / Math.max(.1, braking) * .5;
+    const stopDistance = forwardStoppingDistance(ship);
     const lookahead = Math.max(100, Math.min(800, stopDistance + speed * 6 + 80));
     const ahead = { x: ship.position.x + Math.sin(ship.heading) * lookahead, y: 0,
       z: ship.position.z + Math.cos(ship.heading) * lookahead };
@@ -223,14 +223,14 @@ export class AiNavigationRecovery {
         // A large remaining turn is not itself a collision risk. A clear
         // stopping corridor lets even a slow battleship retain steerage instead
         // of spending many minutes turning at its stationary rudder authority.
-        const steerage = clearForward && ship.speedKnots >= -.5 ? .18 : 0;
+        const steerage = Number.isFinite(stopDistance) && clearForward && ship.speedKnots >= -.5 ? .18 : 0;
         this.cached = { desiredHeading: exitHeading, throttleLimit: steerage, recovering: true };
         this.telemetry = { phase: "reorienting", throttleLimit: steerage,
           forwardClear: clearForward, exitCommitted: this.reorientationHeading !== undefined };
         return this.cached;
       }
     }
-    const throttleLimit = distance < Math.max(85, speed * 6) ? .12
+    const throttleLimit = !Number.isFinite(stopDistance) ? 0 : distance < Math.max(85, speed * 6) ? .12
       : distance < lookahead ? .35 : undefined;
     this.cached = { desiredHeading, throttleLimit, recovering: false };
     this.telemetry = { phase: "cruising", throttleLimit };

@@ -3,7 +3,6 @@ import {
   FIXED_STEP,
   GUN,
   HYDRO,
-  NAVIGATION_PACE,
   SENSOR,
   SMOKE,
   TORPEDO,
@@ -15,6 +14,7 @@ import { ObjectiveSupportNavigator } from "./objectiveSupportNavigation";
 import { ObjectiveCaptureNavigator } from "./objectiveCaptureNavigation";
 import { terrainSafeHeading } from "../maps/atollMap";
 import { AiNavigationRecovery } from "../sim/aiNavigation";
+import { forwardStoppingDistance } from "../sim/navigationKinematics";
 import { aiGunneryTelemetry } from "./aiGunneryTelemetry";
 import { planFleetCover, type FleetCoverPlan } from "../sim/fleetCover";
 import { getShipClass } from "../ships/classes";
@@ -934,10 +934,7 @@ export class RuleBasedAi implements Controller {
     const stationTurn = firingStationManeuver && !evadingTorpedo && !closeQuartersRetreat
       && !collisionRisk && !navigation.recovering && Math.abs(headingError) > .05;
     const rudder = stationTurn ? Math.sign(headingError) * .82 : clamp(headingError * 1.25, -.82, .82);
-    const hull = getShipClass(observation.self.shipClassId);
-    const forwardSpeed = Math.max(0, observation.self.speedKnots);
-    const stoppingDistance = shipSpeedMetersPerSecond(forwardSpeed) * forwardSpeed
-      / Math.max(0.1, hull.brakingKnotsPerSecond * NAVIGATION_PACE.propulsionResponseScale) * 0.5;
+    const stoppingDistance = forwardStoppingDistance(observation.self);
     const stationArrivalRadius = tacticalObjectivePush
       ? capturePlan?.arrivalRadiusMeters ?? 95 : supportPlan?.arrivalRadiusMeters ?? 220;
     // Support stations must remain reachable from rest: a fixed braking buffer

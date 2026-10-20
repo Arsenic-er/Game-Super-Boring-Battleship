@@ -1,6 +1,6 @@
 # Condensed Development Status
 
-Last updated: 2026-10-20
+Last updated: 2026-10-21
 
 This is the current operational handoff. Product decisions are preserved in
 `CONVERSATION_SUMMARY.md`; milestone history is preserved in `DEVELOPMENT_LOG.md`.
@@ -39,7 +39,33 @@ Improve useful activity instead: safe shoal recovery, meaningful navigation,
 contact reacquisition and valid opportunities to engage. Legitimate concealment,
 withdrawal, repair and reloading are not automatically inactivity defects.
 
-## Latest working changes — 2026-10-20: developer AI decision diagnostics
+## Latest working changes — 2026-10-21: physical braking consistency, navigation acceptance open
+
+- Terrain lookahead and objective approach now share the real positive-headway
+  zero-throttle estimate, including engine damage and acceleration equipment.
+  The weak-engine Yamato counterexample is 246.42 m, not the old 56.12 m.
+  Infinite stopping distance cannot authorize positive navigation thrust;
+  actual inertia remains in the simulation.
+- No propulsion/rudder, weapons, sensor, scoring, reverse-recovery or duration
+  rule changed. Experimental astern-turn and forward-creep plans are not
+  shipped. The 240 s reverse cap and all existing test thresholds remain.
+- Verification: 2,052 regular tests, six explicit prototype checks, build and
+  eleven browser checks pass. Twelve full fleet-support sessions meet basic
+  battle gates; 144/144 ship appearances fire main guns. Five exact old-version
+  scenarios provide comparison evidence. See
+  acceptance/ai-braking-consistency-2026-10-21.md.
+- This is NOT overall AI acceptance: fog a5 resumes 2.3 km of late travel, but
+  three rain-case survivors remain stationary in blocked reorientation.
+  Default 5v5 a3 is a new late-stop outcome versus the same surviving old
+  window; another old comparator had already sunk and one ends later.
+  Working engines/rudders do not justify dismissing these as damage-only.
+- Next: reproduce those rain navigation failures, then integrate safe turn
+  trajectories and complete hull-sweep checks with existing fleet priorities.
+  Centre-line collision and bounded heading rays are not sufficient proof.
+  Keep twenty-minute endings normal. Changes remain on the active development
+  branch; no main merge, stable release, asset/version/tag or local delivery.
+
+## Previous checkpoint — 2026-10-20: developer AI decision diagnostics
 
 - The developer panel now explains the selected ship's last navigation plan,
   main-gun intent and pre-command mount readiness in all seven languages.
