@@ -39,7 +39,36 @@ Improve useful activity instead: safe shoal recovery, meaningful navigation,
 contact reacquisition and valid opportunities to engage. Legitimate concealment,
 withdrawal, repair and reloading are not automatically inactivity defects.
 
-## Latest working changes — 2026-10-20: AI ammunition commitment
+## Latest working changes — 2026-10-20: blocked recovery heading stabilization
+
+- A verified exit is retained only after an adjacent, low-speed, blocked-bow
+  candidate reversal. Moving recovery and stable slow turns do not start a
+  commitment. Unsafe corridors, boundaries, new reverse, completion and
+  collision/torpedo/damage emergencies invalidate it; physics is unchanged.
+- Nineteen navigation and eight priority regressions pass. Six natural
+  reconstructions release after 366–503 seconds, then move normally for
+  thirty seconds with zero grounding. Exact old navigation never releases
+  in the same final 600-second observation; no existing tests were relaxed.
+- The originally stationary b5's complete replay matches the ordinary
+  candidate hash. Its final-five-minute helm reversals fall 32→0 and travel
+  rises 0→641 m; sixteen actual shells follow valid new local contacts.
+  Another late reverse remains, so this is not general navigation acceptance.
+- Twelve paired battles retain firing from all 144 ship appearances; shells
+  change 18,825→19,005 but late silent survivors worsen 9→14. Ten identities
+  are newly silent, including five previously sunk. Eight new cases lack
+  local contact; damaged weapons/rudders explain some, not all. Do not mark
+  fleet-wide engagement accepted or disguise this result with aggregate shots.
+- Next: same-frame evidence for healthy stationary/slow-turning a5 in
+  7/default/fog and intermittently tracking, withdrawing b2 in
+  7/mirrored/clear. Do not grant radio-only firing or bypass coastal clearance.
+- Verification: 1,989 suite tests (including eight balance-lab), six prototype
+  checks, twenty-two full fleet sessions, build and eleven browser checks pass.
+  Six label controls match canonical hashes; temporary preview closed.
+- Source/tests/records only; assets/main/tag/version/local delivery unchanged.
+  See acceptance/ai-recovery-heading-2026-10-20.md. Surface/mobile FPS and
+  physical two-PC LAN testing remain outstanding.
+
+## Previous checkpoint — 2026-10-20: AI ammunition commitment
 
 - Same-frame tracing establishes the rain Richelieu's late firing failure:
   all 1,267 fire requests hit two reloading mounts. It loaded AP, chose HE

@@ -1,3 +1,44 @@
+## 2026-10-20 — Stabilize demonstrated blocked AI heading reversals
+
+A passive original-session replay identifies a Richelieu switching full helm
+32 times without moving in the final five minutes. A heading-relative capture
+recovery request alternated discrete terrain exits instead of completing a turn.
+
+AI now holds a verified exit only after adjacent low-speed, blocked-bow samples
+show a large candidate direction reversal with little actual hull rotation.
+Normal moving recovery and stable slow turns retain their previous behavior.
+Terrain revalidation, boundary/new-reverse reset and explicit collision,
+torpedo-threat and damage-withdrawal interruption preserve safety priority.
+Propulsion, rudder, firing, sensors, damage, scoring and twenty-minute limit
+remain unchanged.
+
+Nineteen navigation and eight controller-priority regressions pass. The six
+natural reconstructions finish recovery in 366–503 seconds, then sail normally
+for thirty seconds; longest stop falls from 365–398 to 4–7 seconds with zero
+grounding. Exact old navigation fails the same final 600-second cases. The
+new fixture window changed from the discarded broad candidate's 390 seconds;
+no existing regression threshold changed. It is bounded, not fast, recovery.
+
+The real-session candidate trace matches the uninstrumented state hash:
+the diagnosed ship travels 641 m rather than zero in the last five minutes and
+fires sixteen shells with actual local tracking and legal arcs. It later
+reverses again, so this does not establish complete coastal navigation.
+
+Twelve paired battles retain main-gun participation for all 144 ship appearances
+and shells change 18,825 to 19,005. Late silent survivors nevertheless rise
+9 to 14: ten new, four retained, five removed; five new identities previously
+sank. Eight new cases lack late local contacts, with disabled weapons/rudders
+in some cases. Healthy slow-turn and damaged-withdrawal firing cases remain
+open. This is not a fleet-wide participation acceptance.
+
+Verification: 1,989 suite tests including eight balance-lab tests, six prototype
+checks, twenty-two full sessions, build and eleven browser checks pass.
+Six label-control hashes match; temporary preview closed. No local download,
+asset changes, main merge, version or tag. See
+acceptance/ai-recovery-heading-2026-10-20.md for old/new evidence, discarded
+broad candidate and limitations. Next trace 7/default/fog a5 and
+7/mirrored/clear b2 in the same frame before changing navigation or firing.
+
 ## 2026-10-20 — AI completes a useful ammunition change before reconsidering
 
 Passive same-frame replay confirms 1,267 late Richelieu fire requests were

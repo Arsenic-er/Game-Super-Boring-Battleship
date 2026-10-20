@@ -924,7 +924,8 @@ export class RuleBasedAi implements Controller {
     desiredHeading = this.plannedTerrainHeading;
     const collisionRisk = friendlyCollisionRisk(observation.self, friendlies);
     if (collisionRisk) desiredHeading = collisionRisk.avoidanceHeading;
-    const navigation = this.navigationRecovery.command(observation.mapId, observation.self, desiredHeading, observation.time);
+    const navigation = this.navigationRecovery.command(observation.mapId, observation.self, desiredHeading, observation.time,
+      Boolean(collisionRisk || evadingTorpedo || damaged));
     desiredHeading = navigation.desiredHeading;
     const headingError = wrapAngle(desiredHeading - observation.self.heading);
     // Slow battleships need sustained helm until a blocked arc actually opens;
