@@ -1,3 +1,41 @@
+## 2026-10-21 — Synchronize main and correct withdrawal recovery interruptions
+
+On the owner's request, fast-forward and push main from e5f6bd7 to 8ef5b84:
+34 development commits, no merge conflict, branch deletion or history rewrite.
+Continue subsequent changes on codex/v072-historical-models.
+
+Treat continuous damaged withdrawal as state, not a fresh emergency every
+frame. Invalidate recovery once when withdrawal starts or the known threat
+identity changes, including true loss/acquisition. Retain continuity from
+optical contact to bounded memory of that same threat. Real collision and
+reacted-to torpedo danger still interrupt every frame. No physics, sensor,
+damage, firing or match-duration changes.
+
+Eight new public-controller regressions fail on the exact old controller and
+pass on the candidate. Four navigation-cache cases establish that a one-frame
+interruption clears a retained exit before the next replan without private
+state injection. These controlled fixtures are not natural escape trajectories.
+All 2,064 regular tests, six explicit prototype checks, build and eleven browser
+checks pass; eleven regular opt-in cases remain skipped.
+
+The twelve complete fleet replays retain identical canonical terminal states
+and recorded navigation metrics against 8ef5b84. All 144 ship appearances fire
+main guns, but the same three rain survivors still stop late. An exact passive
+default-5v5 trace reduces interruptions from 18,000 to fifteen target switches
+without changing any of the final 18,000 frames' physics/control outputs.
+There is no demonstrated improvement to that ship's escape.
+
+Independent mirrored-5v5 tracing identifies lost prior turn progress: a still
+safe earlier exit needs another 56.56 degrees right, but the planner compares
+only recent candidates and commits to 102.87 degrees left. Its bow corners
+also enter shallow water missed by the centre-line resolver. Preserve these
+as separate open navigation/geometry work, not completed fixes.
+
+Scope, evidence and remaining acceptance boundaries:
+acceptance/ai-withdrawal-recovery-2026-10-21.md.
+Raw QA remains ignored on the server. Assets, version/tag and local delivery
+are unchanged; no persistent test service or device-performance claim.
+
 ## 2026-10-21 — Match AI braking estimates to actual damaged propulsion
 
 Fix duplicated stopping estimates in terrain navigation and objective-station

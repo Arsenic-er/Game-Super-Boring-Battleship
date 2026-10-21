@@ -288,6 +288,7 @@ export class RuleBasedAi implements Controller {
   private coverPlan?: FleetCoverPlan;
   private nextCoverPlanAt = 0;
   private coverTargetId?: string;
+  private withdrawalRecoveryIntent?: { targetId?: string };
   private radioTargetId?: string;
   private randomSeed: number;
   private selectedAmmo: AmmoType = "he";
@@ -925,8 +926,15 @@ export class RuleBasedAi implements Controller {
     desiredHeading = this.plannedTerrainHeading;
     const collisionRisk = friendlyCollisionRisk(observation.self, friendlies);
     if (collisionRisk) desiredHeading = collisionRisk.avoidanceHeading;
+    // Persistent damage is a withdrawal state, not a new emergency every frame.
+    // Invalidate once on entry or a change to the known threat actually guiding
+    // withdrawal; local-to-memory continuity of the same threat is not a change.
+    const withdrawalIntentChanged = damaged && (!this.withdrawalRecoveryIntent
+      || this.withdrawalRecoveryIntent.targetId !== target?.id);
+    if (withdrawalIntentChanged) this.withdrawalRecoveryIntent = { targetId: target?.id };
+    else if (!damaged) this.withdrawalRecoveryIntent = undefined;
     const navigation = this.navigationRecovery.command(observation.mapId, observation.self, desiredHeading, observation.time,
-      Boolean(collisionRisk || evadingTorpedo || damaged));
+      Boolean(collisionRisk || evadingTorpedo || withdrawalIntentChanged));
     desiredHeading = navigation.desiredHeading;
     const headingError = wrapAngle(desiredHeading - observation.self.heading);
     // Slow battleships need sustained helm until a blocked arc actually opens;

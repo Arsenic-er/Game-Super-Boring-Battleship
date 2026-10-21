@@ -39,7 +39,38 @@ Improve useful activity instead: safe shoal recovery, meaningful navigation,
 contact reacquisition and valid opportunities to engage. Legitimate concealment,
 withdrawal, repair and reloading are not automatically inactivity defects.
 
-## Latest working changes — 2026-10-21: physical braking consistency, navigation acceptance open
+## Latest working changes — 2026-10-21: main synchronized; withdrawal interruption contract
+
+- On the owner's request, fast-forwarded and pushed `main` from `e5f6bd7`
+  to `8ef5b84` (34 commits). No branch was deleted or history rewritten.
+  Continued work stays on `codex/v072-historical-models`; this is a checkpoint,
+  not a stable-release or whole-AI acceptance declaration.
+- Persistent damage no longer repeatedly invalidates recovery. Entry into
+  withdrawal and a changed/expired/acquired known threat invalidate once;
+  collision and reacted-to torpedo threats retain continuous priority.
+  Same-target optical-to-memory continuity does not reset the recovery.
+- Twelve new regression cases cover the controller event contract and a
+  one-shot interruption during the navigation cache. Regular suite: 2,064
+  passes, eleven opt-in skips; six explicit prototype checks, build and eleven
+  browser checks pass. Temporary browser service is closed.
+- All twelve complete 5v5/7v7 clear/rain/fog replays match the `8ef5b84`
+  canonical terminal state and recorded navigation metrics. The same 144
+  ship appearances fire 20,052 main-gun shells. This provides no evidence of
+  improved coastal movement: all three known rain late-stop cases remain.
+- Exact damaged-Edinburgh tracing reduces last-300-second interruptions from
+  18,000 frames to fifteen real target switches, but retains zero travel,
+  zero committed exits and identical controls/physics in all 18,000 frames.
+  Do not describe the contract repair as a successful unsticking fix.
+- A separate healthy-Edinburgh trace loses an earlier still-safe exit after
+  52.17 degrees of right-turn progress and commits to a large left turn.
+  Its bow corners also overlap a shallow shoal despite a deep-water centre.
+  Next: preserve useful turn progress while revalidating real escape corridors,
+  and validate full-hull swept clearance. Neither issue is fixed here.
+- See acceptance/ai-withdrawal-recovery-2026-10-21.md. Twenty-minute endings,
+  propulsion, rudder, damage, weapons, sensors and reverse caps are unchanged.
+  No asset, version/tag, native-device acceptance or local download changes.
+
+## Previous checkpoint — 2026-10-21: physical braking consistency, navigation acceptance open
 
 - Terrain lookahead and objective approach now share the real positive-headway
   zero-throttle estimate, including engine damage and acceleration equipment.
@@ -62,8 +93,9 @@ withdrawal, repair and reloading are not automatically inactivity defects.
 - Next: reproduce those rain navigation failures, then integrate safe turn
   trajectories and complete hull-sweep checks with existing fleet priorities.
   Centre-line collision and bounded heading rays are not sufficient proof.
-  Keep twenty-minute endings normal. Changes remain on the active development
-  branch; no main merge, stable release, asset/version/tag or local delivery.
+  Keep twenty-minute endings normal. This checkpoint entered main on the
+  owner's subsequent request; see the latest section. No stable release,
+  asset/version/tag or local delivery was made at this checkpoint.
 
 ## Previous checkpoint — 2026-10-20: developer AI decision diagnostics
 
