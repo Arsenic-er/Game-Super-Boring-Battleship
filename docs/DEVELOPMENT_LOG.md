@@ -1,3 +1,33 @@
+## 2026-10-22 — Preserve verified physical turn progress during recovery
+
+At the existing blocked-bow candidate reversal, allow an earlier safe exit to
+compete after at least twenty degrees of continuous physical progress toward
+it. Do not lock normal slow or moving recovery. Reset the new history on
+emergency, lifecycle and continuity failures; keep ordinary commitment rules.
+Only history-derived commitments gain continued 1 km revalidation, including
+after movement. Physics, sensors, guns and the twenty-minute limit are unchanged.
+
+Fifteen new regressions cover the core selection and invalidation contract,
+including a real atoll short-clear/long-blocked corridor. A bounded scripted
+navigation/physics case releases at 286.33 s and continues for 30.02 s / 160 m.
+In the exact historical rain Edinburgh replay, however, the wrong left turn
+is removed but actual translation stays zero until the 1,200 s ending. Sampled
+corner/edge overlap clears after 1058.58 s; this is not full-hull sweep proof.
+
+Twelve final full sessions retain main-gun fire from all 144 ship appearances.
+Ten complete terminal states match the previous checkpoint; two battles change.
+The same three late-stationary rain survivors and six late-silent survivors
+remain. A clear-weather Richelieu's late travel improves, but earlier recovery
+and other ships also change. Do not infer fleet-wide navigation acceptance.
+
+All 2,079 regular tests, six prototype checks, build and eleven browser checks
+pass. The full-body audit separately confirms centre-only terrain checking,
+position-only rollback after a turn, and unchecked post-terrain ship/ship
+displacement. Unify those constraints with safe recovery paths next.
+Details: acceptance/ai-recovery-turn-continuity-2026-10-22.md.
+Server-only source/tests/condensed records; raw QA ignored, assets/main/tag/
+version/local delivery unchanged, temporary browser service closed.
+
 ## 2026-10-21 — Synchronize main and correct withdrawal recovery interruptions
 
 On the owner's request, fast-forward and push main from e5f6bd7 to 8ef5b84:

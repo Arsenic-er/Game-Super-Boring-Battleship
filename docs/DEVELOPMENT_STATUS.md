@@ -1,6 +1,6 @@
 # Condensed Development Status
 
-Last updated: 2026-10-21
+Last updated: 2026-10-22
 
 This is the current operational handoff. Product decisions are preserved in
 `CONVERSATION_SUMMARY.md`; milestone history is preserved in `DEVELOPMENT_LOG.md`.
@@ -39,7 +39,35 @@ Improve useful activity instead: safe shoal recovery, meaningful navigation,
 contact reacquisition and valid opportunities to engage. Legitimate concealment,
 withdrawal, repair and reloading are not automatically inactivity defects.
 
-## Latest working changes — 2026-10-21: main synchronized; withdrawal interruption contract
+## Latest working changes — 2026-10-22: preserve useful recovery turns
+
+- A blocked low-speed candidate reversal can retain an earlier still-safe exit
+  after at least 20 degrees of continuous same-direction physical turn. Normal
+  slow turns only record history; they do not lock a heading. Emergencies,
+  discontinuity and unsafe corridors invalidate the added state.
+- History-derived commitments revalidate a padded 1 km corridor on every real
+  replan, including after position changes. Ordinary commitments keep their
+  existing rules. Fifteen new regressions include a real atoll case where the
+  near corridor is clear but a shoal lies farther ahead.
+- One bounded production-physics fixture releases and continues for 30 s /
+  160 m with scripted route inputs. In the actual rain Edinburgh replay the
+  wrong left turn is avoided and detected bow overlap clears, but translation
+  remains zero by the twenty-minute ending. Do not call this complete escape.
+- Twelve final full-session comparisons retain all 144 main-gun participants,
+  the same six late-silent survivors and the same three rain late-stop cases.
+  Ten terminal states match; two battles change through coupled navigation,
+  contact and damage. No general AI-readiness approval is made.
+- 2,079 regular tests, six explicit prototype checks, build and eleven browser
+  checks pass; eleven opt-in suite cases remain skipped. See
+  acceptance/ai-recovery-turn-continuity-2026-10-22.md.
+- Next: unify terrain constraints with actual hull geometry and safe turn
+  trajectories. Current centre-only terrain sweeps miss bow overlap, do not
+  roll back heading, and run before ship/ship displacement. These remain
+  separate open physics/navigation work; no collision margin or rudder buff.
+- Development stays on `codex/v072-historical-models`; main remains `8ef5b84`.
+  Assets, version/tag and local delivery are unchanged; no persistent preview.
+
+## Previous checkpoint — 2026-10-21: main synchronized; withdrawal interruption contract
 
 - On the owner's request, fast-forwarded and pushed `main` from `e5f6bd7`
   to `8ef5b84` (34 commits). No branch was deleted or history rewritten.

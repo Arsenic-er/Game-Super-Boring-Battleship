@@ -47,7 +47,10 @@ export class AiNavigationRecovery {
   private reverseStartedAt = 0;
   private reorienting = false;
   private reorientationHeading?: number;
+  private reorientationFromTurn = false;
   private reorientationCandidate?: { heading: number; bowHeading: number; time: number; mapId: BattleMapId };
+  private reorientationTurn?: { heading: number; startBow: number; lastBow: number;
+    position: Vec3; time: number; mapId: BattleMapId };
   private boundaryReorientation = false;
   private nextCheckAt = 0;
   private cached?: AiNavigationCommand;
@@ -64,8 +67,12 @@ export class AiNavigationRecovery {
     // commitment across an explicit upstream emergency avoidance request.
     if (interruptReorientation) {
       this.reorientationHeading = undefined;
+      this.reorientationFromTurn = false;
       this.reorientationCandidate = undefined;
+      this.reorientationTurn = undefined;
     }
+    if (this.reorientationTurn && (this.reorientationTurn.mapId !== mapId
+      || time < this.reorientationTurn.time)) this.reorientationTurn = undefined;
     const grounded = ship.navigationZone === "grounded";
     if (time < this.nextCheckAt && this.cached && (!grounded || this.reverseFrom)) {
       return this.cached.recovering ? this.cached : { ...this.cached, desiredHeading };
@@ -85,7 +92,9 @@ export class AiNavigationRecovery {
       this.reverseStartedAt = time;
       this.reorienting = false;
       this.reorientationHeading = undefined;
+      this.reorientationFromTurn = false;
       this.reorientationCandidate = undefined;
+      this.reorientationTurn = undefined;
     }
     if (this.reverseFrom) {
       const backedAway = Math.hypot(ship.position.x - this.reverseFrom.x, ship.position.z - this.reverseFrom.z);
@@ -107,7 +116,9 @@ export class AiNavigationRecovery {
         this.reverseFrom = undefined;
         this.reorienting = true;
         this.reorientationHeading = undefined;
+        this.reorientationFromTurn = false;
         this.reorientationCandidate = undefined;
+        this.reorientationTurn = undefined;
       } else {
         // The bow points opposite the safe astern travel direction. Steering remains physical.
         const preferredAstern = terrainSafeHeading(mapId, ship.position,
@@ -147,14 +158,14 @@ export class AiNavigationRecovery {
       // caller's safe route. This branch runs only after an actual reverse.
       const exitLookahead = Math.max(180, Math.min(480, hull.length * 1.4 + stopDistance));
       const extent = battleMapDefinition(mapId).halfExtentMeters - padding;
-      const endpoint = (heading: number): Vec3 => ({
-        x: ship.position.x + Math.sin(heading) * exitLookahead, y: 0,
-        z: ship.position.z + Math.cos(heading) * exitLookahead,
+      const endpoint = (heading: number, distance = exitLookahead): Vec3 => ({
+        x: ship.position.x + Math.sin(heading) * distance, y: 0,
+        z: ship.position.z + Math.cos(heading) * distance,
       });
       const inBounds = (point: Readonly<Vec3>): boolean =>
         Math.abs(point.x) <= extent && Math.abs(point.z) <= extent;
-      const clearCorridor = (heading: number): boolean => {
-        const end = endpoint(heading);
+      const clearCorridor = (heading: number, distance = exitLookahead): boolean => {
+        const end = endpoint(heading, distance);
         return inBounds(end)
           && !firstNavigationHazard(mapId, ship.position, end, shipDraftMeters(ship.shipClassId), padding);
       };
@@ -163,7 +174,9 @@ export class AiNavigationRecovery {
       const handlingBoundary = this.boundaryReorientation;
       if (handlingBoundary) {
         this.reorientationHeading = undefined;
+        this.reorientationFromTurn = false;
         this.reorientationCandidate = undefined;
+        this.reorientationTurn = undefined;
         // Do not hand a still-near-edge hull back to an outward caller as soon
         // as its bow turns inward. Keep this recovery-local guard until there is
         // a full checked corridor between the ship and every map edge.
@@ -177,9 +190,29 @@ export class AiNavigationRecovery {
       // Only suppress a demonstrated large candidate reversal at a blocked,
       // near-stationary bow. Moving recovery and steady slow turns keep following
       // the caller; neither is evidence of port/starboard planner chatter.
-      if (this.reorientationHeading !== undefined && !clearCorridor(this.reorientationHeading)) {
+      if (this.reorientationHeading !== undefined && (!clearCorridor(this.reorientationHeading)
+        || (this.reorientationFromTurn && !clearCorridor(this.reorientationHeading, 1000)))) {
         this.reorientationHeading = undefined;
+        this.reorientationFromTurn = false;
         this.reorientationCandidate = undefined;
+        this.reorientationTurn = undefined;
+      }
+      // Keep evidence of a continuous physical turn, not a command commitment.
+      // Moving, interrupted or discontinuous observations cannot build credit.
+      const turn = this.reorientationTurn;
+      if (turn) {
+        const direction = Math.sign(wrap(turn.heading - turn.startBow));
+        const delta = wrap(ship.heading - turn.lastBow);
+        if (handlingBoundary || interruptReorientation || clearForward || Math.abs(ship.speedKnots) > .5
+          || time <= turn.time || time - turn.time > 1
+          || Math.hypot(ship.position.x - turn.position.x, ship.position.z - turn.position.z) > 2
+          || Math.abs(delta) > Math.PI / 36 || delta * direction < -1e-4
+          || wrap(turn.heading - ship.heading) * direction <= 0
+          || !clearCorridor(turn.heading) || !clearCorridor(turn.heading, 1000)) {
+          this.reorientationTurn = undefined;
+        } else {
+          turn.lastBow = ship.heading; turn.time = time; turn.position = { ...ship.position };
+        }
       }
       if (!handlingBoundary && !interruptReorientation && this.reorientationHeading !== undefined) {
         exitHeading = this.reorientationHeading;
@@ -200,20 +233,43 @@ export class AiNavigationRecovery {
           if (Math.abs(wrap(previous.heading - ship.heading)) < Math.abs(error) && clearCorridor(previous.heading)) {
             exitHeading = previous.heading;
           }
+          let continuedTurn = false;
+          const earlier = this.reorientationTurn;
+          if (earlier) {
+            const progress = wrap(ship.heading - earlier.startBow);
+            const remaining = wrap(earlier.heading - ship.heading);
+            // Only the existing blocked candidate reversal can promote history
+            // to a commitment, after >=20 degrees of real same-direction turn.
+            if (Math.abs(progress) >= Math.PI / 9 && progress * previousError > 0
+              && remaining * previousError > 0
+              && Math.abs(remaining) < Math.abs(wrap(exitHeading - ship.heading))) {
+              exitHeading = earlier.heading;
+              continuedTurn = true;
+            }
+          }
           this.reorientationHeading = exitHeading;
+          this.reorientationFromTurn = continuedTurn;
           this.reorientationCandidate = undefined;
+          this.reorientationTurn = undefined;
         } else {
           this.reorientationCandidate = { heading: exitHeading, bowHeading: ship.heading, time, mapId };
+          if (!this.reorientationTurn && clearCorridor(exitHeading, 1000)) {
+            this.reorientationTurn = { heading: exitHeading, startBow: ship.heading, lastBow: ship.heading,
+              position: { ...ship.position }, time, mapId };
+          }
         }
       } else {
         this.reorientationCandidate = undefined;
+        this.reorientationTurn = undefined;
       }
       const angle = Math.abs(Math.atan2(Math.sin(exitHeading - ship.heading),
         Math.cos(exitHeading - ship.heading)));
       if (clearForward && angle <= Math.PI / 6 && ship.speedKnots >= -.5 && !this.boundaryReorientation) {
         this.reorienting = false;
         this.reorientationHeading = undefined;
+        this.reorientationFromTurn = false;
         this.reorientationCandidate = undefined;
+        this.reorientationTurn = undefined;
         // Return the route just validated, not the unsafe original request that
         // terrain or boundary handling may have replaced during reorientation.
         desiredHeading = exitHeading;
