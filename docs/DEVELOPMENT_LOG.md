@@ -1,3 +1,37 @@
+## 2026-10-23 — Budget coastal prediction and withhold failed control integration
+
+Add resumable physical prediction and a battle-local bounded scheduler.
+Queries can pause before initial checks, batch checks or individual refinements;
+the old synchronous API retains complete-result parity. Shared motion/geometry
+budgets, background rotation, queue backpressure, snapshot isolation and entity
+lifecycle resets are covered by regression tests.
+
+The control experiment now checks final tactical orders, steering-stop and
+neutral-stop candidates, then freshly checks each applied tick. Fourteen
+copies of the archived natural approach start braking by .4667 simulated
+seconds. However, long runs still cycle throttle, a real-controller Edinburgh
+counterexample remains parked, and sustained near-coast work is too expensive
+to approve for Surface/mobile targets. Do not enable this experiment by default.
+
+Save a concise opt-in acceptance script in Git; it currently exits with failure
+on the real sixty-second neutral lock rather than masking it as a passing or
+skipped test. Normal controllers, LocalBattleSession and LAN host sessions do
+not schedule the experiment. All twelve final ordinary fleet sessions match
+bd508ef exactly in terminal state and navigation metrics; 144/144 ship
+appearances still fire main guns, totalling 20,288 shells.
+
+2,259 regular tests, including 87 new regressions, pass; build, six
+explicit prototype checks and eleven browser checks pass.
+Initial enabled integration had five test timeouts and a dead-owner laboratory
+integration error; that integration is not the default shipped path. Known
+centre-only collision and three previous rain stoppages are still unresolved.
+Next require a checked escape/recovery handoff, stable throttle and sustained
+cost acceptance before enabling live control. See
+acceptance/incremental-coastal-planning-2026-10-23.md.
+
+Main/assets/version/tag and the twenty-minute limit are unchanged. No local
+download, permanent preview or new Windows/mobile/LAN performance claim.
+
 ## 2026-10-23 — Verify prospective physical turns and braking
 
 Extract the original movement block into a shared kernel and prove exact

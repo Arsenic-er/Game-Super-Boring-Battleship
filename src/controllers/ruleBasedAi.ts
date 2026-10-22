@@ -8,6 +8,8 @@ import {
   TORPEDO,
   shipSpeedMetersPerSecond,
 } from "../sim/config";
+import { AiTerrainManeuverGuard } from "./aiTerrainManeuverGuard";
+import type { AiManeuverScheduler } from "../sim/aiManeuverScheduler";
 import { objectiveIsUrgent } from "./fleetObjectiveCoordinator";
 import { supportMaySearchKnownContact, supportStationRadius } from "./supportEngagement";
 import { ObjectiveSupportNavigator } from "./objectiveSupportNavigation";
@@ -281,6 +283,8 @@ export class RuleBasedAi implements Controller {
   private lastTime = 0;
   private plannedTerrainHeading?: number;
   private nextTerrainPlanAt = 0;
+  private readonly terrainGuard = new AiTerrainManeuverGuard();
+  getManeuverTelemetry() { return this.terrainGuard.getTelemetry(); }
   private readonly navigationRecovery = new AiNavigationRecovery();
   private readonly supportNavigator = new ObjectiveSupportNavigator();
   private readonly captureNavigator = new ObjectiveCaptureNavigator();
@@ -583,7 +587,7 @@ export class RuleBasedAi implements Controller {
     };
   }
 
-  command(observation: Observation): ControlCommand {
+  command(observation: Observation, planning?: AiManeuverScheduler): ControlCommand {
     const self = observation.self;
     this.selectedAmmo = self.pendingAmmoType ?? self.ammoType;
     if (self.pendingAmmoType) {
@@ -1049,9 +1053,15 @@ export class RuleBasedAi implements Controller {
           : searchingTarget ? "searching"
             : target ? "engaging" : "forming";
 
+    const originalMovement = { throttle: damaged ? Math.min(tacticalThrottle, 0.52) : tacticalThrottle, rudder };
+    // Explicit laboratory injection only. The experimental guard still fails
+    // sustained-recovery/performance gates; normal battles retain current AI.
+    const movement = planning ? this.terrainGuard.command(observation, originalMovement,
+      planning, Boolean(collisionRisk || evadingTorpedo || navigation.recovering)) : originalMovement;
+
     return {
-      throttle: damaged ? Math.min(tacticalThrottle, 0.52) : tacticalThrottle,
-      rudder,
+      throttle: movement.throttle,
+      rudder: movement.rudder,
       // A preparing launcher owns the shared aim point, but cannot fire until
       // aligned. A selected main gun always uses its own bounded gun solution.
       aimPoint: preparingTorpedoes && torpedoAim
@@ -1079,7 +1089,7 @@ export class RuleBasedAi implements Controller {
         objectiveDuty: objectiveOrder?.duty,
         objectiveUrgent: objectiveOrder?.urgent,
         desiredHeading,
-        throttle: damaged ? Math.min(tacticalThrottle, 0.52) : tacticalThrottle,
+        throttle: movement.throttle,
         fireIntent,
         navigation: this.navigationRecovery.getTelemetry(),
         gunnery: aiGunneryTelemetry(observation.self, mainGunAim, {

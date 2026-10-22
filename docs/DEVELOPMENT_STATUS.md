@@ -39,7 +39,36 @@ Improve useful activity instead: safe shoal recovery, meaningful navigation,
 contact reacquisition and valid opportunities to engage. Legitimate concealment,
 withdrawal, repair and reloading are not automatically inactivity defects.
 
-## Latest working changes — 2026-10-23: exact prospective maneuver checks
+## Latest working changes — 2026-10-23: budgeted planning; activation rejected
+
+- Physical maneuver checks are now resumable at every motion or geometry work
+  item. Ten prior complete-result fixtures match across three slice schedules.
+- Add an instance-local round-robin scheduler with shared per-tick ceilings,
+  fresh current-pose confirmation, bounded queues and lifecycle cancellation.
+  The experimental guard considers actual final helm/throttle and braking
+  tails; it is available only through explicit source-level laboratory opt-in.
+- Do NOT enable the guard in ordinary gameplay. The 565 s approach brakes
+  before contact, but a different real-session Edinburgh pose remains parked
+  for sixty seconds (.05 m travel), and longer approaches still cycle throttle.
+  Fourteen near-coast ships consume 7.67–7.84 ms at the server 95th percentile,
+  with 974/1,000 frames exhausting the geometry budget. Low-end performance
+  remains unverified; activation is rejected.
+- Reproduce the unmet gate with:
+  node scripts/qa/coastal-maneuver-acceptance.mjs --experimental-terrain-maneuvers
+  It deliberately retains a failing useful-movement assertion; no expected-fail
+  or skipped test is counted as gameplay acceptance.
+- 2,259 regular tests, including 87 new regressions, pass; build, six
+  explicit prototype checks and eleven browser checks pass.
+  All twelve full default fleet sessions retain identical terminal states and
+  navigation metrics versus bd508ef, with zero experimental prediction work.
+  The centre-only collision gap and three old rain late-stops remain open.
+- Next: explicit checked escape/recovery handoff, stable throttle decisions and
+  lower sustained planning cost, then repeat the natural-session gates.
+  See acceptance/incremental-coastal-planning-2026-10-23.md.
+- Development branch only; main 8ef5b84 and assets 4e4d587 unchanged.
+  Twenty-minute limit, version/tag, local delivery and preview state unchanged.
+
+## Previous checkpoint — 2026-10-23: exact prospective maneuver checks
 
 - Live movement now shares an extracted propulsion/helm kernel with unchanged
   arithmetic. New snapshot-only checks integrate actual final throttle/rudder

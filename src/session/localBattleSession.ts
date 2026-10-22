@@ -1,10 +1,11 @@
+import { AiManeuverScheduler } from "../sim/aiManeuverScheduler";
 import { RuleBasedAi } from "../controllers/ruleBasedAi";
 import { FleetObjectiveCoordinator } from "../controllers/fleetObjectiveCoordinator";
 import { FleetTargetCoordinator } from "../controllers/fleetTargetCoordinator";
 import { FleetRadioNetwork } from "../sim/fleetRadio";
 import { FIXED_STEP } from "../sim/config";
 import { observe, stepSimulation, takeLocalShipDestroyedEvents, takeLocalHullDamageEvents } from "../sim/simulation";
-import type { BattleState, ControlCommand } from "../sim/types";
+import type { BattleState, ControlCommand, ShipState } from "../sim/types";
 import type {
   AuthoritativeBattleSession,
   BattleStepOptions,
@@ -24,14 +25,19 @@ export class LocalBattleSession implements AuthoritativeBattleSession {
   readonly role = "local" as const;
   private currentState: BattleState;
   private readonly defaultIncludeDeveloperAi: boolean;
+  private readonly maneuverPlanning?: AiManeuverScheduler;
+  private readonly aiShipIdentity = new Map<string, ShipState>();
   private shipAiById = new Map<string, RuleBasedAi>();
   private readonly fleetRadio = new FleetRadioNetwork();
   private readonly fleetTargets = new FleetTargetCoordinator();
   private readonly fleetObjectives = new FleetObjectiveCoordinator();
 
-  constructor(state: BattleState, options?: { includeDeveloperAi?: boolean }) {
+  constructor(state: BattleState, options?: { includeDeveloperAi?: boolean;
+    /** Laboratory only: not exposed by the game UI; failed recovery gates remain. */
+    experimentalTerrainManeuvers?: boolean }) {
     this.currentState = state;
     this.defaultIncludeDeveloperAi = options?.includeDeveloperAi ?? false;
+    if (options?.experimentalTerrainManeuvers) this.maneuverPlanning = new AiManeuverScheduler();
   }
 
   get state(): BattleState {
@@ -57,8 +63,9 @@ export class LocalBattleSession implements AuthoritativeBattleSession {
       && !commands.has(ship.id)
       && (includeDeveloperAi || ship.id === "enemy" || ship.aiControlled));
     const activeAiIds = new Set(aiShips.map(({ id }) => id));
+    this.maneuverPlanning?.beginFrame(this.currentState.time, activeAiIds, dt);
     for (const id of this.shipAiById.keys()) {
-      if (!activeAiIds.has(id)) this.shipAiById.delete(id);
+      if (!activeAiIds.has(id)) { this.shipAiById.delete(id); this.aiShipIdentity.delete(id); }
     }
     // Take a complete local-sensor batch before any controller runs. Human ships
     // can report sightings too; reports never alter the local sensor cache.
@@ -77,9 +84,13 @@ export class LocalBattleSession implements AuthoritativeBattleSession {
     if (!objectiveAssignments) this.fleetObjectives.reset();
     for (const aiShip of aiShips) {
       let controller = this.shipAiById.get(aiShip.id);
+      if (this.aiShipIdentity.get(aiShip.id) !== aiShip) {
+        this.maneuverPlanning?.cancel(aiShip.id); controller = undefined;
+      }
       if (!controller) {
         controller = new RuleBasedAi(this.currentState.randomSeed ^ actorSeed(aiShip.id));
         this.shipAiById.set(aiShip.id, controller);
+        this.aiShipIdentity.set(aiShip.id, aiShip);
       }
       const localObservation = observations.get(aiShip.id)!;
       commands.set(aiShip.id, controller.command({
@@ -87,8 +98,9 @@ export class LocalBattleSession implements AuthoritativeBattleSession {
         sharedContacts: this.fleetRadio.contactsFor(aiShip, this.currentState.time),
         fleetTarget: assignments.get(aiShip.id),
         fleetObjective: objectiveAssignments?.get(aiShip.id),
-      }));
+      }, this.maneuverPlanning));
     }
+    this.maneuverPlanning?.runBackground();
     stepSimulation(this.currentState, commands, dt, { automatedAirControllerIds: activeAiIds });
     return {
       state: this.currentState,
@@ -103,6 +115,8 @@ export class LocalBattleSession implements AuthoritativeBattleSession {
   reset(state: BattleState): void {
     this.currentState = state;
     this.shipAiById.clear();
+    this.aiShipIdentity.clear();
+    this.maneuverPlanning?.reset();
     this.fleetRadio.reset();
     this.fleetTargets.reset();
     this.fleetObjectives.reset();
