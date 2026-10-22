@@ -1,3 +1,29 @@
+## 2026-10-23 — Add shared hull geometry and reject unsafe integration
+
+Add a conservative full-body terrain/motion query library using the existing
+ship/ship collision dimensions; make ship/ship projection use those shared
+dimensions with unchanged arithmetic. Thirty helper regressions include
+side-edge contact, containment, intermediate rotation, bounded sweeps,
+per-zone outward recovery, map edges and a reviewed sub-metre normalization
+counterexample. The terrain/AI runtime does not use the new constraint yet.
+
+The integration trial passed focused geometry/physics/controller checks but
+failed broader acceptance: twenty assertions, two concurrent-run timeouts,
+and grounding failures in three of twelve complete natural fleet cases.
+The worst continuous grounding reached 768.78 s. Keep the exact candidate
+patch and replay hashes on the server, restore the playable terrain/AI paths,
+and do not lower existing test gates. This is a geometry foundation, not a
+claim that hull penetration or old rain-case stoppages are fixed.
+
+Final verification: 2,109 regular tests, six prototype checks, build and eleven
+browser checks pass. Twelve full-session terminal hashes and navigation metrics
+match ef52dcd exactly; no existing recovery assertion changed.
+
+Next, check complete-hull turning and braking trajectories before selecting
+AI routes, then integrate contact resolution and recovery as one change.
+Details: acceptance/hull-geometry-foundation-2026-10-23.md.
+No asset/version/tag/main/local-delivery change or persistent preview.
+
 ## 2026-10-22 — Preserve verified physical turn progress during recovery
 
 At the existing blocked-bow candidate reversal, allow an earlier safe exit to

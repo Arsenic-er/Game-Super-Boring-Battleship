@@ -1,6 +1,6 @@
 # Condensed Development Status
 
-Last updated: 2026-10-22
+Last updated: 2026-10-23
 
 This is the current operational handoff. Product decisions are preserved in
 `CONVERSATION_SUMMARY.md`; milestone history is preserved in `DEVELOPMENT_LOG.md`.
@@ -39,7 +39,30 @@ Improve useful activity instead: safe shoal recovery, meaningful navigation,
 contact reacquisition and valid opportunities to engage. Legitimate concealment,
 withdrawal, repair and reloading are not automatically inactivity defects.
 
-## Latest working changes — 2026-10-22: preserve useful recovery turns
+## Latest working changes — 2026-10-23: shared hull geometry; integration withheld
+
+- Add the existing .48L/.55B collision OBB as a shared geometry source, plus
+  conservative full-body terrain/motion query helpers and thirty regressions.
+  Ship/ship projection reuses the same dimensions without changing its math.
+- Full-body terrain resolution and the new AI stern guard are NOT enabled.
+  Their experimental integration produced twenty assertion failures and two
+  concurrent-QA timeouts; three of twelve natural fleet cases failed the
+  grounding gate, with continuous grounding up to 768.78 s. No old test or
+  threshold was weakened to accept that result.
+- Preserve the complete rejected patch, source hashes and replays on the
+  server. The playable terrain/AI logic is restored to ef52dcd. Existing
+  centre-only collision gaps and the three known rain late-stops remain open.
+- Next: validate whole-hull forward/reverse turning trajectories during route
+  selection, then reconnect physics and recovery together. Terminal rejection
+  alone is not navigation. Keep propulsion, rudder, sensors and twenty-minute
+  endings unchanged.
+- 2,109 regular tests, six prototype checks, build and eleven browser checks
+  pass. Twelve final full-session terminal states and navigation metrics match
+  ef52dcd exactly; this confirms no new gameplay behaviour, not AI acceptance.
+- See acceptance/hull-geometry-foundation-2026-10-23.md. Development remains
+  on codex/v072-historical-models; main stays 8ef5b84, assets unchanged.
+
+## Previous checkpoint — 2026-10-22: preserve useful recovery turns
 
 - A blocked low-speed candidate reversal can retain an earlier still-safe exit
   after at least 20 degrees of continuous same-direction physical turn. Normal

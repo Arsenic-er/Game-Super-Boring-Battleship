@@ -59,6 +59,7 @@ import {
 } from "../ships/mainBatteries";
 import { classArmorThickness } from "../ships/armorProfiles";
 import { effectiveTorpedoDetectionRange } from "./detection";
+import { shipFootprintDimensions } from "./shipFootprint";
 import { buildAtollBattleScenario } from "./scenarios";
 import { isFleetSize, type BattleSetup } from "./battleSetup";
 import { normalizeWeatherId, weatherPreset } from "./weather";
@@ -2246,11 +2247,10 @@ function shipAxes(ship: ShipState): { forward: HorizontalAxis; right: Horizontal
 
 function projectionRadius(ship: ShipState, axis: HorizontalAxis): number {
   const axes = shipAxes(ship);
-  const hullDefinition = getShipClass(ship.shipClassId);
+  const dimensions = shipFootprintDimensions(ship.shipClassId);
   const forwardDot = Math.abs(axes.forward.x * axis.x + axes.forward.z * axis.z);
   const rightDot = Math.abs(axes.right.x * axis.x + axes.right.z * axis.z);
-  return hullDefinition.length * 0.48 * forwardDot
-    + hullDefinition.beam * 0.55 * rightDot;
+  return dimensions.halfLength * forwardDot + dimensions.halfBeam * rightDot;
 }
 
 interface CollisionManifold {
