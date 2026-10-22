@@ -363,3 +363,33 @@ export function constrainShipTerrainMotion(
   }
   return combined;
 }
+
+/**
+ * Conservative envelope of an explicit sequence of physical poses. Unlike a
+ * start/end chord, every intermediate pose contributes its complete hull.
+ * The convex envelope can report a false obstruction in a curved path's inside
+ * pocket; callers may refine that batch using consecutive motion queries.
+ * This does not grant the collision resolver's legacy-overlap translation fallback.
+ */
+export function shipTerrainTrajectoryEnvelopeContact(
+  source: MapSource, shipClassId: ShipClassId, poses: readonly Readonly<ShipFootprintPose>[],
+): ShipTerrainFootprintContact {
+  if (poses.length < 1 || poses.length > 31 || poses.some(p =>
+    ![p.position.x, p.position.z, p.heading].every(Number.isFinite))) {
+    throw new RangeError("Trajectory envelope requires 1–31 finite poses");
+  }
+  const map = mapDefinition(source), dimensions = shipFootprintDimensions(shipClassId);
+  const radius = Math.hypot(dimensions.halfLength, dimensions.halfBeam);
+  const centerBounds = bounds(poses.map(p => p.position));
+  const broad = { minX: centerBounds.minX - radius, maxX: centerBounds.maxX + radius,
+    minZ: centerBounds.minZ - radius, maxZ: centerBounds.maxZ + radius };
+  const zones = nearbyCoasts(map, shipDraftMeters(shipClassId), broad);
+  if (!zones.length && broad.minX >= -map.halfExtentMeters && broad.maxX <= map.halfExtentMeters
+    && broad.minZ >= -map.halfExtentMeters && broad.maxZ <= map.halfExtentMeters) return CLEAR;
+  let error = 0;
+  for (let i = 1; i < poses.length; i++) {
+    error = Math.max(error, radius * (poses[i]!.heading - poses[i - 1]!.heading) ** 2 / 8);
+  }
+  const envelope = convexHull(poses.flatMap(p => shipFootprintCorners(shipClassId, p)));
+  return contactForPolygon(envelope, zones, map.halfExtentMeters, error);
+}

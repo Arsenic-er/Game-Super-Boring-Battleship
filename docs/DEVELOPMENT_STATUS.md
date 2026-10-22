@@ -39,7 +39,30 @@ Improve useful activity instead: safe shoal recovery, meaningful navigation,
 contact reacquisition and valid opportunities to engage. Legitimate concealment,
 withdrawal, repair and reloading are not automatically inactivity defects.
 
-## Latest working changes — 2026-10-23: shared hull geometry; integration withheld
+## Latest working changes — 2026-10-23: exact prospective maneuver checks
+
+- Live movement now shares an extracted propulsion/helm kernel with unchanged
+  arithmetic. New snapshot-only checks integrate actual final throttle/rudder
+  commands at 60 Hz and can verify the complete neutral-control braking tail.
+- Whole-hull half-second envelopes include every intermediate pose; ambiguous
+  batches refine into individual sweeps. Explicit motion/geometry limits
+  return incomplete rather than approving an untested suffix.
+- Reproduced the rejected natural Edinburgh approach: at 565 s it can stop
+  safely in 7.4667 s, while holding its order collides after 8 s; at 570 s even
+  immediate braking collides. This is a verified pre-contact planning window.
+- New AI order selection and full-hull physical collision remain disabled.
+  The centre-only collision gap and three known late-stop rain cases remain.
+  Fourteen-ship/three-candidate synchronous batches reached 122.42 ms on the
+  server; next integrate near-coast activation, staggered candidate work and
+  safe neutral-helm/astern alternatives after final tactical controls.
+- 2,172 regular tests, six prototype checks, build and eleven browser checks pass. All twelve full
+  fleet terminal hashes/navigation metrics match 3e98d41 exactly; 63 new
+  tests cover parity, physical trajectories, budgets and batch refinement.
+- See acceptance/physical-maneuver-prediction-2026-10-23.md. No engine, rudder,
+  weapon, sensor or twenty-minute-limit changes. Development branch only;
+  main remains 8ef5b84, assets remain 4e4d587, no local download or preview.
+
+## Previous checkpoint — 2026-10-23: shared hull geometry; integration withheld
 
 - Add the existing .48L/.55B collision OBB as a shared geometry source, plus
   conservative full-body terrain/motion query helpers and thirty regressions.

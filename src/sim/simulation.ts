@@ -14,7 +14,6 @@ import {
   HULL_REPAIR,
   HYDRO,
   MODULE_MAX_HEALTH,
-  NAVIGATION_PACE,
   OBJECTIVE,
   SENSOR,
   TURRET,
@@ -60,6 +59,7 @@ import {
 import { classArmorThickness } from "../ships/armorProfiles";
 import { effectiveTorpedoDetectionRange } from "./detection";
 import { shipFootprintDimensions } from "./shipFootprint";
+import { advanceShipKinematics, shipKinematicParameters } from "./navigationKinematics";
 import { buildAtollBattleScenario } from "./scenarios";
 import { isFleetSize, type BattleSetup } from "./battleSetup";
 import { normalizeWeatherId, weatherPreset } from "./weather";
@@ -757,7 +757,6 @@ export function torpedoLauncherAlignmentError(ship: ShipState): number {
 }
 
 function moveShip(state: BattleState, ship: ShipState, command: ControlCommand, dt: number): void {
-  const hullDefinition = getShipClass(ship.shipClassId);
   ship.previousPosition = copyVec(ship.position);
   const navigation = terrainNavigationAt(
     state.mapId, ship.position.x, ship.position.z, shipDraftMeters(ship.shipClassId),
@@ -787,53 +786,7 @@ function moveShip(state: BattleState, ship: ShipState, command: ControlCommand, 
     ship.reloadRemaining = Math.max(ship.reloadRemaining, switchDuration);
   }
 
-  const engineRatio = moduleRatio(ship, "engine");
-  const steeringRatio = moduleRatio(ship, "steering");
-  const rudderShiftRate = steeringRatio <= 0
-    ? 0
-    : hullDefinition.rudderShiftPerSecond * (0.18 + steeringRatio * 0.82) * NAVIGATION_PACE.travelTimeScale;
-  ship.rudder += clamp(
-    ship.rudderCommand - ship.rudder,
-    -rudderShiftRate * dt,
-    rudderShiftRate * dt,
-  );
-  const floodingSpeedFactor = 1 - clamp(ship.flooding / 100, 0, 1) * 0.32;
-  const developerSpeedMultiplier = ship.developer?.enabled
-    ? clamp(ship.developer.speedMultiplier, .1, 6)
-    : 1;
-  const equippedMaxSpeed = hullDefinition.maxSpeedKnots
-    * ship.performance.maxSpeedMultiplier * developerSpeedMultiplier;
-  const effectiveMaxSpeed = equippedMaxSpeed * engineRatio * floodingSpeedFactor
-    * navigation.speedMultiplier * Math.max(0, ship.throttle);
-  const reverseTarget = ship.throttle < 0 ? equippedMaxSpeed * ship.throttle * 0.28 : effectiveMaxSpeed;
-  const orderedSpeed = ship.throttle < 0 ? reverseTarget : effectiveMaxSpeed;
-  const turningSpeedFactor = 1
-    - Math.abs(ship.rudder) * hullDefinition.maximumTurningSpeedLoss;
-  const targetSpeed = orderedSpeed * turningSpeedFactor;
-  const propulsionResponse = engineRatio <= 0 ? 0 : 0.2 + engineRatio * 0.8;
-  const rate = (targetSpeed >= ship.speedKnots
-    ? hullDefinition.accelerationKnotsPerSecond * propulsionResponse
-    : hullDefinition.brakingKnotsPerSecond * (0.45 + engineRatio * 0.55))
-    * ship.performance.accelerationMultiplier * NAVIGATION_PACE.propulsionResponseScale;
-  ship.speedKnots += clamp(targetSpeed - ship.speedKnots, -rate * dt, rate * dt);
-  if (ship.developer?.enabled && ship.developer.forcedSpeedKnots !== undefined) {
-    ship.speedKnots = clamp(ship.developer.forcedSpeedKnots, -40, 200);
-  }
-
-  const speedRatio = clamp(Math.abs(ship.speedKnots) / equippedMaxSpeed, 0, 1);
-  const turnAuthority = steeringRatio * (0.2 + 0.8 * speedRatio);
-  const previousHeading = ship.heading;
-  ship.heading += ship.rudder * hullDefinition.maxTurnRateRadians
-    * ship.performance.turnMultiplier * turnAuthority
-    * NAVIGATION_PACE.travelTimeScale * dt;
-  ship.turnRateRadians = wrapAngle(ship.heading - previousHeading) / Math.max(dt, 0.0001);
-
-  const metersPerSecond = shipSpeedMetersPerSecond(ship.speedKnots);
-  const moveX = Math.sin(ship.heading) * metersPerSecond * dt;
-  const moveZ = Math.cos(ship.heading) * metersPerSecond * dt;
-  ship.position.x += moveX;
-  ship.position.z += moveZ;
-  ship.distanceTravelled += Math.hypot(moveX, moveZ);
+  advanceShipKinematics(ship, shipKinematicParameters(ship), command, navigation.speedMultiplier, dt);
   const gunRatio = moduleRatio(ship, "gun");
   const traverseRate = gunRatio <= 0
     ? 0

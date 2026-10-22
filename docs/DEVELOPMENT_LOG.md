@@ -1,3 +1,33 @@
+## 2026-10-23 — Verify prospective physical turns and braking
+
+Extract the original movement block into a shared kernel and prove exact
+step-by-step parity with the previous formulas and real simulation. Add a
+snapshot-only predictor for explicit final helm/throttle orders and an
+optional neutral-control braking tail. It uses complete-hull swept geometry,
+half-second conservative batches, per-step refinement and hard work limits.
+No new planner or full-hull terrain response is enabled in live gameplay.
+
+Replay of the rejected natural Edinburgh failure identifies a real window:
+565 s can brake safely in 7.4667 s; the same pose's held order collides in
+8 s, and by 570 s immediate braking is too late. At the later stalled pose,
+neutral target rudder permits physical astern escape while the original
+coast-facing rudder remains blocked. These frozen-damage counterfactuals
+guide the next planner; they are not a complete battle improvement.
+
+Sixty-three new regressions pass. All 2,172 regular tests, six prototype
+checks, build and eleven actual-main browser checks pass. Twelve complete fleet terminal
+hashes and navigation metrics are identical to 3e98d41. Four-ship old/new
+simulation processes also match every complete state for 1,200 ticks.
+Raw replays and performance data stay ignored on the server.
+
+Fourteen ships with three synchronous candidate predictions take up to
+122.42 ms in the measured server cases. Do not enable this work for every
+ship in one render frame. Next use near-coast activation, staggered bounded
+planning and final-control validation, then reconnect collision and recovery
+only after the existing natural-session gates pass.
+Details: acceptance/physical-maneuver-prediction-2026-10-23.md.
+Main/assets/version/tag/local delivery and the twenty-minute limit unchanged.
+
 ## 2026-10-23 — Add shared hull geometry and reject unsafe integration
 
 Add a conservative full-body terrain/motion query library using the existing

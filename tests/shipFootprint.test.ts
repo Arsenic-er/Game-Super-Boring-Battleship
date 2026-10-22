@@ -4,7 +4,7 @@ import { terrainZoneContains, type AtollTerrainZone, type BattleMapDefinition } 
 import { getShipClass } from "../src/ships/classes";
 import {
   constrainShipTerrainMotion, shipFootprintCorners, shipFootprintDimensions, shipTerrainFootprintContact,
-  type ShipFootprintPose,
+  shipTerrainTrajectoryEnvelopeContact, type ShipFootprintPose,
 } from "../src/sim/shipFootprint";
 
 const pose = (x = 0, z = 0, heading = 0): ShipFootprintPose => ({ position: { x, z }, heading });
@@ -219,5 +219,35 @@ describe("shared full ship terrain footprint", () => {
     const fixture = map([zone("shore", 0, 100, 50)]);
     const result = constrainShipTerrainMotion(fixture, "fletcher", pose(), pose());
     expect(result).toMatchObject({ fraction: 1, blocked: false, startedOverlapping: true, exiting: false, contact: { blocked: true } });
+  });
+});
+
+describe("physical trajectory batch envelopes", () => {
+  const arc = Array.from({ length: 31 }, (_, i) => {
+    const angle = i / 30 * Math.PI;
+    return pose(-200 * Math.cos(angle), 200 * Math.sin(angle), angle);
+  });
+
+  it("flags a convex interior pocket, leaving adjacent physical sweeps available for refinement", () => {
+    const fixture = map([zone("inside-arc", 0, 0, 4)], 1000);
+    expect(shipTerrainTrajectoryEnvelopeContact(fixture, "fletcher", arc).blocked).toBe(true);
+    for (let i = 1; i < arc.length; i++) {
+      expect(constrainShipTerrainMotion(fixture, "fletcher", arc[i - 1]!, arc[i]!).blocked).toBe(false);
+    }
+  });
+
+  it("does not miss a mid-batch island with clear first and last hull poses", () => {
+    const fixture = map([zone("mid-arc", 0, 200, 4)], 1000);
+    expect(shipTerrainFootprintContact(fixture, "fletcher", arc[0]!).blocked).toBe(false);
+    expect(shipTerrainFootprintContact(fixture, "fletcher", arc.at(-1)!).blocked).toBe(false);
+    expect(shipTerrainTrajectoryEnvelopeContact(fixture, "fletcher", arc).zoneIds).toEqual(["mid-arc"]);
+    expect(arc.slice(1).some((next, i) =>
+      constrainShipTerrainMotion(fixture, "fletcher", arc[i]!, next).blocked)).toBe(true);
+  });
+
+  it("has a fixed input budget and refuses empty or non-finite trajectories", () => {
+    for (const invalid of [[], [...arc, pose()], [pose(NaN)], [pose(0, 0, Infinity)]]) {
+      expect(() => shipTerrainTrajectoryEnvelopeContact(map([]), "fletcher", invalid)).toThrow(RangeError);
+    }
   });
 });
