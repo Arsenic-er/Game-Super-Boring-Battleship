@@ -1,6 +1,7 @@
+import { AiTerrainRecovery } from "./aiTerrainRecovery";
 import { battleMapDefinition, shipDraftMeters, type BattleMapId } from "../maps/atollMap";
 import { getShipClass } from "../ships/classes";
-import { shipSpeedMetersPerSecond } from "../sim/config";
+import { FIXED_STEP, shipSpeedMetersPerSecond } from "../sim/config";
 import { forwardStoppingDistance, shipKinematicParameters } from "../sim/navigationKinematics";
 import type { AiManeuverScheduler } from "../sim/aiManeuverScheduler";
 import type { Observation, ShipState } from "../sim/types";
@@ -9,12 +10,13 @@ type Controls = { throttle: number; rudder: number };
 type Parameters = ReturnType<typeof shipKinematicParameters>;
 interface RequestSnapshot {
   ownerId: string; generation: number; time: number; mapId: BattleMapId; classId: ShipState["shipClassId"];
-  x: number; z: number; heading: number; speed: number; parameters: Parameters; controls: Controls;
+  x: number; z: number; heading: number; speed: number; rudder: number; parameters: Parameters; controls: Controls;
 }
 export interface AiTerrainManeuverTelemetry {
-  phase: "inactive" | "predicting" | "braking" | "unverified" | "clear" | "no-safe-stop";
+  phase: "inactive" | "predicting" | "braking" | "unverified" | "clear" | "no-safe-stop" | "recovery-planning" | "retreating" | "turning" | "settling" | "rejoined" | "recovery-failed";
   queueAgeSeconds?: number;
   predictedContactSeconds?: number;
+  attempts?: number;
   reason?: string;
 }
 
@@ -43,7 +45,7 @@ export function needsTerrainManeuverPrediction(mapId: BattleMapId, ship: Readonl
 function snapshot(generation: number, o: Observation, controls: Controls): RequestSnapshot {
   return { ownerId: o.self.id, generation, time: o.time, mapId: o.mapId, classId: o.self.shipClassId,
     x: o.self.position.x, z: o.self.position.z, heading: o.self.heading,
-    speed: o.self.speedKnots, parameters: shipKinematicParameters(o.self), controls: { ...controls } };
+    speed: o.self.speedKnots, rudder: o.self.rudder, parameters: shipKinematicParameters(o.self), controls: { ...controls } };
 }
 function stillRelevant(request: RequestSnapshot, o: Observation, controls: Controls): boolean {
   if (o.self.id !== request.ownerId || o.time < request.time || o.time - request.time > 1.5 || request.mapId !== o.mapId
@@ -51,6 +53,7 @@ function stillRelevant(request: RequestSnapshot, o: Observation, controls: Contr
     || Math.hypot(o.self.position.x - request.x, o.self.position.z - request.z) > 45
     || Math.abs(Math.atan2(Math.sin(o.self.heading - request.heading), Math.cos(o.self.heading - request.heading))) > .3
     || Math.abs(o.self.speedKnots - request.speed) > 3
+    || Math.abs(o.self.rudder - request.rudder) > .3
     || Math.abs(controls.throttle - request.controls.throttle) > .35
     || Math.abs(controls.rudder - request.controls.rudder) > .65) return false;
   const now = shipKinematicParameters(o.self);
@@ -69,6 +72,11 @@ function stillRelevant(request: RequestSnapshot, o: Observation, controls: Contr
  */
 export class AiTerrainManeuverGuard {
   private request?: RequestSnapshot;
+  private recovery?: AiTerrainRecovery;
+  private retryAfter = 0;
+  private lastTime?: number;
+  private exhausted?: { x: number; z: number; heading: number; mapId: BattleMapId; classId: ShipState["shipClassId"] };
+
   private advice?: { source: RequestSnapshot; contactSeconds: number; controls: Controls };
   private telemetry: AiTerrainManeuverTelemetry = { phase: "inactive" };
 
@@ -77,11 +85,41 @@ export class AiTerrainManeuverGuard {
   command(o: Observation, controls: Controls, scheduler: AiManeuverScheduler, emergency = false): Controls {
     const dt = scheduler.getTelemetry().dt;
     const cancel = (reason: string): Controls => {
-      scheduler.cancel(o.self.id); this.request = undefined; this.advice = undefined;
+      scheduler.cancel(o.self.id); this.request = undefined; this.advice = undefined; this.recovery = undefined;
       this.telemetry = { phase: "inactive", reason }; return controls;
     };
+    if (this.lastTime !== undefined && o.time < this.lastTime) {
+      this.retryAfter = 0; this.exhausted = undefined;
+      this.lastTime = o.time; return cancel("timeline-reset");
+    }
+    this.lastTime = o.time;
     if (emergency) return cancel("existing-emergency-or-recovery");
-    if (!(dt > 0 && dt <= .25)) return cancel("unsupported-step");
+    if (controls.throttle < 0) return cancel("external-astern-order");
+    if (!Number.isFinite(dt) || Math.abs(dt - FIXED_STEP) > 1e-9) return cancel("unsupported-step");
+    if (this.recovery) {
+      const result = this.recovery.command(o, controls, scheduler);
+      this.telemetry = this.recovery.getTelemetry();
+      if (result.done) {
+        if (["recovery-deadline", "recovery-attempt-limit", "retreat-made-no-progress", "no-verified-retreat"].includes(this.telemetry.reason ?? "")) {
+          this.exhausted = { x: o.self.position.x, z: o.self.position.z, heading: o.self.heading,
+            mapId: o.mapId, classId: o.self.shipClassId };
+        }
+        this.retryAfter = this.telemetry.phase !== "rejoined" ? o.time + 2 : 0;
+        this.recovery = undefined;
+      }
+      return result.controls;
+    }
+    if (this.exhausted) {
+      const e = this.exhausted;
+      if (e.mapId === o.mapId && e.classId === o.self.shipClassId
+        && Math.hypot(o.self.position.x - e.x, o.self.position.z - e.z) < 50
+        && Math.abs(Math.atan2(Math.sin(o.self.heading - e.heading), Math.cos(o.self.heading - e.heading))) < .5) {
+        this.telemetry = { phase: "recovery-failed", reason: "recovery-exhausted-handoff" };
+        return controls;
+      }
+      this.exhausted = undefined;
+    }
+    if (o.time < this.retryAfter) return controls;
     if (o.self.speedKnots < -.05 || controls.throttle < 0
       || (o.self.speedKnots <= .2 && !this.request && !this.advice)) return cancel("not-forward-prevention");
     if (!needsTerrainManeuverPrediction(o.mapId, o.self)) return cancel("open-water");
@@ -133,6 +171,12 @@ export class AiTerrainManeuverGuard {
     this.telemetry = { phase: confirmed.status === "clear" ? "braking" : "unverified",
       queueAgeSeconds: o.time - this.request.time, predictedContactSeconds: this.advice.contactSeconds,
       reason: confirmed.reason };
-    return confirmed.status === "clear" ? { ...this.advice.controls } : controls;
+    if (confirmed.status !== "clear") return controls;
+    this.recovery = new AiTerrainRecovery(o, controls, this.advice.controls.rudder);
+    scheduler.cancel(o.self.id); this.request = undefined; this.advice = undefined;
+    // This tick's confirmation is the first executed step of the episode.
+    // Reuse its result instead of spending the same prefix budget twice.
+    return this.recovery.beginConfirmedStep(confirmed.end, dt);
+
   }
 }

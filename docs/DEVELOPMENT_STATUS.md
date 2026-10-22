@@ -39,7 +39,41 @@ Improve useful activity instead: safe shoal recovery, meaningful navigation,
 contact reacquisition and valid opportunities to engage. Legitimate concealment,
 withdrawal, repair and reloading are not automatically inactivity defects.
 
-## Latest working changes — 2026-10-23: budgeted planning; activation rejected
+## Latest working changes — 2026-10-23: explicit recovery; long-run gate still fails
+
+- Add an opt-in arrest/settle/retreat/low-speed-turn/rejoin controller.
+  The six-second steering-brake stage now advances by executed time and
+  cannot be extended by replanning. Recovery waits for actual speed and
+  rudder to settle, checks a complete astern/turn-and-stop proposal, then
+  freshly confirms every applied tick.
+- Ordinary tiny helm-tracking changes no longer starve queued recovery.
+  External astern orders and emergencies keep priority. Material state
+  changes, unexpected motion, non-60 Hz steps and budget exhaustion reject
+  the old sequence. Failed/exhausted recovery is not recorded as success.
+- The neutral-lock real-session fixture now moves 86.92 m in sixty seconds,
+  with 21.26 m net displacement, no full-hull contact in that interval and
+  41.91 m actual travel in its last thirty seconds. It is still in recovery,
+  not back under ordinary navigation.
+- Do NOT enable this experiment in normal gameplay: both strict 240-second
+  fixtures fail. Neutral-lock first contacts terrain at 125.47 s after the
+  recovery deadline hands back to old navigation. The damaged 565 s approach
+  contacts at 8.05 s because natural repairs repeatedly invalidate its
+  frozen-parameter recovery. Neither run completes a verified rejoin.
+- Keep the original sixty-second script and its thresholds. Add the stronger
+  scripts/qa/coastal-recovery-acceptance.mjs opt-in gate, including real
+  post-step displacement and swept/full-body contact checks. A failing
+  laboratory gate returns failure; it is not counted as a passing unit test.
+- Final regular suite: 2,275 passes, including sixteen new recovery tests;
+  eleven existing opt-in tests skipped. Build and independent review pass.
+  The strict 240 s activation gate remains failed, with matching source hashes.
+- Next address safe continuation during repair and bounded recovery failure
+  handoff, then repeat long-run and natural fleet acceptance. Do not enable
+  full-hull collision resolution independently of those navigation fixes.
+  See acceptance/coastal-recovery-2026-10-23.md.
+- Default single-player/LAN behavior, main 8ef5b84, assets 4e4d587, version/tag,
+  twenty-minute limit and disabled preview state remain unchanged. No download.
+
+## Previous checkpoint — 2026-10-23: budgeted planning; activation rejected
 
 - Physical maneuver checks are now resumable at every motion or geometry work
   item. Ten prior complete-result fixtures match across three slice schedules.

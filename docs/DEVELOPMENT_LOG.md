@@ -1,3 +1,35 @@
+## 2026-10-23 — Execute checked recovery stages; retain failing long-run gates
+
+Replace indefinite refreshed braking with a finite executed sequence: arrest,
+actual neutral-helm settle, checked straight astern or low-speed turn, and a
+freshly checked explicit forward order before returning control to ordinary AI.
+The guard retains its own astern controls, but yields to an external reverse
+order or emergency. Queued plans cannot be starved by tiny ordinary tracking
+changes. Every override still needs a current full-hull prefix check; physical
+state/parameter changes and unsupported steps invalidate old execution.
+Exhaustion is latched in the same area, not silently restarted as a fresh
+successful episode.
+
+The old neutral-lock sixty-second gate now passes, including stronger actual
+position and full-hull checks in the new regression suite. This is partial
+progress, not complete navigation acceptance: after 240 seconds the neutral
+fixture contacts terrain following its recovery deadline, while natural repair
+invalidations make the damaged approach contact after 8.05 seconds. Both
+strict runs record zero successful rejoins. Preserve these as failing opt-in
+acceptance, not skips, expected-fail tests or relaxed thresholds.
+
+Final regular suite: 2,275 passing tests, including sixteen new regressions,
+and eleven existing opt-in skips. Build passes with its existing chunk warning.
+Independent recovery/lifecycle review passes 34 tests. Both strict long-run
+failures are checked against the final source hashes and are not counted as
+successful gameplay acceptance.
+
+The experiment remains default-off. Next fix safe replanning during repair
+and failure handoff before activating new navigation or full-hull collision.
+No propulsion, rudder, weapons, sensors, match duration or artwork changes.
+See acceptance/coastal-recovery-2026-10-23.md for scope and evidence.
+No main/assets/version/tag change, local download or permanent preview.
+
 ## 2026-10-23 — Budget coastal prediction and withhold failed control integration
 
 Add resumable physical prediction and a battle-local bounded scheduler.
