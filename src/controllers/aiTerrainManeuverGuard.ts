@@ -13,7 +13,7 @@ interface RequestSnapshot {
   x: number; z: number; heading: number; speed: number; rudder: number; parameters: Parameters; controls: Controls;
 }
 export interface AiTerrainManeuverTelemetry {
-  phase: "inactive" | "predicting" | "braking" | "unverified" | "clear" | "no-safe-stop" | "recovery-planning" | "retreating" | "turning" | "settling" | "rejoined" | "recovery-failed";
+  phase: "inactive" | "predicting" | "braking" | "holding" | "unverified" | "clear" | "no-safe-stop" | "recovery-planning" | "retreating" | "turning" | "settling" | "rejoined" | "recovery-failed";
   queueAgeSeconds?: number;
   predictedContactSeconds?: number;
   attempts?: number;
@@ -75,7 +75,6 @@ export class AiTerrainManeuverGuard {
   private recovery?: AiTerrainRecovery;
   private retryAfter = 0;
   private lastTime?: number;
-  private exhausted?: { x: number; z: number; heading: number; mapId: BattleMapId; classId: ShipState["shipClassId"] };
 
   private advice?: { source: RequestSnapshot; contactSeconds: number; controls: Controls };
   private telemetry: AiTerrainManeuverTelemetry = { phase: "inactive" };
@@ -89,7 +88,7 @@ export class AiTerrainManeuverGuard {
       this.telemetry = { phase: "inactive", reason }; return controls;
     };
     if (this.lastTime !== undefined && o.time < this.lastTime) {
-      this.retryAfter = 0; this.exhausted = undefined;
+      this.retryAfter = 0;
       this.lastTime = o.time; return cancel("timeline-reset");
     }
     this.lastTime = o.time;
@@ -100,24 +99,10 @@ export class AiTerrainManeuverGuard {
       const result = this.recovery.command(o, controls, scheduler);
       this.telemetry = this.recovery.getTelemetry();
       if (result.done) {
-        if (["recovery-deadline", "recovery-attempt-limit", "retreat-made-no-progress", "no-verified-retreat"].includes(this.telemetry.reason ?? "")) {
-          this.exhausted = { x: o.self.position.x, z: o.self.position.z, heading: o.self.heading,
-            mapId: o.mapId, classId: o.self.shipClassId };
-        }
         this.retryAfter = this.telemetry.phase !== "rejoined" ? o.time + 2 : 0;
         this.recovery = undefined;
       }
       return result.controls;
-    }
-    if (this.exhausted) {
-      const e = this.exhausted;
-      if (e.mapId === o.mapId && e.classId === o.self.shipClassId
-        && Math.hypot(o.self.position.x - e.x, o.self.position.z - e.z) < 50
-        && Math.abs(Math.atan2(Math.sin(o.self.heading - e.heading), Math.cos(o.self.heading - e.heading))) < .5) {
-        this.telemetry = { phase: "recovery-failed", reason: "recovery-exhausted-handoff" };
-        return controls;
-      }
-      this.exhausted = undefined;
     }
     if (o.time < this.retryAfter) return controls;
     if (o.self.speedKnots < -.05 || controls.throttle < 0

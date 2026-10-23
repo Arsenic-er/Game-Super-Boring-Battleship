@@ -107,9 +107,14 @@ describe("preventive terrain maneuver advice", () => {
       infiniteAmmunition: false, instantReload: false, speedMultiplier: 1, forcedSpeedKnots: 15 }; }],
   ] as const)("discards old braking advice after material %s changes", (_name, change) => {
     const { ship, guard, scheduler, time } = prepareAdvice(); change(ship);
+    const confirmation = vi.spyOn(scheduler, "confirm"), before = structuredClone(ship);
     scheduler.beginFrame(time + FIXED_STEP, [ship.id]);
-    expect(guard.command(observation(ship, time + FIXED_STEP), ordered, scheduler)).toEqual(ordered);
-    expect(guard.getTelemetry().phase).not.toBe("braking");
+    expect(guard.command(observation(ship, time + FIXED_STEP), ordered, scheduler)).toEqual({ throttle: 0, rudder: 0 });
+    expect(guard.getTelemetry()).toMatchObject({ phase: "settling", reason: "physical-parameters-changed" });
+    expect(confirmation).toHaveBeenCalledWith(ship.id, "atoll-prototype", ship,
+      { segments: [{ durationSeconds: FIXED_STEP, throttle: 0, rudder: 0 }], brakeToStop: false });
+    expect(scheduler.work.motionSteps).toBeGreaterThan(0); expect(ship).toEqual(before);
+    expect(scheduler.getTelemetry()).toMatchObject({ queuedOwners: 0, completedOwners: 0 });
   });
 
   it.each(["time", "position", "heading", "controls"] as const)("does not reuse stale %s advice", kind => {
@@ -137,11 +142,11 @@ describe("preventive terrain maneuver advice", () => {
     }
   });
 
-  it("withholds a previously advised override when this tick has no fresh confirmation budget", () => {
+  it("does not reuse old braking proof or hand back propulsion when this tick has no confirmation budget", () => {
     const { ship, guard, time } = prepareAdvice();
     const exhausted = new AiManeuverScheduler({ maxMotionSteps: 0, maxTerrainQueries: 0 });
     exhausted.beginFrame(time + FIXED_STEP, [ship.id]);
-    expect(guard.command(observation(ship, time + FIXED_STEP), ordered, exhausted)).toEqual(ordered);
+    expect(guard.command(observation(ship, time + FIXED_STEP), ordered, exhausted)).toEqual({ throttle: 0, rudder: 0 });
     expect(guard.getTelemetry().phase).toBe("unverified");
     expect(guard.getTelemetry().reason).toMatch(/budget/);
   });

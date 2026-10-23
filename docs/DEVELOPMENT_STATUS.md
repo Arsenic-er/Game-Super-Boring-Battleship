@@ -39,7 +39,35 @@ Improve useful activity instead: safe shoal recovery, meaningful navigation,
 contact reacquisition and valid opportunities to engage. Legitimate concealment,
 withdrawal, repair and reloading are not automatically inactivity defects.
 
-## Latest working changes — 2026-10-23: explicit recovery; long-run gate still fails
+## Latest working changes — 2026-10-23: safe hold after invalidation; rejoin still fails
+
+- Natural repair and other physical-parameter changes cancel the old recovery
+  suffix, retain neutral control and verify it against current physics.
+  Measured settling is not reset by each repair tick. Temporary unknown work
+  remains retryable rather than permanently exhausting alternatives.
+- The existing 100 s deadline / attempt limits now retain neutral control and
+  periodically check a forward-and-stop rejoin. They no longer hand back the
+  known-dangerous ordinary order. No deadline or progress gate was weakened.
+- Both strict 240 s real-session fixtures now record zero intended/actual
+  whole-hull contact and zero unverified control ticks, with one recovery
+  episode each. However, both remain stationary for the last minute and have
+  zero verified rejoins. The experiment remains OFF in normal gameplay.
+- Strict acceptance adds holding ownership and a zero-unverified-control gate;
+  original contact, displacement, sustained-progress and rejoin gates remain.
+  Hard identity/order/motion divergence handoffs remain an explicit limitation.
+- Final regular suite: 2,284 passes including nine new continuation regressions;
+  eleven existing opt-in tests skipped. TypeScript and build pass; strict
+  long-run acceptance still exits 1 on the unmet progress/rejoin gates.
+- A separate prescribed-route experiment proves physical room for a safe
+  astern/turn/stop escape followed by 60 s ordinary AI movement. It is not an
+  automatic planner pass and exceeds current per-task work limits. Next pass
+  actual desired heading and plan bounded complete turning/exit trajectories.
+  See acceptance/coastal-continuation-2026-10-23.md.
+- Default single-player/LAN behavior, centre-only collision, physical stats,
+  main 8ef5b84, assets 4e4d587, version/tag, twenty-minute duration and disabled
+  preview remain unchanged. All work stays on the server; no download.
+
+## Previous checkpoint — 2026-10-23: explicit recovery; long-run gate still fails
 
 - Add an opt-in arrest/settle/retreat/low-speed-turn/rejoin controller.
   The six-second steering-brake stage now advances by executed time and

@@ -26,7 +26,7 @@ const {advanceShipKinematics,createShipKinematicSnapshot,shipKinematicParameters
 const {constrainShipTerrainMotion,shipTerrainFootprintContact}=await import("../../src/sim/shipFootprint.ts");
 const {terrainNavigationAt,shipDraftMeters}=await import("../../src/maps/atollMap.ts");
 const {FIXED_STEP}=await import("../../src/sim/config.ts");
-const mapId="atoll-prototype", ownership=new Set(["braking","recovery-planning","retreating","turning","settling"]);
+const mapId="atoll-prototype", ownership=new Set(["braking","holding","recovery-planning","retreating","turning","settling"]);
 const duration=240, cases=[];
 for(const fixture of ["neutral-lock","seeded-565-pose"]){
  const state=createInitialState(123,"sea-trials");state.mapId=mapId;state.airSupport="none";state.airSquadrons=[];
@@ -45,6 +45,7 @@ for(const fixture of ["neutral-lock","seeded-565-pose"]){
  let commandInput,commandOutput,telemetry,previousPhase,previousReason,episodeStarts=0,rejoinedCount=0,failedTransitions=0;
  let wasStoppedOrder=false,forwardReleasedAt=null,brakeReleases=0,shortBrakeCycles=0;
  let ordinaryRun=0,longestOrdinaryRun=0,afterRejoinRun=0,longestAfterRejoinRun=0;
+ let firstUnverified,unverifiedRun=0,longestUnverifiedRun=0;
  let noProgressAnchor={...ship.position},noProgressSince=0,longestNoProgress=0,checkpoint60;
  const ordinary=RuleBasedAi.prototype.command,guard=AiTerrainManeuverGuard.prototype.command,background=AiManeuverScheduler.prototype.runBackground;
  AiTerrainManeuverGuard.prototype.command=function(o,controls,...args){if(o.self.id==="audit")commandInput={...controls};return guard.call(this,o,controls,...args);};
@@ -53,6 +54,9 @@ for(const fixture of ["neutral-lock","seeded-565-pose"]){
   commandOutput=out;telemetry=this.getManeuverTelemetry();
   const phase=telemetry.phase,reason=telemetry.reason??"none";
   phases[phase]=(phases[phase]??0)+1;reasons[reason]=(reasons[reason]??0)+1;
+  if(phase==="unverified")firstUnverified??={time:o.time,reason,controls:{throttle:out.throttle,rudder:out.rudder}};
+  unverifiedRun=phase==="unverified"?unverifiedRun+FIXED_STEP:0;
+  longestUnverifiedRun=Math.max(longestUnverifiedRun,unverifiedRun);
   if(phase==="braking"&&!ownership.has(previousPhase))episodeStarts++;
   if(phase==="rejoined"&&previousPhase!=="rejoined")rejoinedCount++;
   if(phase==="recovery-failed"&&(phase!==previousPhase||reason!==previousReason))failedTransitions++;
@@ -60,7 +64,7 @@ for(const fixture of ["neutral-lock","seeded-565-pose"]){
   if(wasStoppedOrder&&out.throttle>0){brakeReleases++;forwardReleasedAt=o.time;}
   if(stoppedOrder&&!wasStoppedOrder&&forwardReleasedAt!==null){if(o.time-forwardReleasedAt<2)shortBrakeCycles++;forwardReleasedAt=null;}
   wasStoppedOrder=stoppedOrder;
-  const ordinaryControl=!ownership.has(phase)&&commandInput?.throttle===out.throttle&&commandInput?.rudder===out.rudder;
+  const ordinaryControl=!ownership.has(phase)&&phase!=="unverified"&&commandInput?.throttle===out.throttle&&commandInput?.rudder===out.rudder;
   ordinaryRun=ordinaryControl&&Math.abs(o.self.speedKnots)>1?ordinaryRun+FIXED_STEP:0;
   longestOrdinaryRun=Math.max(longestOrdinaryRun,ordinaryRun);
   afterRejoinRun=rejoinedCount>0&&ordinaryControl&&Math.abs(o.self.speedKnots)>1?afterRejoinRun+FIXED_STEP:0;
@@ -99,7 +103,9 @@ for(const fixture of ["neutral-lock","seeded-565-pose"]){
  }finally{RuleBasedAi.prototype.command=ordinary;AiTerrainManeuverGuard.prototype.command=guard;AiManeuverScheduler.prototype.runBackground=background;}
  const net=Math.hypot(ship.position.x-initial.position.x,ship.position.z-initial.position.z),gates=[];
  const check=(condition,name)=>{if(!condition)gates.push(name);};
+ const unverifiedTicks=phases.unverified??0;
  check(!firstUnsafe,"no complete-hull contact");
+ check(unverifiedTicks===0,"no unverified live control ticks");
  check(path>100,"240s actual path > 100m");check(net>50,"240s net displacement > 50m");check(last60Path>50,"last60s actual path > 50m");
  check(longestNoProgress<=30,"longest <1m progress interval <=30s");
  check(shortBrakeCycles===0,"no brake/forward/brake cycles shorter than2s");
@@ -108,7 +114,7 @@ for(const fixture of ["neutral-lock","seeded-565-pose"]){
  check(scheduler.maxMotionSteps<=1024,"shared motion budget");check(scheduler.maxTerrainQueries<=64,"shared geometry budget");
  check(checkpoint60.path>5&&checkpoint60.net>5&&checkpoint60.last30Path>5,"60s actual path/net/last30 all >5m");
  const summary={fixture,seed:123,duration,checkpoint60,path,net,last60Path,longestNoProgress,firstUnsafe,unsafeIntentTicks,unsafeActualTicks,
-  episodeStarts,rejoinedCount,failedTransitions,brakeReleases,shortBrakeCycles,longestOrdinaryRun,longestAfterRejoinRun,
+  episodeStarts,rejoinedCount,failedTransitions,brakeReleases,shortBrakeCycles,longestOrdinaryRun,longestAfterRejoinRun,unverifiedTicks,firstUnverified,longestUnverifiedRun,
   phases,reasons,scheduler,wallMs:performance.now()-started,gates};
  cases.push({summary,initial,end:structuredClone(ship),trace});
  console.log("RECOVERY_SESSION",JSON.stringify(summary));

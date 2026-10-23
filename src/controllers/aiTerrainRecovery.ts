@@ -5,7 +5,7 @@ import type { Observation } from "../sim/types";
 
 type Controls = { throttle: number; rudder: number };
 type Parameters = ReturnType<typeof shipKinematicParameters>;
-export type TerrainRecoveryPhase = "braking" | "recovery-planning" | "retreating" | "turning" | "settling" | "rejoined" | "recovery-failed" | "unverified";
+export type TerrainRecoveryPhase = "braking" | "holding" | "recovery-planning" | "retreating" | "turning" | "settling" | "rejoined" | "recovery-failed" | "unverified";
 export interface TerrainRecoveryTelemetry { phase: TerrainRecoveryPhase; reason?: string; attempts: number }
 interface Receipt {
   generation: number;
@@ -19,13 +19,18 @@ const angleDistance = (a: number, b: number): number => Math.abs(Math.atan2(Math
 
 /**
  * Explicitly experimental arrest -> settle -> checked retreat -> rejoin.
- * It never moves/repairs a ship itself. Every issued override is confirmed from
- * the current real state, and the next tick must match that predicted prefix.
+ * It never moves/repairs a ship itself. Movement overrides require a fresh
+ * prefix check; missing proof retains best-effort neutral control explicitly
+ * labelled unverified. The next tick must match a confirmed prefix.
  * A complete retreat is only a terrain plan, not a route or other-ship clearance.
  */
 export class AiTerrainRecovery {
   private phase: TerrainRecoveryPhase = "braking";
-  private readonly parameters: Parameters;
+  private parameters: Parameters;
+  private parametersChangedAt = -Infinity;
+  private explorationExhausted = false;
+  private holdReason?: string;
+  private nextHoldCheckAt = 0;
   private expected?: ShipKinematicState;
   private request?: Receipt;
   private previousTime: number;
@@ -68,15 +73,32 @@ export class AiTerrainRecovery {
       return { controls, done: true };
     };
     if (!Number.isFinite(dt) || Math.abs(dt - FIXED_STEP) > 1e-9) return fail("unsupported-recovery-step");
+    const hold = (reason: string, exhausted = false): void => {
+      scheduler.cancel(this.ownerId); this.request = undefined;
+      this.phase = "holding"; this.holdReason = reason;
+      this.explorationExhausted ||= exhausted;
+      this.nextHoldCheckAt = o.time + 2;
+      this.executedSeconds = 0; this.retreatStart = undefined;
+    };
     const currentParameters = shipKinematicParameters(o.self);
     const changedParameters = Object.keys(this.parameters).some(key => {
       const name = key as keyof Parameters;
       return currentParameters[name] !== this.parameters[name];
     });
     if (o.self.id !== this.ownerId || o.self.shipClassId !== this.classId || o.mapId !== this.mapId
-      || o.time < this.previousTime || o.time - this.previousTime > .25
-      || changedParameters) return fail("recovery-state-changed");
-    if (o.time - this.startedAt > 100) return fail("recovery-deadline");
+      || o.time < this.previousTime || o.time - this.previousTime > .25) return fail("recovery-state-changed");
+    if (changedParameters) {
+      // The old complete suffix is invalid, but the ordinary coastal order is
+      // not thereby safe. Retain neutral control, checked against NEW physics.
+      scheduler.cancel(this.ownerId); this.request = undefined; this.expected = undefined;
+      this.parameters = currentParameters; this.parametersChangedAt = o.time;
+      this.phase = this.explorationExhausted ? "holding" : "settling";
+      this.holdReason = "physical-parameters-changed"; this.executedSeconds = 0;
+      this.retreatStart = undefined;
+      // Do not reset settledTicks: continuous repair must not prevent measured
+      // stationary evidence from accumulating.
+    }
+    if (!this.explorationExhausted && o.time - this.startedAt > 100) hold("recovery-deadline", true);
     if (this.phase === "braking" && (Math.abs(controls.throttle - this.previousControls.throttle) > .35
       || Math.abs(controls.rudder - this.previousControls.rudder) > .65)) return fail("recovery-orders-changed");
     if (this.expected && (Math.hypot(o.self.position.x - this.expected.position.x, o.self.position.z - this.expected.position.z) > .2
@@ -89,11 +111,17 @@ export class AiTerrainRecovery {
     this.settledTicks = stopped ? this.settledTicks + 1 : 0;
     if ((this.phase === "braking" && this.executedSeconds >= this.steerSeconds || this.phase === "settling")
       && this.settledTicks >= 3) {
-      if (this.retreatStart && Math.hypot(o.self.position.x - this.retreatStart.x, o.self.position.z - this.retreatStart.z) < 5)
-        return fail("retreat-made-no-progress");
-      this.retreatStart = undefined;
-      this.phase = "recovery-planning"; this.executedSeconds = 0; this.request = undefined;
-      scheduler.cancel(this.ownerId);
+      if (this.retreatStart && Math.hypot(o.self.position.x - this.retreatStart.x, o.self.position.z - this.retreatStart.z) < 5) {
+        hold("retreat-made-no-progress", true);
+      } else if (o.time - this.parametersChangedAt >= .25) {
+        this.retreatStart = undefined;
+        this.phase = "recovery-planning"; this.executedSeconds = 0; this.request = undefined;
+        this.holdReason = undefined; scheduler.cancel(this.ownerId);
+      }
+    }
+    if (this.phase === "holding" && this.settledTicks >= 3
+      && o.time >= this.nextHoldCheckAt && o.time - this.parametersChangedAt >= .25) {
+      this.phase = "recovery-planning"; this.request = undefined;
     }
 
     if (this.phase === "recovery-planning") {
@@ -121,38 +149,48 @@ export class AiTerrainRecovery {
               // is NOT approval of any different future tracking commands.
               const prefix = scheduler.confirm(this.ownerId, o.mapId, o.self,
                 { segments: [{ durationSeconds: dt, ...r.controls }], brakeToStop: false });
-              if (prefix.status !== "clear") return fail("rejoin-" + prefix.reason);
+              if (prefix.status !== "clear") {
+                hold("rejoin-" + prefix.reason); this.expected = undefined;
+                this.telemetry = { phase: "unverified", reason: "rejoin-" + prefix.reason, attempts: this.attempts };
+                return { controls: { ...neutral }, done: false };
+              }
               scheduler.cancel(this.ownerId);
               this.telemetry = { phase: "rejoined", reason: "forward-order-and-stop-checked", attempts: this.attempts };
               return { controls: { ...r.controls }, done: true };
             }
-            if (forward?.status !== "blocked") return fail("rejoin-not-verified");
-            const usefulTurn = turn?.status === "clear" && turn.stopped
-              && Math.hypot(turn.end.position.x - o.self.position.x, turn.end.position.z - o.self.position.z) > 5
-              && angleDistance(turn.end.heading, o.self.heading) > .1;
-            if (usefulTurn && this.turnAttempts < 4) {
-              this.turnAttempts++; this.phase = "turning";
-              this.turnControls = { throttle: .18, rudder: r.controls.rudder };
+            if (this.explorationExhausted || forward?.status !== "blocked") {
+              hold(this.explorationExhausted ? this.holdReason ?? "recovery-limit"
+                : "rejoin-" + (forward?.reason ?? "missing-result"));
             } else {
-              if (reverse?.status !== "clear" || !reverse.stopped) return fail("no-verified-retreat");
-              if (this.attempts >= 2) return fail("recovery-attempt-limit");
-              this.attempts++; this.phase = "retreating";
+              const usefulTurn = turn?.status === "clear" && turn.stopped
+                && Math.hypot(turn.end.position.x - o.self.position.x, turn.end.position.z - o.self.position.z) > 5
+                && angleDistance(turn.end.heading, o.self.heading) > .1;
+              if (usefulTurn && this.turnAttempts < 4) {
+                this.turnAttempts++; this.phase = "turning";
+                this.turnControls = { throttle: .18, rudder: r.controls.rudder };
+              } else {
+                if (reverse?.status !== "clear" || !reverse.stopped) hold("retreat-" + (reverse?.reason ?? "not-verified"));
+                else if (this.attempts >= 2) hold("recovery-attempt-limit", true);
+                else { this.attempts++; this.phase = "retreating"; }
+              }
+              this.executedSeconds = 0;
+              if (["retreating", "turning"].includes(this.phase)) this.retreatStart = { x: o.self.position.x, z: o.self.position.z };
+              this.settledTicks = 0; this.request = undefined;
+              scheduler.cancel(this.ownerId);
             }
-            this.executedSeconds = 0;
-            this.retreatStart = { x: o.self.position.x, z: o.self.position.z };
-            this.settledTicks = 0; this.request = undefined;
-            scheduler.cancel(this.ownerId);
           }
         }
       }
       if (this.phase === "recovery-planning" && !this.request) {
-        const generation = scheduler.submit(this.ownerId, o.self, o.mapId, [
+        const plans = [
           { segments: [{ durationSeconds: 24, ...controls }], brakeToStop: true },
           { segments: [{ durationSeconds: 12, throttle: .18, rudder: controls.rudder }], brakeToStop: true },
           { segments: [{ durationSeconds: 30, ...astern }], brakeToStop: true },
-        ]);
-        if (generation === undefined) return fail("recovery-queue-capacity");
-        this.request = { generation, time: o.time, controls: { ...controls },
+        ];
+        const generation = scheduler.submit(this.ownerId, o.self, o.mapId,
+          this.explorationExhausted ? plans.slice(0, 1) : plans);
+        if (generation === undefined) hold("recovery-queue-capacity");
+        else this.request = { generation, time: o.time, controls: { ...controls },
           x: o.self.position.x, z: o.self.position.z, heading: o.self.heading,
           speed: o.self.speedKnots, rudder: o.self.rudder };
       }
@@ -168,10 +206,17 @@ export class AiTerrainRecovery {
         ? { throttle: 0, rudder: this.brakeRudder } : neutral;
     const prefix = scheduler.confirm(this.ownerId, o.mapId, o.self,
       { segments: [{ durationSeconds: dt, ...desired }], brakeToStop: false });
-    if (prefix.status !== "clear") return fail("recovery-" + prefix.reason);
+    if (prefix.status !== "clear") {
+      // No previous receipt can authorize this frame. Neutral is explicitly
+      // best-effort, NOT certified safe, until a new prefix succeeds.
+      hold("recovery-" + prefix.reason);
+      this.expected = undefined;
+      this.telemetry = { phase: "unverified", reason: "recovery-" + prefix.reason, attempts: this.attempts };
+      return { controls: { ...neutral }, done: false };
+    }
     // Count executed time, never asynchronous planning latency or rejected work.
     this.executedSeconds += dt; this.expected = prefix.end;
-    this.telemetry = { phase: this.phase, attempts: this.attempts };
+    this.telemetry = { phase: this.phase, ...(this.holdReason ? { reason: this.holdReason } : {}), attempts: this.attempts };
     return { controls: { ...desired }, done: false };
   }
 }

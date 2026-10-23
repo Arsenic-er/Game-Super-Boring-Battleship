@@ -1,5 +1,9 @@
 # Coastal recovery execution — 2026-10-23
 
+Historical 5ebeece checkpoint. The subsequent repair/deadline continuation fix
+and its still-failing progress gate are recorded in
+[Coastal recovery continuation](coastal-continuation-2026-10-23.md).
+
 ## Decision
 
 **Do not enable in ordinary gameplay.** The explicit recovery controller improves

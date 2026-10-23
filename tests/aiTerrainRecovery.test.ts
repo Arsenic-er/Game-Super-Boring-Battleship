@@ -79,7 +79,7 @@ describe("experimental terrain recovery with real executed movement", () => {
       const out = realCommand.call(this, o, scheduler);
       if (o.self.id === ship.id) {
         const phase = this.getManeuverTelemetry().phase;
-        if (["braking", "recovery-planning", "retreating", "turning", "settling"].includes(phase)) ownedTicks++;
+        if (["braking", "holding", "recovery-planning", "retreating", "turning", "settling"].includes(phase)) ownedTicks++;
         const { sweep } = intendedMotion(o.self as ShipState, out);
         if (sweep.blocked || sweep.rotationBlocked || sweep.budgetExhausted || sweep.contact.blocked) {
           firstUnsafe ??= { time: o.time, kind: "intended-full-hull-sweep" };
@@ -234,9 +234,13 @@ describe("experimental terrain recovery with real executed movement", () => {
       infiniteAmmunition: false, instantReload: false, speedMultiplier: 1, forcedSpeedKnots: 0 }; }],
   ] as const)("invalidates the old recovery after a physical %s change", (_label, mutate) => {
     const { ship, guard, scheduler, time } = ongoingRecovery();
-    mutate(ship); scheduler.beginFrame(time, [ship.id]);
-    expect(guard.command(observation(ship, time), ordinary, scheduler)).toEqual(ordinary);
-    expect(guard.getTelemetry()).toMatchObject({ phase: "recovery-failed", reason: "recovery-state-changed" });
+    mutate(ship); const before = structuredClone(ship), confirmation = vi.spyOn(scheduler, "confirm");
+    scheduler.beginFrame(time, [ship.id]);
+    expect(guard.command(observation(ship, time), ordinary, scheduler)).toEqual({ throttle: 0, rudder: 0 });
+    expect(guard.getTelemetry()).toMatchObject({ phase: "settling", reason: "physical-parameters-changed" });
+    expect(confirmation).toHaveBeenCalledWith(ship.id, mapId, ship,
+      { segments: [{ durationSeconds: FIXED_STEP, throttle: 0, rudder: 0 }], brakeToStop: false });
+    expect(scheduler.work.motionSteps).toBeGreaterThan(0); expect(ship).toEqual(before);
     expect(scheduler.getTelemetry()).toMatchObject({ queuedOwners: 0, completedOwners: 0 });
   });
 
@@ -244,7 +248,7 @@ describe("experimental terrain recovery with real executed movement", () => {
     const { ship, guard, time } = ongoingRecovery();
     const exhausted = new AiManeuverScheduler({ maxMotionSteps: 0, maxTerrainQueries: 0 });
     exhausted.beginFrame(time, [ship.id]);
-    expect(guard.command(observation(ship, time), ordinary, exhausted)).toEqual(ordinary);
+    expect(guard.command(observation(ship, time), ordinary, exhausted)).toEqual({ throttle: 0, rudder: 0 });
     expect(guard.getTelemetry().phase).toBe("unverified");
     expect(guard.getTelemetry().reason).toMatch(/budget/);
     expect(exhausted.work).toEqual({ motionSteps: 0, terrainQueries: 0 });

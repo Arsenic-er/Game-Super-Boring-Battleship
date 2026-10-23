@@ -1,3 +1,35 @@
+## 2026-10-23 — Retain control after repair and recovery exhaustion
+
+Natural repair previously invalidated a fixed-physics recovery and restored
+the original unsafe propulsion command. Cancel that stale suffix, keep neutral
+throttle/helm and freshly check the current physics instead. Continuous repairs
+do not erase measured settling; a short stability interval prevents repeated
+full-plan churn. Deadline and attempt exhaustion now retain a holding state
+with low-frequency forward rechecks, without restarting the recovery episode.
+
+Budget/queue uncertainty is not proof of an impossible route. Retain retryable
+control, label missing live proof unverified, and never count it as clear or
+ordinary-navigation progress. Hard identity/order/motion-change handoffs remain
+a separate limitation. Physical capabilities and exploration limits are unchanged.
+
+Both four-minute real-session cases now have zero intended/actual whole-hull
+contact and zero unverified ticks. Both still fail sustained travel and rejoin:
+their final sixty seconds have zero path. Keep the experiment default-off and
+the strict acceptance failing; no assertion was weakened or hidden.
+
+Nine new continuation regressions and the existing guard/recovery cases pass.
+The final regular suite passes 2,284 tests, with eleven existing opt-in skips
+and the usual two balance-report entrypoint exclusions. TypeScript/build pass
+with the existing chunk warning; the strict long-run gate remains failed.
+No production/test changes occurred during the final suite.
+
+A separate offline prescribed route confirms enough physical room exists to
+escape and then run ordinary AI for sixty seconds. This is a future planner
+target, not integrated automatic success; its work exceeds current task caps.
+The next step is bounded heading-aware exit planning, not a longer timeout.
+See acceptance/coastal-continuation-2026-10-23.md for evidence and limits.
+No main/assets/version/tag change, local download or permanent preview.
+
 ## 2026-10-23 — Execute checked recovery stages; retain failing long-run gates
 
 Replace indefinite refreshed braking with a finite executed sequence: arrest,
