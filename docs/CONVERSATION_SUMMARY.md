@@ -1,3 +1,12 @@
+## Latest operational decision — 2026-10-24
+
+The owner requested a complete Git backup, merge into main and pause for server
+expiry. Both repositories are checkpointed as backup-2026-10-24; main now
+contains all current development. Unique non-cache QA and unreachable candidate
+objects are preserved in the private asset backup. See SERVER_BACKUP_2026-10-24.md.
+No server-file deletion, local download or continued development was requested.
+Await the next owner-designated server; retain the server-only workflow.
+
 ## Current battle duration decision — recorded 2026-10-20
 
 The owner accepts twenty-minute battles. Keep the existing 1,200-second limit;

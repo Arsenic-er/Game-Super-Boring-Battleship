@@ -1,6 +1,6 @@
 # Condensed Development Status
 
-Last updated: 2026-10-23
+Last updated: 2026-10-24
 
 This is the current operational handoff. Product decisions are preserved in
 `CONVERSATION_SUMMARY.md`; milestone history is preserved in `DEVELOPMENT_LOG.md`.
@@ -18,7 +18,7 @@ credentials, caches or generated builds in the repositories.
 - Asset project: `/home/ubuntu/battleship-assets`
 - Active checkout: `/home/ubuntu/battleship` (no nested worktree on this server).
 - Project-local runtime: `export PATH="$HOME/battleship/.tools/node/bin:$PATH"`.
-- Active branch: `codex/v072-historical-models`; recovery baseline `2a6c473`.
+- Active branch: `main`; checkpoint tag `backup-2026-10-24`. Development is paused for server expiry.
 - Game repository: `Arsenic-er/Game-Super-Boring-Battleship`
 - Asset repository: `Arsenic-er/Game-Super-Boring-Battleship-Assets`
 - Stack: TypeScript 7, Babylon.js 9, Vite 8, Vitest 4, Electron
@@ -28,6 +28,20 @@ The Windows workspace is a remote-control endpoint only. As of 2026-10-03, all
 development, builds, tests and artifacts stay on the server. Do not create local
 staging or download packages/source/logs without fresh explicit consent. See
 `AGENTS.md`; this overrides the older automatic local-delivery workflow.
+
+## Server expiry backup and pause — 2026-10-24
+
+The owner requested pushing all current work, merging main and pausing.
+Seven development commits through ed4e8ed are now included in main; no
+production code changed during backup. Both repositories use backup-2026-10-24.
+The private assets checkpoint is 7c288bed2b8da4d378768c2130526bebce6b0b99.
+
+All tracked material is preserved. The private asset archive additionally keeps
+1,216 non-cache QA files and twelve otherwise-unreachable candidate Git blobs.
+Read SERVER_BACKUP_2026-10-24.md for restore, checksums, exclusions and tool setup.
+Do not resume development until the owner supplies the next server. No local
+download, server deletion, new release or permanent preview was requested.
+The experimental terrain maneuver flag stays off; unmet gates below remain open.
 
 ## Current battle duration decision — recorded 2026-10-20
 

@@ -1,3 +1,21 @@
+## 2026-10-24 — Back up both repositories and pause for server expiry
+
+Fast-forward main over all seven development commits through ed4e8ed. Keep
+existing history and the experimental navigation flag unchanged. Synchronize
+six changed asset-pipeline text files, verify all 257 mirror mappings, and
+preserve original assets and licensing records.
+
+Privately archive 1,216 non-cache QA files (923,438,465 decoded bytes, split
+compressed archive 134,849,872 bytes) plus twelve unreachable candidate Git
+blobs. All archived file hashes and recovered objects verify. Save manifests,
+restore tooling and current handoff instructions; exclude dependencies, caches,
+credentials and obsolete generated packages.
+
+Both repositories receive backup-2026-10-24. This is a backup-only checkpoint,
+not new gameplay, a version bump or acceptance of the still-failing navigation
+experiment. Development pauses for the next server. No local download,
+server deletion or permanent preview change. See SERVER_BACKUP_2026-10-24.md.
+
 ## 2026-10-23 — Retain control after repair and recovery exhaustion
 
 Natural repair previously invalidated a fixed-physics recovery and restored
