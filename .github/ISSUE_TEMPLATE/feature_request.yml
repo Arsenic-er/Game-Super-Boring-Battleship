@@ -1,0 +1,55 @@
+name: Feature request
+description: Suggest an improvement to Game-Super-Boring-Battleship.
+title: '[Feature]: '
+body:
+- type: dropdown
+  id: component
+  attributes:
+    label: Affected component
+    options:
+    - Ship controls or movement
+    - AI navigation
+    - Collision or grounding
+    - Weapons or combat
+    - Mission or game state
+    - Rendering or performance
+    - Desktop build
+    - Other / unsure
+  validations:
+    required: true
+- type: textarea
+  id: problem
+  attributes:
+    label: Problem or use case
+    placeholder: 'Example: I need a repeatable way to compare AI behavior near the
+      shore.'
+  validations:
+    required: true
+- type: textarea
+  id: proposal
+  attributes:
+    label: Proposed solution
+    placeholder: 'Example: Add a deterministic shoreline-navigation test scenario
+      with a fixed seed.'
+  validations:
+    required: true
+- type: textarea
+  id: alternatives
+  attributes:
+    label: Alternatives considered
+    description: Describe other approaches or current workarounds, if any.
+- type: textarea
+  id: acceptance
+  attributes:
+    label: Acceptance criteria
+    placeholder: 'The scenario can be reproduced from its seed and configuration.
+
+      Movement and collision outcomes are recorded.
+
+      Existing mission behavior is covered by regression checks.'
+- type: textarea
+  id: context
+  attributes:
+    label: Additional context
+    description: Add related issues, small examples, design sketches, or references
+      if useful.

@@ -1,0 +1,85 @@
+name: Bug report
+description: Report a reproducible problem in the 3D naval combat prototype.
+title: '[Bug]: '
+body:
+- type: dropdown
+  id: component
+  attributes:
+    label: Affected component
+    options:
+    - Ship controls or movement
+    - AI navigation
+    - Collision or grounding
+    - Weapons or combat
+    - Mission or game state
+    - Rendering or performance
+    - Desktop build
+    - Other / unsure
+  validations:
+    required: true
+- type: input
+  id: version
+  attributes:
+    label: Version or commit SHA
+  validations:
+    required: true
+- type: textarea
+  id: summary
+  attributes:
+    label: What happened?
+    placeholder: 'Example: An AI-controlled ship remains stuck after touching the
+      shoreline.'
+  validations:
+    required: true
+- type: textarea
+  id: steps
+  attributes:
+    label: Steps to reproduce
+    placeholder: '1. Load the affected map or deterministic scenario.
+
+      2. Record the ship state and scenario seed.
+
+      3. Observe the shoreline contact and subsequent AI behavior.'
+  validations:
+    required: true
+- type: textarea
+  id: expected
+  attributes:
+    label: Expected behavior
+    placeholder: The ship should follow the documented collision and recovery behavior.
+  validations:
+    required: true
+- type: textarea
+  id: context
+  attributes:
+    label: Scenario and simulation state
+    placeholder: 'Map, mission, or scenario:
+
+      Ship and AI state:
+
+      Scenario seed (if available):
+
+      Paused or running:
+
+      Collision, weapon, or performance details:'
+- type: textarea
+  id: environment
+  attributes:
+    label: Environment
+    placeholder: 'Operating system:
+
+      Desktop build or browser version:
+
+      GPU and graphics driver:
+
+      Display resolution:
+
+      Observed frame rate (performance reports only):'
+  validations:
+    required: true
+- type: textarea
+  id: evidence
+  attributes:
+    label: Logs, screenshots, or a minimal example
+    description: Include the smallest example or log excerpt needed to reproduce the
+      problem.
